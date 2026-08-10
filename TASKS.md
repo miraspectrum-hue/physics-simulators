@@ -49,8 +49,10 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 
 | # | タスク | 優先度 | 完了 | 依存 |
 |---|--------|--------|------|------|
-| 1-1-1 | `types/optics.ts` 定義（Ray / Segment / LightPath / Plane）※ `PrismMaterial` は暫定的に constants.ts に配置済み。本タスクで移設する | 🔴 高 | [ ] | 0-3 |
-| 1-1-2 | `optics/constants.ts`（波長範囲・頂角 60°・追跡上限 6・4 材質の定数・基準線 λ_d/λ_F/λ_C） | 🔴 高 | [x] | 1-1-1 |
+| 1-1-1a | `types/optics.ts` の**幾何型**（Vec3 / Ray / Plane）※型宣言のみ。three を import しない | 🔴 高 | [x] | - |
+| 1-1-1b | `types/optics.ts` に Segment / LightPath を追加（tracer で必要になる時点で） | 🔴 高 | [ ] | 1-4-3 |
+| 1-1-1c | `PrismMaterial` を constants.ts から types/optics.ts へ移設 | 🟡 中 | [ ] | 1-1-1a |
+| 1-1-2 | `optics/constants.ts`（波長範囲・頂角 60°・追跡上限 6・4 材質の定数・基準線 λ_d/λ_F/λ_C） | 🔴 高 | [x] | - |
 
 ### 1-2: 分散とスペクトル
 
@@ -72,7 +74,11 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 
 | # | タスク | 優先度 | 完了 | 依存 |
 |---|--------|--------|------|------|
-| 1-3-1 | `optics/convexSolid.ts`：正三角柱の平面集合生成（内向き法線 5 枚） | 🔴 高 | [ ] | 1-1-1 |
+| 1-3-0 | `optics/vec3.ts`：Vec3 代数 11 関数（純粋・不変・Three 非依存） | 🔴 高 | [x] | 1-1-1a |
+| 1-3-0b | **テスト**: 全 11 関数（生成の異常系・既知値・交換法則/反交換律・正規化の零ベクトル） | 🔴 高 | [x] | 1-3-0 |
+| 1-3-0c | `optics/convexSolid.ts`：**レイ⇔平面**交差（Ray/Plane 生成・pointOnRay・signedDistanceToPlane・intersectRayPlane） | 🔴 高 | [x] | 1-3-0 |
+| 1-3-0d | **テスト**: 既知の軸並行幾何（正面 / 後方 t<0 / 面上 t=0 / 平行 null / 斜め 2√2） | 🔴 高 | [x] | 1-3-0c |
+| 1-3-1 | `optics/convexSolid.ts`：正三角柱の平面集合生成（**外向き**法線 5 枚） | 🔴 高 | [ ] | 1-3-0c |
 | 1-3-2 | 変換行列を適用した平面集合の導出（任意姿勢に対応） | 🔴 高 | [ ] | 1-3-1 |
 | 1-3-3 | スラブ法によるレイ交差（`t_enter` / `t_exit`） | 🔴 高 | [ ] | 1-3-1 |
 | 1-3-4 | **テスト**: 中心貫通・かすめ入射・非交差・内部始点の各ケース | 🔴 高 | [ ] | 1-3-3 |

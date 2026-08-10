@@ -98,6 +98,9 @@ export function refractiveIndex(material: PrismMaterial, wavelengthNm: number): 
 ### Three.js 運用
 
 - **毎フレームでの `new` を禁止**。`Vector3` 等は生成済みインスタンスを使い回す
+  - **適用範囲は `src/scene/` と描画ホットパス（レンダーループ内）に限る**
+  - `src/optics/` は純粋関数であることを優先し、**不変オブジェクト（`Vec3` 等）を新規に返してよい**。同一入力に同一出力を返す性質を、インスタンスの使い回しより上に置く
+  - optics 層の割り当てが 60fps に影響するかは 5-1（パフォーマンス検証）で測定し、問題が出た場合にのみ tracer にミュータブルな高速経路を追加する
 - ジオメトリ・マテリアルは `dispose()` 可能な形で保持する
 - 描画ループは常時 60fps で回し、**光路の再計算のみ dirty フラグで抑制**する
 - 光線の更新は `LineGeometry.setPositions()` で行い、ジオメトリを作り直さない

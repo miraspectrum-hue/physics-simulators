@@ -112,7 +112,7 @@ n(λ) = A + B / λ²        （λ の単位は µm）
 
 ### 光路計算
 
-1. プリズムをワールド座標系の **凸多面体（内向き法線つき平面 5 枚：側面 3 + 端面 2）** として表現する
+1. プリズムをワールド座標系の **凸多面体（外向き法線つき平面 5 枚：側面 3 + 端面 2）** として表現する
    - 平面はプリズムの `Object3D.matrixWorld` から毎回導出する（姿勢の二重管理を避ける）
 2. レイと各平面の交差から入口 `t_enter` / 出口 `t_exit` を求める（スラブ法）
    - `t_enter > t_exit` なら交差なし＝光は直進する
@@ -213,7 +213,8 @@ Rp = |(n₁cosθₜ - n₂cosθᵢ) / (n₁cosθₜ + n₂cosθᵢ)|²
 | `optics/constants.ts` | 波長範囲・材質定数・頂角・追跡上限 | - |
 | `optics/dispersion.ts` | λ → n の算出 | constants |
 | `optics/spectrum.ts` | 波長サンプリング、λ → sRGB | constants |
-| `optics/convexSolid.ts` | 平面集合の生成、レイ交差 | - |
+| `optics/vec3.ts` | 3 次元ベクトルの純粋演算（Three.js 非依存） | - |
+| `optics/convexSolid.ts` | 平面集合の生成、レイ交差 | vec3 |
 | `optics/fresnel.ts` | 臨界角・全反射判定（`criticalAngle` / `canTransmit`）と反射率 R の算出 | - |
 | `optics/refraction.ts` | スネル則による屈折角（スカラー・幾何非依存の純粋関数） | fresnel |
 | `optics/prism.ts` | 頂角 A のプリズムのスカラー計算（偏角・最小偏角・将来の透過条件） | refraction |
