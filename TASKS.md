@@ -63,8 +63,8 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 | 1-2-3b | **テスト**: 単調性（n(400nm) > n(700nm)）と不正入力（RangeError）の検証 | 🔴 高 | [x] | 1-2-1 |
 | 1-2-6 | `optics/fresnel.ts`：臨界角 `criticalAngle(nFrom, nTo)` と**界面単位**の全反射判定 `canTransmit(nFrom, nTo, incidenceAngleDeg)`（θ ≥ θc を全反射とする） | 🔴 高 | [x] | 1-2-1 |
 | 1-2-6b | **テスト**: 臨界角の既知値・境界規約・異常系（RangeError）の検証 | 🔴 高 | [x] | 1-2-6 |
-| 1-2-6c | **プリズム単位**の透過可否 `canTransmitThroughPrism(material, apexDeg)`（条件 `A < 2·θc`）※着手時に `optics/prism.ts` へ配置し、SPEC.md 86 行目の「`optics/dispersion.ts` に用意し」を修正すること（頂角を引数に取る関数は dispersion の責務ではない） | 🔴 高 | [ ] | 1-2-6, 1-4-0c |
-| 1-2-7 | **テスト**: BK7/SF10/水 で true、ダイヤモンドで false を返すこと | 🔴 高 | [ ] | 1-2-6c |
+| 1-2-6c | **プリズム単位**の透過可否 `canTransmitThroughPrism(apexAngleDeg, n)`（条件 `A < 2·θc`）を `optics/prism.ts` に配置。θc は fresnel.criticalAngle に委譲 | 🔴 高 | [x] | 1-2-6, 1-4-0c |
+| 1-2-7 | **テスト**: BK7/SF10/水 で true、ダイヤモンドで false を返すこと | 🔴 高 | [x] | 1-2-6c |
 | 1-2-4 | `optics/spectrum.ts`：波長サンプリング（連続 48 / 7 色）と λ→sRGB 変換 | 🔴 高 | [ ] | 1-1-2 |
 | 1-2-5 | **テスト**: 660nm が赤系、480nm が青系、可視域外が黒に写ること | 🟡 中 | [ ] | 1-2-4 |
 

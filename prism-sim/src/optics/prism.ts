@@ -1,11 +1,12 @@
 /**
- * 頂角 A のプリズムのスカラー計算（偏角・最小偏角）。
+ * 頂角 A のプリズムのスカラー計算（偏角・最小偏角・透過条件）。
  *
  * 空気中に置かれたプリズムを、主断面内の 2 次元問題として扱う。
  * DOM / Three.js / convexSolid（3D 幾何）/ dispersion には依存しない。
  * 屈折率は引数で受け取る（波長依存性は呼び出し側の責務）。
  */
 
+import { criticalAngle } from './fresnel';
 import { refractionAngleDeg } from './refraction';
 
 const DEG_PER_RAD = 180 / Math.PI;
@@ -119,4 +120,26 @@ export function minimumDeviationDeg(apexAngleDeg: number, n: number): number {
   }
 
   return 2 * Math.asin(sinHalfApex) * DEG_PER_RAD - apexAngleDeg;
+}
+
+/**
+ * 頂角 A のプリズムが、その材質で光を透過し得るかを判定する。
+ *
+ * 透過条件は A < 2·θc。第一面での屈折角の上限が θc であり、r₁ + r₂ = A かつ
+ * r₂ < θc を同時に満たす必要があることから導かれる。この条件を満たさない場合、
+ * 入射角をどう変えても第二面で必ず全反射する（ダイヤモンドの頂角 60° がこれに当たる）。
+ *
+ * 境界 A = 2·θc は false。θc ちょうどでの全反射は fresnel の「θ >= θc」規約に従う。
+ * θc は fresnel.criticalAngle に委ね、全反射の境界を自前で持たない。
+ *
+ * @param apexAngleDeg 頂角 A [deg]。0 < A < 180
+ * @param n プリズム材質の屈折率（無次元）。1 以上の有限数
+ * @returns 透過し得るなら true、どの入射角でも全反射するなら false
+ * @throws {RangeError} 引数が定義域外の場合
+ */
+export function canTransmitThroughPrism(apexAngleDeg: number, n: number): boolean {
+  assertApexAngleDeg(apexAngleDeg);
+  assertRefractiveIndex(n);
+
+  return apexAngleDeg < 2 * criticalAngle(n, N_AIR);
 }
