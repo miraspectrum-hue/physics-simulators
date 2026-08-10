@@ -216,6 +216,7 @@ Rp = |(n₁cosθₜ - n₂cosθᵢ) / (n₁cosθₜ + n₂cosθᵢ)|²
 | `optics/convexSolid.ts` | 平面集合の生成、レイ交差 | - |
 | `optics/fresnel.ts` | 臨界角・全反射判定（`criticalAngle` / `canTransmit`）と反射率 R の算出 | - |
 | `optics/refraction.ts` | スネル則による屈折角（スカラー・幾何非依存の純粋関数） | fresnel |
+| `optics/prism.ts` | 頂角 A のプリズムのスカラー計算（偏角・最小偏角・将来の透過条件） | refraction |
 | `optics/tracer.ts` | 屈折・全反射・光路生成 | dispersion, convexSolid, fresnel, refraction |
 | `scene/SceneManager.ts` | レンダラ・カメラ・ポストエフェクト・ループ | three |
 | `scene/PrismObject.ts` | プリズムメッシュと姿勢、平面集合の書き出し | three, convexSolid |

@@ -1,0 +1,3 @@
+# Claude Code の開発者ごとのローカル設定。
+# 共有すべき設定は .claude/settings.json（こちらは追跡する）。
+.claude/settings.local.json

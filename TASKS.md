@@ -63,7 +63,7 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 | 1-2-3b | **テスト**: 単調性（n(400nm) > n(700nm)）と不正入力（RangeError）の検証 | 🔴 高 | [x] | 1-2-1 |
 | 1-2-6 | `optics/fresnel.ts`：臨界角 `criticalAngle(nFrom, nTo)` と**界面単位**の全反射判定 `canTransmit(nFrom, nTo, incidenceAngleDeg)`（θ ≥ θc を全反射とする） | 🔴 高 | [x] | 1-2-1 |
 | 1-2-6b | **テスト**: 臨界角の既知値・境界規約・異常系（RangeError）の検証 | 🔴 高 | [x] | 1-2-6 |
-| 1-2-6c | **プリズム単位**の透過可否 `canTransmitThroughPrism(material, apexDeg)`（条件 `A < 2·θc`） | 🔴 高 | [ ] | 1-2-6 |
+| 1-2-6c | **プリズム単位**の透過可否 `canTransmitThroughPrism(material, apexDeg)`（条件 `A < 2·θc`）※着手時に `optics/prism.ts` へ配置し、SPEC.md 86 行目の「`optics/dispersion.ts` に用意し」を修正すること（頂角を引数に取る関数は dispersion の責務ではない） | 🔴 高 | [ ] | 1-2-6, 1-4-0c |
 | 1-2-7 | **テスト**: BK7/SF10/水 で true、ダイヤモンドで false を返すこと | 🔴 高 | [ ] | 1-2-6c |
 | 1-2-4 | `optics/spectrum.ts`：波長サンプリング（連続 48 / 7 色）と λ→sRGB 変換 | 🔴 高 | [ ] | 1-1-2 |
 | 1-2-5 | **テスト**: 660nm が赤系、480nm が青系、可視域外が黒に写ること | 🟡 中 | [ ] | 1-2-4 |
@@ -84,6 +84,8 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 |---|--------|--------|------|------|
 | 1-4-0 | `optics/refraction.ts`：**スカラー**のスネル則 `refractionAngleDeg(nFrom, nTo, θ₁)`（全反射判定は fresnel.canTransmit に委譲） | 🔴 高 | [x] | 1-2-6 |
 | 1-4-0b | **テスト**: 曲がる向き・既知値と可逆性・臨界角近傍・異常系・fresnel との境界一致 | 🔴 高 | [x] | 1-4-0 |
+| 1-4-0c | `optics/prism.ts`：偏角 `prismDeviationDeg` と最小偏角 `minimumDeviationDeg`（スカラー。全反射は refraction の RangeError を伝播） | 🔴 高 | [x] | 1-4-0 |
+| 1-4-0d | **テスト**: 対称通過と共役性・δ_min 既知値（SPEC 参考値と ±0.05°）・ダイヤモンドの全反射・異常系・出射面の境界一致 | 🔴 高 | [x] | 1-4-0c |
 | 1-4-1 | `optics/tracer.ts`：**ベクトル形式**スネル則（屈折）※1-4-0 とは別物（3D 方向ベクトルを扱う） | 🔴 高 | [ ] | 1-2-1, 1-3-3, 1-4-0 |
 | 1-4-2 | 全反射の判定（k<0）と反射ベクトルの算出 | 🔴 高 | [ ] | 1-4-1 |
 | 1-4-3 | 多重反射ループ（上限 6 回）と射出後の延長処理 | 🔴 高 | [ ] | 1-4-2 |
