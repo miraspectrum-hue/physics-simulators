@@ -214,8 +214,9 @@ Rp = |(n₁cosθₜ - n₂cosθᵢ) / (n₁cosθₜ + n₂cosθᵢ)|²
 | `optics/dispersion.ts` | λ → n の算出 | constants |
 | `optics/spectrum.ts` | 波長サンプリング、λ → sRGB | constants |
 | `optics/convexSolid.ts` | 平面集合の生成、レイ交差 | - |
-| `optics/fresnel.ts` | 反射率 R の算出 | - |
-| `optics/tracer.ts` | 屈折・全反射・光路生成 | dispersion, convexSolid, fresnel |
+| `optics/fresnel.ts` | 臨界角・全反射判定（`criticalAngle` / `canTransmit`）と反射率 R の算出 | - |
+| `optics/refraction.ts` | スネル則による屈折角（スカラー・幾何非依存の純粋関数） | fresnel |
+| `optics/tracer.ts` | 屈折・全反射・光路生成 | dispersion, convexSolid, fresnel, refraction |
 | `scene/SceneManager.ts` | レンダラ・カメラ・ポストエフェクト・ループ | three |
 | `scene/PrismObject.ts` | プリズムメッシュと姿勢、平面集合の書き出し | three, convexSolid |
 | `scene/BeamRenderer.ts` | `LightPath[]` → Line2 群の生成・更新 | three, spectrum |
