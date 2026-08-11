@@ -126,8 +126,12 @@ n(λ) = A + B / λ²        （λ の単位は µm）
 
 ### 光路計算
 
-1. プリズムをワールド座標系の **凸多面体（外向き法線つき平面 5 枚：側面 3 + 端面 2）** として表現する
-   - 平面はプリズムの `Object3D.matrixWorld` から毎回導出する（姿勢の二重管理を避ける）
+1. プリズムを **凸多面体（外向き法線つき平面 5 枚：側面 3 + 端面 2）** として表現する
+   - **追跡はプリズムの局所空間で行う。** 平面は「プリズムの標準配置」のまま固定し、変換しない
+   - ワールド⇔局所の変換は **scene 層の責務**とする。入射レイを `Object3D.matrixWorld` の逆変換で局所空間へ引き込み、得られた光路を順変換でワールドへ戻す
+   - 「ジオメトリを変換せず、レイを変換する」レイトレーシングの定石に従う。平面 5 枚を毎フレーム変換する代わりにレイ 1 本を変換するだけで済み、法線の逆転置も不要になる
+   - **剛体変換（回転・平行移動）に限定する。スケールは扱わない**（回転行列は直交なので法線が同じ回転で移り、レイの方向ベクトルも単位長を保つ）
+   - `optics/` は変換を一切受け取らない。姿勢の単一の真実は `Object3D.matrix` のまま
 2. レイと各平面の交差から入口 `t_enter` / 出口 `t_exit` を求める（スラブ法）
    - `t_enter > t_exit` なら交差なし＝光は直進する
 3. 交点の面法線に対し、**ベクトル形式のスネル則**を適用する
@@ -234,7 +238,7 @@ Rp = |(n₁cosθₜ - n₂cosθᵢ) / (n₁cosθₜ + n₂cosθᵢ)|²
 | `optics/prism.ts` | 頂角 A のプリズムのスカラー計算（偏角・最小偏角・将来の透過条件） | refraction |
 | `optics/tracer.ts` | 屈折・全反射・光路生成 | dispersion, convexSolid, fresnel, refraction |
 | `scene/SceneManager.ts` | レンダラ・カメラ・ポストエフェクト・ループ | three |
-| `scene/PrismObject.ts` | プリズムメッシュと姿勢、平面集合の書き出し | three, convexSolid |
+| `scene/PrismObject.ts` | プリズムメッシュと姿勢、ワールド⇔局所のレイ／光路変換 | three, convexSolid |
 | `scene/BeamRenderer.ts` | `LightPath[]` → Line2 群の生成・更新 | three, spectrum |
 | `scene/ScreenObject.ts` | 仮想スクリーンとスペクトル帯の描画 | three, spectrum |
 | `scene/SectionView.ts` | 断面 2D ビュー（正射投影の副シーン） | three |
