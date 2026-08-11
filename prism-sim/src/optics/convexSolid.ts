@@ -6,9 +6,12 @@
  * Three.js には依存しない。
  */
 
-import type { Plane, Ray, Vec3 } from '../types/optics';
+import type { ConvexSolid, ConvexSolidHit, Plane, Ray, Vec3 } from '../types/optics';
 
 import { addScaled, dot, length } from './vec3';
+
+/** 3 次元で有界な凸多面体を構成するのに必要な半空間の最小枚数（四面体）。 */
+const MIN_PLANE_COUNT = 4;
 
 /**
  * 単位ベクトル判定の許容差。
@@ -122,4 +125,79 @@ export function intersectRayPlane(targetRay: Ray, targetPlane: Plane): number | 
   const numerator = targetPlane.distance - dot(targetPlane.normal, targetRay.origin);
 
   return numerator / denominator;
+}
+
+/**
+ * レイと凸多面体の交差区間をスラブ法で求める。
+ *
+ * 凸多面体を半空間の共通部分とみなし、各平面が区間 [tEnter, tExit] を削っていく。
+ * 外向き法線なので、n·dir < 0 の面は入口側（区間の下限を押し上げる）、
+ * n·dir > 0 の面は出口側（上限を押し下げる）に働く。
+ *
+ * tEnter は負のまま返す。屈折後のレイは始点が立体の内部にあり、そこを 0 に
+ * 丸めると「始点が内部だった」情報が失われて入口面と出口面を取り違えるため。
+ * 前方への絞り込みは tracer の責務とする。
+ *
+ * 平行な面（n·dir === 0）は区間を削れないので、始点がその半空間の外側にあれば
+ * レイ全体が立体と交わらず null、内側または面上なら制約なしとして読み飛ばす。
+ * 面上（符号付き距離 0）を内側に含めるのは、凸多面体を閉集合として扱うため。
+ *
+ * @param targetRay レイ
+ * @param solid 凸多面体（外向き法線つき平面の集合）
+ * @returns 交差区間と入口・出口の面。交差しない場合は null
+ * @throws {RangeError} 平面が 4 枚未満の場合（有界な立体を構成できない）
+ */
+export function intersectRayConvexSolid(
+  targetRay: Ray,
+  solid: ConvexSolid
+): ConvexSolidHit | null {
+  if (solid.length < MIN_PLANE_COUNT) {
+    throw new RangeError(
+      `凸多面体には平面が ${MIN_PLANE_COUNT} 枚以上必要です（受け取った枚数: ${solid.length}）`
+    );
+  }
+
+  let tEnter = Number.NEGATIVE_INFINITY;
+  let tExit = Number.POSITIVE_INFINITY;
+  let enterPlane: Plane | null = null;
+  let exitPlane: Plane | null = null;
+
+  for (const currentPlane of solid) {
+    const denominator = dot(currentPlane.normal, targetRay.direction);
+
+    if (denominator === 0) {
+      // 平行。始点が半空間の外側ならレイ全体が交わらない。内側・面上なら制約にならない
+      if (signedDistanceToPlane(currentPlane, targetRay.origin) > 0) {
+        return null;
+      }
+      continue;
+    }
+
+    const t = intersectRayPlane(targetRay, currentPlane);
+
+    if (t === null) {
+      continue;
+    }
+
+    if (denominator < 0) {
+      if (t > tEnter) {
+        tEnter = t;
+        enterPlane = currentPlane;
+      }
+    } else if (t < tExit) {
+      tExit = t;
+      exitPlane = currentPlane;
+    }
+
+    if (tEnter > tExit) {
+      return null;
+    }
+  }
+
+  // 非有界な平面集合では入口・出口が確定しない（例: z 方向に開いた無限角柱）
+  if (enterPlane === null || exitPlane === null) {
+    return null;
+  }
+
+  return { tEnter, tExit, enterPlane, exitPlane };
 }

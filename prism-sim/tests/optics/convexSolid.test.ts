@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 // NOTE: convexSolid.ts / vec3.ts は未実装。TDD の Red フェーズのため、この import は解決しない。
 import {
+  intersectRayConvexSolid,
   intersectRayPlane,
   plane,
   pointOnRay,
@@ -9,6 +10,7 @@ import {
   signedDistanceToPlane,
 } from '../../src/optics/convexSolid';
 import { normalize, vec3 } from '../../src/optics/vec3';
+import type { ConvexSolid, ConvexSolidHit } from '../../src/types/optics';
 
 /**
  * src/optics/convexSolid.ts の受け入れ条件（1-3-3: レイ⇔平面交差）。
@@ -299,5 +301,237 @@ describe('intersectRayPlane: 斜め入射', () => {
 
     // Assert
     expect(Math.abs(signedDistanceToPlane(PLANE_X2, intersection))).toBeLessThanOrEqual(TOLERANCE);
+  });
+});
+
+// ===========================================================================
+// intersectRayConvexSolid（スラブ法）の受け入れ条件
+// ===========================================================================
+//
+// 凸多面体を半空間の共通部分とみなし、レイが貫く区間 [tEnter, tExit] を求める。
+//
+// 設計判断:
+//   - tEnter < 0 はクランプしない。屈折後のレイは始点が立体の内部にあり、
+//     「始点が内部だった」情報を失うと tracer が入口面と出口面を取り違えるため。
+//   - 平行な面（n·dir === 0）は、始点が外側（dist > 0）なら全体が交差せず null、
+//     内側または面上（dist <= 0）なら区間を狭めない制約なしとして読み飛ばす。
+//   - dist === 0（面上を滑る）は内側扱い、tEnter === tExit（辺・頂点をかすめる）は
+//     交差ありとする。凸多面体を閉集合として扱い、signedDistanceToPlane の
+//     「負が内側・0 が面上」という規約と揃えるため。
+//   - solid.length < 4 は RangeError（3 次元で有界な立体には半空間が最低 4 枚要る）。
+//     4 枚以上でも非有界な組み合わせでは enter/exit が確定しないため null を返す。
+
+/** 立方体 [-1,1]³ を構成する 6 平面。同一性で入口・出口の面を検証するため個別に持つ。 */
+const CUBE_PLANE_POS_X = plane(vec3(1, 0, 0), 1);
+const CUBE_PLANE_NEG_X = plane(vec3(-1, 0, 0), 1);
+const CUBE_PLANE_POS_Y = plane(vec3(0, 1, 0), 1);
+const CUBE_PLANE_NEG_Y = plane(vec3(0, -1, 0), 1);
+const CUBE_PLANE_POS_Z = plane(vec3(0, 0, 1), 1);
+const CUBE_PLANE_NEG_Z = plane(vec3(0, 0, -1), 1);
+
+/** 手組みの立方体 [-1,1]³。プリズム固有の幾何から切り離してアルゴリズムを検証する。 */
+const UNIT_CUBE: ConvexSolid = [
+  CUBE_PLANE_POS_X,
+  CUBE_PLANE_NEG_X,
+  CUBE_PLANE_POS_Y,
+  CUBE_PLANE_NEG_Y,
+  CUBE_PLANE_POS_Z,
+  CUBE_PLANE_NEG_Z,
+];
+
+/** 交差するはずのケースで null を弾き、以降を非 null として扱えるようにする。 */
+function expectHit(hit: ConvexSolidHit | null): ConvexSolidHit {
+  if (hit === null) {
+    throw new Error('交差するはずのケースで null が返りました');
+  }
+
+  return hit;
+}
+
+describe('intersectRayConvexSolid: 正面貫通', () => {
+  it('入口と出口の t が 4 と 6 になる', () => {
+    // Arrange
+    const r = ray(vec3(-5, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.tEnter, hit.tExit]).toEqual([4, 6]);
+  });
+
+  it('入口面が -x、出口面が +x になる', () => {
+    // Arrange
+    const r = ray(vec3(-5, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.enterPlane, hit.exitPlane]).toEqual([CUBE_PLANE_NEG_X, CUBE_PLANE_POS_X]);
+  });
+});
+
+describe('intersectRayConvexSolid: 始点が立体の内部', () => {
+  it('tEnter が負・tExit が正になる（-1 と 1。クランプしない）', () => {
+    // Arrange: 屈折後のレイに相当する最重要ケース
+    const r = ray(vec3(0, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.tEnter, hit.tExit]).toEqual([-1, 1]);
+  });
+
+  it('入口面は後方の -x 面として返る', () => {
+    // Arrange
+    const r = ray(vec3(0, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.enterPlane, hit.exitPlane]).toEqual([CUBE_PLANE_NEG_X, CUBE_PLANE_POS_X]);
+  });
+});
+
+describe('intersectRayConvexSolid: 立体がレイの後方にある', () => {
+  it('tEnter と tExit がともに負のまま返る（-6 と -4）', () => {
+    // Arrange: 前方への絞り込みは tracer の責務なので、ここでは区間をそのまま返す
+    const r = ray(vec3(5, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.tEnter, hit.tExit]).toEqual([-6, -4]);
+  });
+});
+
+describe('intersectRayConvexSolid: 交差しない', () => {
+  it('平行な面の外側を進む場合は null を返す', () => {
+    // Arrange: y = 2 は +y 面の外側。+y 面に対し n·dir = 0 かつ dist > 0
+    const r = ray(vec3(-5, 2, 0), vec3(1, 0, 0));
+
+    // Act
+    const actual = intersectRayConvexSolid(r, UNIT_CUBE);
+
+    // Assert
+    expect(actual).toBeNull();
+  });
+
+  it('tEnter > tExit となる場合は null を返す', () => {
+    // Arrange: 斜めに進んで立方体の脇を通り抜ける（tEnter≈5.66 > tExit≈1.41）
+    const r = ray(vec3(-5, 0, 0), normalize(vec3(1, 1, 0)));
+
+    // Act
+    const actual = intersectRayConvexSolid(r, UNIT_CUBE);
+
+    // Assert
+    expect(actual).toBeNull();
+  });
+});
+
+describe('intersectRayConvexSolid: 面上を滑る（かすめ）', () => {
+  it('dist === 0 を内側として扱い、交差ありと報告する', () => {
+    // Arrange: y = 1 はちょうど +y 面上。閉集合として扱う規約を固定する
+    const r = ray(vec3(-5, 1, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.tEnter, hit.tExit]).toEqual([4, 6]);
+  });
+});
+
+describe('intersectRayConvexSolid: 平行な面を読み飛ばす', () => {
+  it('z 軸方向のレイで x・y の 4 面が制約にならない', () => {
+    // Arrange: x,y の 4 面は n·dir = 0 かつ dist < 0（内側）なので区間を狭めない
+    const r = ray(vec3(0, 0, 5), vec3(0, 0, -1));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.tEnter, hit.tExit]).toEqual([4, 6]);
+  });
+
+  it('入口面が +z、出口面が -z になる', () => {
+    // Arrange
+    const r = ray(vec3(0, 0, 5), vec3(0, 0, -1));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.enterPlane, hit.exitPlane]).toEqual([CUBE_PLANE_POS_Z, CUBE_PLANE_NEG_Z]);
+  });
+});
+
+describe('intersectRayConvexSolid: 斜め入射', () => {
+  it('tEnter が √2 = 1.4142135623730951 になる', () => {
+    // Arrange
+    const r = ray(vec3(-2, -0.5, 0), normalize(vec3(1, 1, 0)));
+    const expectedTEnter = 1.4142135623730951;
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect(Math.abs(hit.tEnter - expectedTEnter)).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it('tExit が 1.5√2 = 2.1213203435596428 になる', () => {
+    // Arrange
+    const r = ray(vec3(-2, -0.5, 0), normalize(vec3(1, 1, 0)));
+    const expectedTExit = 2.1213203435596428;
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect(Math.abs(hit.tExit - expectedTExit)).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it('入口面と出口面が別々の軸の面になる（-x で入り +y で出る）', () => {
+    // Arrange: 入口・出口を独立に選んでいることを担保する
+    const r = ray(vec3(-2, -0.5, 0), normalize(vec3(1, 1, 0)));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, UNIT_CUBE));
+
+    // Assert
+    expect([hit.enterPlane, hit.exitPlane]).toEqual([CUBE_PLANE_NEG_X, CUBE_PLANE_POS_Y]);
+  });
+});
+
+describe('intersectRayConvexSolid: 異常系と非有界', () => {
+  it('平面が 3 枚なら RangeError を投げる（有界な立体には最低 4 枚要る）', () => {
+    // Arrange
+    const tooFewPlanes: ConvexSolid = [CUBE_PLANE_POS_X, CUBE_PLANE_NEG_X, CUBE_PLANE_POS_Y];
+    const r = ray(vec3(-5, 0, 0), vec3(1, 0, 0));
+
+    // Act & Assert
+    expect(() => intersectRayConvexSolid(r, tooFewPlanes)).toThrow(RangeError);
+  });
+
+  it('非有界な無限角柱に軸方向のレイを流すと null を返す', () => {
+    // Arrange: ±x, ±y の 4 面は z 方向に開いており、z 軸方向のレイに対しては
+    //          すべて n·dir = 0 かつ内側となるため enter / exit が確定しない
+    const infiniteColumn: ConvexSolid = [
+      CUBE_PLANE_POS_X,
+      CUBE_PLANE_NEG_X,
+      CUBE_PLANE_POS_Y,
+      CUBE_PLANE_NEG_Y,
+    ];
+    const r = ray(vec3(0, 0, -5), vec3(0, 0, 1));
+
+    // Act
+    const actual = intersectRayConvexSolid(r, infiniteColumn);
+
+    // Assert
+    expect(actual).toBeNull();
   });
 });

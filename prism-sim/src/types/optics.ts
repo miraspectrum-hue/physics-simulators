@@ -46,3 +46,27 @@ export interface Plane {
   /** 原点から平面までの符号付き距離 d */
   readonly distance: number;
 }
+
+/**
+ * 凸多面体。外向き法線を持つ平面が張る半空間の共通部分として表す。
+ *
+ * 3 次元で有界な立体を作るには半空間が最低 4 枚必要。
+ */
+export type ConvexSolid = readonly Plane[];
+
+/**
+ * レイが凸多面体を貫く区間と、その入口・出口の面。
+ *
+ * `tEnter` は負にもなる（レイの始点が立体の内部にある場合）。前方への絞り込みは
+ * tracer の責務であり、ここでは幾何的な区間をそのまま返す。
+ */
+export interface ConvexSolidHit {
+  /** 立体に入る位置の交差パラメータ */
+  readonly tEnter: number;
+  /** 立体から出る位置の交差パラメータ */
+  readonly tExit: number;
+  /** 入口の面（法線は外向き） */
+  readonly enterPlane: Plane;
+  /** 出口の面（法線は外向き） */
+  readonly exitPlane: Plane;
+}
