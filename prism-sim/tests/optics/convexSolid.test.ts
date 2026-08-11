@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 // NOTE: convexSolid.ts / vec3.ts は未実装。TDD の Red フェーズのため、この import は解決しない。
 import {
+  createTriangularPrism,
   intersectRayConvexSolid,
   intersectRayPlane,
   plane,
@@ -9,8 +10,8 @@ import {
   ray,
   signedDistanceToPlane,
 } from '../../src/optics/convexSolid';
-import { normalize, vec3 } from '../../src/optics/vec3';
-import type { ConvexSolid, ConvexSolidHit } from '../../src/types/optics';
+import { length, normalize, vec3 } from '../../src/optics/vec3';
+import type { ConvexSolid, ConvexSolidHit, Plane, Vec3 } from '../../src/types/optics';
 
 /**
  * src/optics/convexSolid.ts の受け入れ条件（1-3-3: レイ⇔平面交差）。
@@ -534,4 +535,248 @@ describe('intersectRayConvexSolid: 異常系と非有界', () => {
     // Assert
     expect(actual).toBeNull();
   });
+});
+
+// ===========================================================================
+// createTriangularPrism（正三角柱の平面集合生成）の受け入れ条件
+// ===========================================================================
+//
+// SPEC.md「プリズムの標準配置」: 断面は XY 平面、押し出しは Z 軸、頂角は +Y、原点は重心。
+// 平面の順序は [左側面, 右側面, 底面, 前端面(+z), 後端面(-z)]。頂角は 60° 固定。
+//
+// 一辺 a = 2 / 押し出し長 L = 2 のときの手計算値:
+//   内接円半径 r = a/(2√3) = 0.5773502691896258   ← 側面 3 枚の距離
+//   外接円半径 R = a/√3    = 1.1547005383792517   ← 頂点の y 座標
+//   側面の法線は底面法線 (0,-1,0) を ±120° 回転した (±√3/2, 1/2, 0)
+//   √3/2 = 0.8660254037844386
+//   端面は (0,0,±1)、距離は L/2 = 1
+//
+// ここでは純粋な幾何のみを検証する。δ_min の答え合わせは屈折を含むため tracer の仕事。
+
+const PRISM_SIDE_LENGTH = 2;
+const PRISM_DEPTH = 2;
+const PRISM_INRADIUS = 0.5773502691896258;
+const PRISM_CIRCUMRADIUS = 1.1547005383792517;
+const HALF_SQRT3 = 0.8660254037844386;
+const PRISM_HALF_DEPTH = 1;
+
+/** 平面の法線と距離を許容差つきで検証する。 */
+function expectPlaneToBeClose(actual: Plane, expectedNormal: Vec3, expectedDistance: number): void {
+  expect(Math.abs(actual.normal.x - expectedNormal.x)).toBeLessThanOrEqual(TOLERANCE);
+  expect(Math.abs(actual.normal.y - expectedNormal.y)).toBeLessThanOrEqual(TOLERANCE);
+  expect(Math.abs(actual.normal.z - expectedNormal.z)).toBeLessThanOrEqual(TOLERANCE);
+  expect(Math.abs(actual.distance - expectedDistance)).toBeLessThanOrEqual(TOLERANCE);
+}
+
+describe('createTriangularPrism: 平面集合の構成', () => {
+  it('平面がちょうど 5 枚返る（側面 3 + 端面 2）', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    expect(prism).toHaveLength(5);
+  });
+
+  it('5 枚すべての法線が単位ベクトルである', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const nonUnitNormals = prism.filter((p) => Math.abs(length(p.normal) - 1) > TOLERANCE);
+
+    // Assert
+    expect(nonUnitNormals).toEqual([]);
+  });
+
+  it('左側面が (-√3/2, 1/2, 0)・距離 r になる', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    expectPlaneToBeClose(prism[0], { x: -HALF_SQRT3, y: 0.5, z: 0 }, PRISM_INRADIUS);
+  });
+
+  it('右側面が (√3/2, 1/2, 0)・距離 r になる', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    expectPlaneToBeClose(prism[1], { x: HALF_SQRT3, y: 0.5, z: 0 }, PRISM_INRADIUS);
+  });
+
+  it('底面が (0, -1, 0)・距離 r になる', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    expectPlaneToBeClose(prism[2], { x: 0, y: -1, z: 0 }, PRISM_INRADIUS);
+  });
+
+  it('前端面が (0, 0, 1)・距離 L/2 になる', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    expectPlaneToBeClose(prism[3], { x: 0, y: 0, z: 1 }, PRISM_HALF_DEPTH);
+  });
+
+  it('後端面が (0, 0, -1)・距離 L/2 になる', () => {
+    // Arrange & Act
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    expectPlaneToBeClose(prism[4], { x: 0, y: 0, z: -1 }, PRISM_HALF_DEPTH);
+  });
+});
+
+describe('createTriangularPrism: 法線が外向きである', () => {
+  it('重心（原点）の符号付き距離が全 5 面で負になる', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const centroid = vec3(0, 0, 0);
+
+    // Act
+    const nonNegative = prism
+      .map((p) => signedDistanceToPlane(p, centroid))
+      .filter((distance) => distance >= 0);
+
+    // Assert
+    expect(nonNegative).toEqual([]);
+  });
+
+  it('頂点 (0, R, 0) は接する左右の側面で符号付き距離が 0 になる', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const apex = vec3(0, PRISM_CIRCUMRADIUS, 0);
+
+    // Act
+    const toLeft = signedDistanceToPlane(prism[0], apex);
+    const toRight = signedDistanceToPlane(prism[1], apex);
+
+    // Assert
+    expect(Math.max(Math.abs(toLeft), Math.abs(toRight))).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it('頂点 (0, R, 0) は底面と前後端面では符号付き距離が負になる', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const apex = vec3(0, PRISM_CIRCUMRADIUS, 0);
+
+    // Act
+    const distances = [
+      signedDistanceToPlane(prism[2], apex),
+      signedDistanceToPlane(prism[3], apex),
+      signedDistanceToPlane(prism[4], apex),
+    ];
+
+    // Assert
+    expect(distances.filter((distance) => distance >= 0)).toEqual([]);
+  });
+});
+
+describe('createTriangularPrism: レイの貫通', () => {
+  it('主断面内を +x へ進むレイの tEnter / tExit が 4.333333333333333 / 5.666666666666667', () => {
+    // Arrange: y = 0 の高さでは左側面が x = -2/3、右側面が x = +2/3 を通る
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(-5, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+
+    // Assert
+    expect(Math.abs(hit.tEnter - 4.333333333333333)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(hit.tExit - 5.666666666666667)).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it('そのレイの入口面が左側面、出口面が右側面になる', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(-5, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+
+    // Assert
+    expect([hit.enterPlane, hit.exitPlane]).toEqual([prism[0], prism[1]]);
+  });
+
+  it('そのレイの交点の x 座標が -2/3 と +2/3 になる', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(-5, 0, 0), vec3(1, 0, 0));
+    const expectedX = 0.6666666666666667;
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+    const entryPoint = pointOnRay(r, hit.tEnter);
+    const exitPoint = pointOnRay(r, hit.tExit);
+
+    // Assert
+    expect(Math.abs(entryPoint.x + expectedX)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(exitPoint.x - expectedX)).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it('端面から入るレイの tEnter / tExit が 4 と 6 になる', () => {
+    // Arrange: 端面は z = ±1。側面 3 枚は n·dir = 0 かつ内側なので制約にならない
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(0, 0, -5), vec3(0, 0, 1));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+
+    // Assert
+    expect([hit.tEnter, hit.tExit]).toEqual([4, 6]);
+  });
+
+  it('端面から入るレイの入口面が後端面、出口面が前端面になる', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(0, 0, -5), vec3(0, 0, 1));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+
+    // Assert
+    expect([hit.enterPlane, hit.exitPlane]).toEqual([prism[4], prism[3]]);
+  });
+
+  it('頂点より上（y = 2）を通るレイは交差しない', () => {
+    // Arrange: 外接円半径 R ≈ 1.155 より上を通過する
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(-5, 2, 0), vec3(1, 0, 0));
+
+    // Act
+    const actual = intersectRayConvexSolid(r, prism);
+
+    // Assert
+    expect(actual).toBeNull();
+  });
+
+  it('重心を始点とするレイは tEnter < 0 < tExit になる（原点が内部）', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = ray(vec3(0, 0, 0), vec3(1, 0, 0));
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+
+    // Assert
+    expect([hit.tEnter < 0, hit.tExit > 0]).toEqual([true, true]);
+  });
+});
+
+describe('createTriangularPrism: 異常系', () => {
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    '一辺の長さが %s なら RangeError を投げる',
+    (invalidSideLength) => {
+      // Arrange & Act & Assert
+      expect(() => createTriangularPrism(invalidSideLength, PRISM_DEPTH)).toThrow(RangeError);
+    }
+  );
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    '押し出し長が %s なら RangeError を投げる',
+    (invalidDepth) => {
+      // Arrange & Act & Assert
+      expect(() => createTriangularPrism(PRISM_SIDE_LENGTH, invalidDepth)).toThrow(RangeError);
+    }
+  );
 });

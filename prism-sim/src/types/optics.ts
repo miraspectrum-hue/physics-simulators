@@ -55,6 +55,15 @@ export interface Plane {
 export type ConvexSolid = readonly Plane[];
 
 /**
+ * 正三角柱を構成する平面 5 枚。`ConvexSolid` に代入できる。
+ *
+ * 順序は `[左側面, 右側面, 底面, 前端面(+z), 後端面(-z)]`（SPEC.md「プリズムの標準配置」）。
+ * 配列ではなくタプルにすることで「必ず 5 枚」という契約が型に表れ、
+ * `noUncheckedIndexedAccess` の下でもリテラル添字が `Plane | undefined` にならない。
+ */
+export type TriangularPrismPlanes = readonly [Plane, Plane, Plane, Plane, Plane];
+
+/**
  * レイが凸多面体を貫く区間と、その入口・出口の面。
  *
  * `tEnter` は負にもなる（レイの始点が立体の内部にある場合）。前方への絞り込みは

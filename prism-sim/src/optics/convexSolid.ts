@@ -6,9 +6,16 @@
  * Three.js には依存しない。
  */
 
-import type { ConvexSolid, ConvexSolidHit, Plane, Ray, Vec3 } from '../types/optics';
+import type {
+  ConvexSolid,
+  ConvexSolidHit,
+  Plane,
+  Ray,
+  TriangularPrismPlanes,
+  Vec3,
+} from '../types/optics';
 
-import { addScaled, dot, length } from './vec3';
+import { addScaled, dot, length, vec3 } from './vec3';
 
 /** 3 次元で有界な凸多面体を構成するのに必要な半空間の最小枚数（四面体）。 */
 const MIN_PLANE_COUNT = 4;
@@ -200,4 +207,56 @@ export function intersectRayConvexSolid(
   }
 
   return { tEnter, tExit, enterPlane, exitPlane };
+}
+
+/** √3/2。底面法線 (0,-1,0) を ±120° 回転したときの x 成分。 */
+const HALF_SQRT3 = Math.sqrt(3) / 2;
+
+/**
+ * 寸法が正の有限数であることを検証する。
+ *
+ * @param value 検証対象の寸法
+ * @param label エラーメッセージ用の名称
+ * @throws {RangeError} value が正の有限数でない場合
+ */
+function assertPositiveFinite(value: number, label: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`${label}は正の有限数である必要があります（受け取った値: ${value}）`);
+  }
+}
+
+/**
+ * 正三角柱（頂角 60°）の平面集合を生成する。
+ *
+ * SPEC.md「プリズムの標準配置」に従い、断面を XY 平面、押し出しを Z 軸、頂角を +Y、
+ * 原点を重心とする基準姿勢で生成する。任意姿勢への変換は呼び出し側の責務。
+ *
+ * 正三角形では重心と内心が一致するため、側面 3 枚の距離はいずれも内接円半径
+ * `r = a / (2√3)` に揃う。側面の法線は底面法線 (0,-1,0) を ±120° 回転した
+ * (±√3/2, 1/2, 0) であり、端面は (0,0,±1)・距離 `L/2`。
+ *
+ * 頂角は 60° 固定とする（F-01 が正三角形と定めるため。頂角を変えると正三角形でなくなる）。
+ *
+ * @param sideLength 正三角形の一辺の長さ a。正の有限数
+ * @param depth 押し出し長 L。正の有限数
+ * @returns [左側面, 右側面, 底面, 前端面(+z), 後端面(-z)] の 5 平面
+ * @throws {RangeError} 寸法が正の有限数でない場合
+ */
+export function createTriangularPrism(
+  sideLength: number,
+  depth: number
+): TriangularPrismPlanes {
+  assertPositiveFinite(sideLength, '一辺の長さ');
+  assertPositiveFinite(depth, '押し出し長');
+
+  const inradius = sideLength / (2 * Math.sqrt(3));
+  const halfDepth = depth / 2;
+
+  return [
+    plane(vec3(-HALF_SQRT3, 0.5, 0), inradius),
+    plane(vec3(HALF_SQRT3, 0.5, 0), inradius),
+    plane(vec3(0, -1, 0), inradius),
+    plane(vec3(0, 0, 1), halfDepth),
+    plane(vec3(0, 0, -1), halfDepth),
+  ];
 }
