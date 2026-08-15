@@ -6,7 +6,9 @@ import {
   reflectDirection,
   refractDirection,
   traceRay,
+  traceSpectrum,
 } from '../../src/optics/tracer';
+import type { PrismMaterial } from '../../src/optics/constants';
 import {
   APEX_ANGLE_DEG,
   BK7,
@@ -898,5 +900,114 @@ describe('N. traceRay: 追跡に使った波長と屈折率を記録する', () 
 
     // Assert
     expect([actual.wavelengthNm, actual.refractiveIndex]).toEqual([486.13, SF10.catalogNd]);
+  });
+});
+
+// ===========================================================================
+// traceSpectrum（サイクル ④c: 波長ごとの一括追跡＝分光そのもの）
+// ===========================================================================
+//
+// 依存は dispersion（λ → n）と traceRay のみ。色（λ → sRGB）は描画層の関心事なので
+// ここでは扱わず、波長リストは呼び出し側から受け取る。
+//
+// 入射角は BK7 の対称通過となる 49.323347736° に固定し、波長だけを変える。
+// 倍精度で確認した BK7 の屈折率と偏角:
+//   660nm（赤）  n = 1.514241873278237  → 38.422269936°
+//   550nm（緑）  n = 1.518484297520661  → 38.794950228°
+//   410nm（紫）  n = 1.529585127900059  → 39.782181108°
+// 同じ入射・同じ波長 587.56nm での材質差:
+//   BK7   n = 1.516765916911719  → 38.643699466°
+//   SF10  n = 1.728273001179825  → 64.278502828°
+
+describe('O. traceSpectrum: 白色光が波長ごとに分かれる（分光）', () => {
+  const RED_NM = 660;
+  const GREEN_NM = 550;
+  const VIOLET_NM = 410;
+
+  /** 分光に用いる共通の入射レイ（BK7 の対称通過となる角度）。 */
+  function spectrumIncidentRay(): Ray {
+    return incidentRayOnLeftFace(49.323347736);
+  }
+
+  /** 添字アクセスが undefined になり得るため、存在を確かめてから返す。 */
+  function elementAt<T>(items: readonly T[], index: number): T {
+    const item = items[index];
+
+    if (item === undefined) {
+      throw new Error(`要素[${index}] が存在しません（長さ: ${items.length}）`);
+    }
+
+    return item;
+  }
+
+  /** 波長ごとの偏角 [deg]。 */
+  function deviationsDeg(material: PrismMaterial, wavelengths: readonly number[]): number[] {
+    return traceSpectrum(spectrumIncidentRay(), PRISM, material, wavelengths).map(deviationDeg);
+  }
+
+  it('赤・緑・紫の偏角が確定値と一致する', () => {
+    // Arrange & Act
+    const actualDegs = deviationsDeg(BK7, [RED_NM, GREEN_NM, VIOLET_NM]);
+
+    // Assert
+    expect(Math.abs(elementAt(actualDegs, 0) - 38.422269936))
+      .toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
+    expect(Math.abs(elementAt(actualDegs, 1) - 38.794950228))
+      .toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
+    expect(Math.abs(elementAt(actualDegs, 2) - 39.782181108))
+      .toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
+  });
+
+  it('偏角が 赤 < 緑 < 紫 の順に大きくなる（波長が短いほど強く曲がる）', () => {
+    // Arrange & Act
+    const actualDegs = deviationsDeg(BK7, [RED_NM, GREEN_NM, VIOLET_NM]);
+
+    // Assert
+    expect(elementAt(actualDegs, 0)).toBeLessThan(elementAt(actualDegs, 1));
+    expect(elementAt(actualDegs, 1)).toBeLessThan(elementAt(actualDegs, 2));
+  });
+
+  it('各要素が同じ屈折率で traceRay を呼んだ結果と全フィールド一致する', () => {
+    // Arrange
+    const wavelengths = [RED_NM, GREEN_NM, VIOLET_NM];
+    const incident = spectrumIncidentRay();
+    const expected = wavelengths.map((wavelengthNm) =>
+      traceRay(incident, PRISM, refractiveIndex(BK7, wavelengthNm), wavelengthNm)
+    );
+
+    // Act
+    const actual = traceSpectrum(incident, PRISM, BK7, wavelengths);
+
+    // Assert
+    expect(actual).toEqual(expected);
+  });
+
+  it('出力の本数が波長リストの長さと一致する', () => {
+    // Arrange
+    const wavelengths = [380, 450, 520, 590, 660, 730];
+
+    // Act
+    const actual = traceSpectrum(spectrumIncidentRay(), PRISM, BK7, wavelengths);
+
+    // Assert
+    expect(actual.length).toBe(wavelengths.length);
+  });
+
+  it('波長リストが空なら空配列を返す（例外を投げない）', () => {
+    // Arrange & Act
+    const actual = traceSpectrum(spectrumIncidentRay(), PRISM, BK7, []);
+
+    // Assert
+    expect(actual).toEqual([]);
+  });
+
+  it('同じ波長でも材質が違えば偏角が変わる（分散の大きい SF10 の方が曲がる）', () => {
+    // Arrange & Act
+    const bk7Deg = elementAt(deviationsDeg(BK7, [587.56]), 0);
+    const sf10Deg = elementAt(deviationsDeg(SF10, [587.56]), 0);
+
+    // Assert
+    expect(Math.abs(bk7Deg - 38.643699466)).toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
+    expect(Math.abs(sf10Deg - 64.278502828)).toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
   });
 });

@@ -12,8 +12,10 @@
 
 import type { ConvexSolid, LightPath, Ray, Segment, Vec3 } from '../types/optics';
 
+import type { PrismMaterial } from './constants';
 import { EXIT_EXTENSION_LENGTH, MAX_BOUNCE_COUNT } from './constants';
 import { intersectRayConvexSolid, pointOnRay, ray } from './convexSolid';
+import { refractiveIndex } from './dispersion';
 import { canTransmit } from './fresnel';
 import { refractionAngleDeg } from './refraction';
 import { addScaled, dot, length, lengthSquared, negate, normalize, scale, sub } from './vec3';
@@ -229,6 +231,34 @@ export function traceRay(
   }
 
   return { wavelengthNm, refractiveIndex, segments, termination: 'bounceLimit' };
+}
+
+/**
+ * 同じ入射光線を波長ごとに追跡し、光路の束を返す。分散はこの束の広がりとして現れる。
+ *
+ * 波長ごとに dispersion.refractiveIndex で屈折率を求め、traceRay に渡す。
+ * 追跡そのものは屈折率を受け取るだけの traceRay に閉じており、分散への依存は本関数に集約する。
+ * 色（λ → sRGB）は描画層の関心事なので、ここでは扱わない。
+ *
+ * 波長ごとの追跡は独立で、互いに影響しない。本関数は屈折率を引いて traceRay へ渡すだけの
+ * 薄いラッパーであり、固有の物理を持たない。
+ *
+ * @param incidentRay 入射光線（局所空間。direction は単位ベクトル）
+ * @param solid プリズムを表す凸多面体（外向き法線つき平面の集合）
+ * @param material プリズムの材質（Cauchy 分散パラメータ）
+ * @param wavelengths 追跡する波長の並び [nm]
+ * @returns 波長リストと同じ順序・同じ本数の光路
+ * @throws {RangeError} 波長や引数が定義域外の場合（検証は refractiveIndex と traceRay に委譲する）
+ */
+export function traceSpectrum(
+  incidentRay: Ray,
+  solid: ConvexSolid,
+  material: PrismMaterial,
+  wavelengths: readonly number[]
+): readonly LightPath[] {
+  return wavelengths.map((wavelengthNm) =>
+    traceRay(incidentRay, solid, refractiveIndex(material, wavelengthNm), wavelengthNm)
+  );
 }
 
 /**
