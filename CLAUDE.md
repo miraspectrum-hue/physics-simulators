@@ -14,7 +14,7 @@
 | 3D | Three.js 0.185.1 + @types/three 0.185.4（WebGL2） |
 | ビルド | Vite 8.2.1 |
 | スタイル | 素の CSS（CSS Variables でテーマ管理、CSS フレームワーク不使用） |
-| テスト | Vitest 4.1.10（`src/optics/` のみ対象） |
+| テスト | Vitest 4.1.10（`src/optics/` と、Three の数学（`Matrix4` / `Vector3`）のみに依存する `src/scene/` の純粋関数が対象。WebGL・DOM に触るモジュールは対象外） |
 | パッケージ管理 | npm |
 | 実行環境 | Chrome 最新版 / デスクトップ |
 
@@ -103,7 +103,10 @@ export function refractiveIndex(material: PrismMaterial, wavelengthNm: number): 
   - optics 層の割り当てが 60fps に影響するかは 5-1（パフォーマンス検証）で測定し、問題が出た場合にのみ tracer にミュータブルな高速経路を追加する
 - ジオメトリ・マテリアルは `dispose()` 可能な形で保持する
 - 描画ループは常時 60fps で回し、**光路の再計算のみ dirty フラグで抑制**する
-- 光線の更新は `LineGeometry.setPositions()` で行い、ジオメトリを作り直さない
+- 光線の更新は `setPositions()` で行い、ジオメトリを作り直さない
+  - ただし `setPositions()` / `setColors()` は呼ぶたびに `InstancedInterleavedBuffer` と属性を作り直す（`LineSegmentsGeometry.js` 参照）。**呼ぶのは初回の属性確立のときだけ**とする
+  - 以降は**自前で保持した `Float32Array` を書き換え、`geometry.attributes.instanceStart.data.needsUpdate = true`** を立てる。これで更新時の割り当てがゼロになる
+  - この方法ではバウンディングが更新されないため、光線オブジェクトは `frustumCulled = false` にする（1 オブジェクトに束ねるのでカリングの利益はない）
 
 ### コメント
 
