@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { BK7, DIAMOND, SF10, WATER } from '../../src/optics/constants';
 import { canTransmit, criticalAngle } from '../../src/optics/fresnel';
-// NOTE: refraction.ts は未実装。TDD の Red フェーズのため、この import は解決しない。
 import { refractionAngleDeg } from '../../src/optics/refraction';
 
 /**

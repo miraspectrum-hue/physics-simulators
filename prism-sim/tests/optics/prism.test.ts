@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { APEX_ANGLE_DEG, BK7, DIAMOND, SF10, WATER } from '../../src/optics/constants';
 import { canTransmit } from '../../src/optics/fresnel';
-// NOTE: prism.ts は未実装。TDD の Red フェーズのため、この import は解決しない。
 import {
   canTransmitThroughPrism,
   minimumDeviationDeg,

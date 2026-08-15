@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-// NOTE: convexSolid.ts / vec3.ts は未実装。TDD の Red フェーズのため、この import は解決しない。
 import {
   createTriangularPrism,
   intersectRayConvexSolid,
