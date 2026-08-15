@@ -5,24 +5,7 @@
  * 変更する場合は SPEC.md 側と必ず同時に更新し、n_d とアッベ数の検算を通すこと。
  */
 
-/**
- * プリズム材質の Cauchy 分散パラメータとカタログ値。
- *
- * NOTE: この型は Phase 1 タスク 1-1-1 で `src/types/optics.ts` へ移設する予定。
- *       現時点では材質データと同居させている。
- */
-export interface PrismMaterial {
-  /** 表示名 */
-  readonly name: string;
-  /** Cauchy 式の A 項（無次元） */
-  readonly cauchyA: number;
-  /** Cauchy 式の B 項 [µm²] */
-  readonly cauchyB: number;
-  /** カタログ屈折率 n_d（λ_d = 587.56nm） */
-  readonly catalogNd: number;
-  /** カタログアッベ数 v_d */
-  readonly catalogAbbe: number;
-}
+import type { PrismMaterial } from '../types/optics';
 
 // ---------------------------------------------------------------------------
 // 基準スペクトル線

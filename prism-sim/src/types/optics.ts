@@ -3,8 +3,6 @@
  *
  * 型宣言のみを置き、実行時の振る舞いは持たない。
  * Three.js には依存しない（`THREE.Vector3` への変換は scene 層の責務）。
- *
- * NOTE: PrismMaterial の constants.ts からの移設は 1-1-1 の残タスクとして別途行う。
  */
 
 /**
@@ -77,6 +75,25 @@ export interface ConvexSolidHit {
   readonly enterPlane: Plane;
   /** 出口の面（法線は外向き） */
   readonly exitPlane: Plane;
+}
+
+/**
+ * プリズム材質の Cauchy 分散パラメータとカタログ値。
+ *
+ * 実際の材質データ（BK7 / SF10 / 水 / ダイヤモンド）は `optics/constants.ts` が持つ。
+ * ここには形だけを置き、値の出典と検算はデータ側に集約する。
+ */
+export interface PrismMaterial {
+  /** 表示名 */
+  readonly name: string;
+  /** Cauchy 式の A 項（無次元） */
+  readonly cauchyA: number;
+  /** Cauchy 式の B 項 [µm²] */
+  readonly cauchyB: number;
+  /** カタログ屈折率 n_d（λ_d = 587.56nm） */
+  readonly catalogNd: number;
+  /** カタログアッベ数 v_d */
+  readonly catalogAbbe: number;
 }
 
 /**

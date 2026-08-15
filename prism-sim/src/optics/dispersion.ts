@@ -6,7 +6,7 @@
  * （spectrum.ts や呼び出し側）の責務とする。
  */
 
-import type { PrismMaterial } from './constants';
+import type { PrismMaterial } from '../types/optics';
 
 /** nm → µm 変換の除数。Cauchy 式は λ を µm で扱うため必要。 */
 const NM_PER_UM = 1000;

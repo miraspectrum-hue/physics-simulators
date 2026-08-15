@@ -6,9 +6,8 @@ import {
   LINE_C_NM,
   LINE_D_NM,
   LINE_F_NM,
-  type PrismMaterial,
 } from '../../src/optics/constants';
-// NOTE: dispersion.ts は未実装。TDD の Red フェーズのため、この import は解決しない。
+import type { PrismMaterial } from '../../src/types/optics';
 import { refractiveIndex } from '../../src/optics/dispersion';
 
 /**

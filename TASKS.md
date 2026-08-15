@@ -51,7 +51,7 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 |---|--------|--------|------|------|
 | 1-1-1a | `types/optics.ts` の**幾何型**（Vec3 / Ray / Plane）※型宣言のみ。three を import しない | 🔴 高 | [x] | - |
 | 1-1-1b | `types/optics.ts` に Segment / LightPath を追加（tracer で必要になる時点で） | 🔴 高 | [x] | 1-4-3 |
-| 1-1-1c | `PrismMaterial` を constants.ts から types/optics.ts へ移設 | 🟡 中 | [ ] | 1-1-1a |
+| 1-1-1c | `PrismMaterial` を constants.ts から types/optics.ts へ移設 | 🟡 中 | [x] | 1-1-1a |
 | 1-1-2 | `optics/constants.ts`（波長範囲・頂角 60°・追跡上限 6・4 材質の定数・基準線 λ_d/λ_F/λ_C） | 🔴 高 | [x] | - |
 
 ### 1-2: 分散とスペクトル
@@ -124,6 +124,13 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 | 2-5 | 光路更新パイプライン（dirty フラグで再計算を抑制、ジオメトリは再生成しない） | 🔴 高 | [ ] | 2-3, 2-4 |
 | 2-6 | 床面と背景グラデーション（`prizm.png` の雰囲気に寄せる） | 🟡 中 | [ ] | 2-1 |
 | 2-7 | UnrealBloomPass によるグロー表現 | 🟡 中 | [ ] | 2-4 |
+| 2-8 | `MaterialName` 文字列ユニオン + `MATERIALS: Record<MaterialName, PrismMaterial>` を導入し、`ALL_MATERIALS = Object.values(MATERIALS)` を導出。材質の網羅をコンパイラ強制にする（詳細は下の注記） | 🟢 低 | [ ] | 4-2 |
+
+**2-8 の背景（1-1-1c で判明・保留した課題）**
+
+- **トリガー**: 材質選択 UI を作るとき（型付きの材質キーが必要になる時点）。それまで着手しない
+- **現状の穴**: `ALL_MATERIALS` は手書きの列挙なので、材質定数を足して追記し忘れてもコンパイラは黙る
+- **保留の理由**: 失敗が良性だから。誤った値でテストが通るのではなく、その材質が「静かに未検証・UI 非表示」になるだけで、消費者（UI）が現れた時点で気づく。消費者不在のうちに型を増やすのは YAGNI
 
 ### Phase 2 完了条件
 - ✅ 固定の入射角・固定姿勢で、白色ビームが虹色に分散して射出する様子が描画される

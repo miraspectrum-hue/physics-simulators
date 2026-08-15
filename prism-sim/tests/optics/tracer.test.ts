@@ -8,7 +8,6 @@ import {
   traceRay,
   traceSpectrum,
 } from '../../src/optics/tracer';
-import type { PrismMaterial } from '../../src/optics/constants';
 import {
   APEX_ANGLE_DEG,
   BK7,
@@ -26,6 +25,7 @@ import { refractionAngleDeg } from '../../src/optics/refraction';
 import { addScaled, cross, dot, length, normalize, sub, vec3 } from '../../src/optics/vec3';
 import type {
   LightPath,
+  PrismMaterial,
   Ray,
   Segment,
   TriangularPrismPlanes,

@@ -10,9 +10,15 @@
  * 臨界角ちょうどで canTransmit と境界がずれ、全反射の判定元が二重化するため。
  */
 
-import type { ConvexSolid, LightPath, Ray, Segment, Vec3 } from '../types/optics';
+import type {
+  ConvexSolid,
+  LightPath,
+  PrismMaterial,
+  Ray,
+  Segment,
+  Vec3,
+} from '../types/optics';
 
-import type { PrismMaterial } from './constants';
 import { EXIT_EXTENSION_LENGTH, MAX_BOUNCE_COUNT } from './constants';
 import { intersectRayConvexSolid, pointOnRay, ray } from './convexSolid';
 import { refractiveIndex } from './dispersion';
