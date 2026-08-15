@@ -12,6 +12,7 @@ import type {
   Plane,
   Ray,
   TriangularPrismPlanes,
+  TriangularPrismVertices,
   Vec3,
 } from '../types/optics';
 
@@ -258,5 +259,41 @@ export function createTriangularPrism(
     plane(vec3(0, -1, 0), inradius),
     plane(vec3(0, 0, 1), halfDepth),
     plane(vec3(0, 0, -1), halfDepth),
+  ];
+}
+
+/**
+ * 正三角柱の頂点 6 個を返す。`createTriangularPrism` と同じ寸法・同じ基準姿勢の立体を表す。
+ *
+ * 描画メッシュをこの頂点から組み立てることで、絵のプリズムと光路計算の立体が
+ * 同一の引数から生まれることを保証する（scene 層が独自に頂点を組むと両者がズレうる）。
+ *
+ * 断面の頂点は、頂角が +Y・重心が原点という基準姿勢から
+ * 外接円半径 `R = a/√3`（頂角の y 座標）と内接円半径 `r = a/(2√3)`（底辺の y 座標）で決まる。
+ *
+ * @param sideLength 正三角形の一辺の長さ a。正の有限数
+ * @param depth 押し出し長 L。正の有限数
+ * @returns `[前(+z) の 頂点・左下・右下, 後(-z) の 頂点・左下・右下]`
+ * @throws {RangeError} 寸法が正の有限数でない場合
+ */
+export function createTriangularPrismVertices(
+  sideLength: number,
+  depth: number
+): TriangularPrismVertices {
+  assertPositiveFinite(sideLength, '一辺の長さ');
+  assertPositiveFinite(depth, '押し出し長');
+
+  const circumradius = sideLength / Math.sqrt(3);
+  const inradius = sideLength / (2 * Math.sqrt(3));
+  const halfSide = sideLength / 2;
+  const halfDepth = depth / 2;
+
+  return [
+    vec3(0, circumradius, halfDepth),
+    vec3(-halfSide, -inradius, halfDepth),
+    vec3(halfSide, -inradius, halfDepth),
+    vec3(0, circumradius, -halfDepth),
+    vec3(-halfSide, -inradius, -halfDepth),
+    vec3(halfSide, -inradius, -halfDepth),
   ];
 }

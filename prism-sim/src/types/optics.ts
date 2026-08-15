@@ -61,6 +61,15 @@ export type ConvexSolid = readonly Plane[];
 export type TriangularPrismPlanes = readonly [Plane, Plane, Plane, Plane, Plane];
 
 /**
+ * 正三角柱の頂点 6 個。`TriangularPrismPlanes` と同じ寸法から生成される同一の立体を表す。
+ *
+ * 順序は `[前(+z) の 頂点・左下・右下, 後(-z) の 頂点・左下・右下]`。
+ * 描画メッシュはこの頂点から組み立て、平面集合と同一の引数から生やすことで
+ * 「絵のプリズムと光路がズレる」経路を断つ。
+ */
+export type TriangularPrismVertices = readonly [Vec3, Vec3, Vec3, Vec3, Vec3, Vec3];
+
+/**
  * レイが凸多面体を貫く区間と、その入口・出口の面。
  *
  * `tEnter` は負にもなる（レイの始点が立体の内部にある場合）。前方への絞り込みは

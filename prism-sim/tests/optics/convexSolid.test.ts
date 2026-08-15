@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createTriangularPrism,
+  createTriangularPrismVertices,
   intersectRayConvexSolid,
   intersectRayPlane,
   plane,
@@ -776,6 +777,158 @@ describe('createTriangularPrism: 異常系', () => {
     (invalidDepth) => {
       // Arrange & Act & Assert
       expect(() => createTriangularPrism(PRISM_SIDE_LENGTH, invalidDepth)).toThrow(RangeError);
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// createTriangularPrismVertices: 描画メッシュと平面集合の整合
+// ---------------------------------------------------------------------------
+//
+// 平面集合と同じ引数から頂点を生やすことで、「絵のプリズム」と「光路計算の立体」が
+// ズレる経路を構造的に断つ。ここではその同一性を検証する。
+//
+// 一辺 a = 2 / 押し出し長 L = 2 のときの頂点（順序は
+// [前(+z) の 頂点・左下・右下, 後(-z) の 頂点・左下・右下]）:
+//   (0, R, ±1) / (-1, -r, ±1) / (1, -r, ±1)
+//   R = 1.1547005383792517（外接円半径）, r = 0.5773502691896258（内接円半径）
+
+/** 頂点が面上にあるとみなす許容差。符号付き距離は乗除算 3 回ぶんの丸めしか乗らない。 */
+const ON_PLANE_TOLERANCE = 1e-9;
+
+/** 頂点と全平面の符号付き距離を返す。 */
+function signedDistancesToAllPlanes(solid: ConvexSolid, point: Vec3): number[] {
+  return solid.map((currentPlane) => signedDistanceToPlane(currentPlane, point));
+}
+
+describe('createTriangularPrismVertices: 平面集合と同一の立体を表す', () => {
+  it('全頂点が立体の内側または面上にある', () => {
+    // Arrange
+    const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const vertices = createTriangularPrismVertices(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Act: 全頂点 × 全平面の符号付き距離の最大値（外向き法線なので正なら立体の外）
+    const maxSignedDistance = Math.max(
+      ...vertices.flatMap((vertex) => signedDistancesToAllPlanes(solid, vertex))
+    );
+
+    // Assert
+    expect(maxSignedDistance).toBeLessThanOrEqual(ON_PLANE_TOLERANCE);
+  });
+
+  it('各頂点がちょうど 3 枚の面上にある', () => {
+    // Arrange
+    const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const vertices = createTriangularPrismVertices(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Act: 三角柱の頂点は側面 2 枚と端面 1 枚が交わる点
+    const onPlaneCounts = vertices.map(
+      (vertex) =>
+        signedDistancesToAllPlanes(solid, vertex).filter(
+          (distance) => Math.abs(distance) <= ON_PLANE_TOLERANCE
+        ).length
+    );
+
+    // Assert
+    expect(onPlaneCounts).toEqual([3, 3, 3, 3, 3, 3]);
+  });
+
+  it('既知の頂点座標と一致する', () => {
+    // Arrange
+    const expected: readonly Vec3[] = [
+      vec3(0, PRISM_CIRCUMRADIUS, PRISM_HALF_DEPTH),
+      vec3(-1, -PRISM_INRADIUS, PRISM_HALF_DEPTH),
+      vec3(1, -PRISM_INRADIUS, PRISM_HALF_DEPTH),
+      vec3(0, PRISM_CIRCUMRADIUS, -PRISM_HALF_DEPTH),
+      vec3(-1, -PRISM_INRADIUS, -PRISM_HALF_DEPTH),
+      vec3(1, -PRISM_INRADIUS, -PRISM_HALF_DEPTH),
+    ];
+
+    // Act
+    const actual = createTriangularPrismVertices(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+
+    // Assert
+    const maxComponentError = Math.max(
+      ...actual.flatMap((vertex, index) => {
+        const want = expected[index];
+
+        if (want === undefined) {
+          return [Number.POSITIVE_INFINITY];
+        }
+
+        return [
+          Math.abs(vertex.x - want.x),
+          Math.abs(vertex.y - want.y),
+          Math.abs(vertex.z - want.z),
+        ];
+      })
+    );
+    expect(maxComponentError).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it('頂点から求めた入射面の中心が tracer の入射点と一致する', () => {
+    // Arrange: 左側面を成す 4 頂点は [0](頂点+z) [1](左下+z) [3](頂点-z) [4](左下-z)。
+    //          その重心が tracer のテストが入射点として使う (-0.5, 0.288675134594813, 0)
+    const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const vertices = createTriangularPrismVertices(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const corners = [vertices[0], vertices[1], vertices[3], vertices[4]];
+
+    // Act
+    const center = vec3(
+      corners.reduce((sum, corner) => sum + corner.x, 0) / corners.length,
+      corners.reduce((sum, corner) => sum + corner.y, 0) / corners.length,
+      corners.reduce((sum, corner) => sum + corner.z, 0) / corners.length
+    );
+
+    // Assert
+    expect(Math.abs(center.x - -0.5)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(center.y - 0.288675134594813)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(center.z)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(signedDistanceToPlane(solid[0], center))).toBeLessThanOrEqual(
+      ON_PLANE_TOLERANCE
+    );
+  });
+
+  it('既定と異なる寸法でも平面集合と整合する', () => {
+    // Arrange: 一辺 3 / 押し出し長 5。既定値に依存した実装を弾く
+    const solid = createTriangularPrism(3, 5);
+    const vertices = createTriangularPrismVertices(3, 5);
+
+    // Act
+    const maxSignedDistance = Math.max(
+      ...vertices.flatMap((vertex) => signedDistancesToAllPlanes(solid, vertex))
+    );
+    const onPlaneCounts = vertices.map(
+      (vertex) =>
+        signedDistancesToAllPlanes(solid, vertex).filter(
+          (distance) => Math.abs(distance) <= ON_PLANE_TOLERANCE
+        ).length
+    );
+
+    // Assert
+    expect(maxSignedDistance).toBeLessThanOrEqual(ON_PLANE_TOLERANCE);
+    expect(onPlaneCounts).toEqual([3, 3, 3, 3, 3, 3]);
+  });
+});
+
+describe('createTriangularPrismVertices: 異常系', () => {
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    '一辺の長さが %s なら RangeError を投げる',
+    (invalidSideLength) => {
+      // Arrange & Act & Assert
+      expect(() => createTriangularPrismVertices(invalidSideLength, PRISM_DEPTH)).toThrow(
+        RangeError
+      );
+    }
+  );
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    '押し出し長が %s なら RangeError を投げる',
+    (invalidDepth) => {
+      // Arrange & Act & Assert
+      expect(() => createTriangularPrismVertices(PRISM_SIDE_LENGTH, invalidDepth)).toThrow(
+        RangeError
+      );
     }
   );
 });
