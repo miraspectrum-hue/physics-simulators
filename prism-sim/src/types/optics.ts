@@ -4,8 +4,7 @@
  * 型宣言のみを置き、実行時の振る舞いは持たない。
  * Three.js には依存しない（`THREE.Vector3` への変換は scene 層の責務）。
  *
- * NOTE: Segment / LightPath は tracer（1-4）で、PrismMaterial の constants.ts からの
- *       移設は 1-1-1 の残タスクとして、それぞれ別途追加する。
+ * NOTE: PrismMaterial の constants.ts からの移設は 1-1-1 の残タスクとして別途行う。
  */
 
 /**
@@ -78,4 +77,49 @@ export interface ConvexSolidHit {
   readonly enterPlane: Plane;
   /** 出口の面（法線は外向き） */
   readonly exitPlane: Plane;
+}
+
+/**
+ * 光路を構成する 1 区間（折れ線の 1 辺）。
+ *
+ * `insidePrism` は描画層が屈折区間だけを別マテリアルで描くために持つほか、
+ * テストが内部区間を特定して δ_min の対称通過を検証するのにも使う。
+ *
+ * NOTE: 強度（フレネル反射率）は Phase 6 で実際に計算する値として追加する。
+ *       常に 1 のダミー値を今持たせることはしない。
+ */
+export interface Segment {
+  /** 区間の始点 */
+  readonly start: Vec3;
+  /** 区間の終点 */
+  readonly end: Vec3;
+  /** この区間がプリズム内部を通るなら true */
+  readonly insidePrism: boolean;
+}
+
+/**
+ * 光路の終わり方。
+ *
+ * - `exited`: プリズムを透過して外部へ射出した（最終区間は一定長で打ち切る）
+ * - `missed`: プリズムと交差せず直進した
+ * - `bounceLimit`: 内部反射が上限に達し、射出しないまま追跡を打ち切った
+ */
+export type PathTermination = 'exited' | 'missed' | 'bounceLimit';
+
+/**
+ * 1 波長ぶんの光路。
+ *
+ * 分散は「波長ごとに屈折率を変えて独立に追跡した結果」として現れる。
+ * `refractiveIndex` は追跡に使った屈折率をそのまま記録したもので、
+ * 情報表示（F-21）が n(λ) を再計算せずに済むようにするために持つ。
+ */
+export interface LightPath {
+  /** 追跡した波長 [nm] */
+  readonly wavelengthNm: number;
+  /** 追跡に使ったプリズム材質の屈折率（無次元） */
+  readonly refractiveIndex: number;
+  /** 折れ線を構成する区間。始点側から順に並ぶ */
+  readonly segments: readonly Segment[];
+  /** 追跡の終わり方 */
+  readonly termination: PathTermination;
 }
