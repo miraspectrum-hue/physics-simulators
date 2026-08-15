@@ -140,3 +140,18 @@ export interface LightPath {
   /** 追跡の終わり方 */
   readonly termination: PathTermination;
 }
+
+/**
+ * 表示用の RGB 値。各成分は 0〜1 の sRGB（表示参照）値。
+ *
+ * `THREE.Color` へは scene 層が `setRGB(r, g, b, SRGBColorSpace)` として渡す
+ * （SPEC.md「波長サンプリングと色」）。ここでは素の数値だけを持ち、Three には依存しない。
+ */
+export interface Rgb {
+  /** 赤成分（0〜1） */
+  readonly r: number;
+  /** 緑成分（0〜1） */
+  readonly g: number;
+  /** 青成分（0〜1） */
+  readonly b: number;
+}

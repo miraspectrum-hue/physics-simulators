@@ -33,6 +33,18 @@ export const WAVELENGTH_MIN_NM = 380;
 /** 可視域の上限 [nm] */
 export const WAVELENGTH_MAX_NM = 750;
 
+/** 連続スペクトルモードの波長サンプル数（両端を含む等間隔） */
+export const CONTINUOUS_SAMPLE_COUNT = 48;
+
+/**
+ * 7 色モードの代表波長 [nm]（赤・橙・黄・緑・青・藍・紫）。
+ *
+ * 描画順と対応させるため波長の降順（赤 → 紫）に並べる。
+ * 緑を 510nm とするのは、Bruton の近似でこの波長がちょうど純緑 (0,1,0) になり、
+ * 隣の黄 580nm と明確に分離するため（SPEC.md「波長サンプリングと色」）。
+ */
+export const SEVEN_COLOR_WAVELENGTHS_NM: readonly number[] = [660, 610, 580, 510, 480, 450, 410];
+
 /** プリズムの頂角 [deg]。正三角形なので 60。 */
 export const APEX_ANGLE_DEG = 60;
 
