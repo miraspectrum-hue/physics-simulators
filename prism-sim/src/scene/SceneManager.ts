@@ -33,6 +33,9 @@ export default class SceneManager {
   private readonly renderer: WebGLRenderer;
   private readonly resizeListener: () => void;
 
+  /** 描画面の大きさが変わったときに呼ぶ購読者。`LineMaterial.resolution` の更新に使う。 */
+  private readonly resizeSubscribers: Array<(width: number, height: number) => void> = [];
+
   /**
    * @param container canvas を追加する要素。この要素の大きさに追従する
    */
@@ -62,9 +65,27 @@ export default class SceneManager {
     window.addEventListener('resize', this.resizeListener);
   }
 
-  /** 描画ループを開始する。 */
-  start(): void {
+  /**
+   * 描画面の大きさの変化を購読する。登録時にも現在の大きさで一度呼ぶ。
+   *
+   * @param subscriber 幅・高さ [px] を受け取る関数
+   */
+  onResize(subscriber: (width: number, height: number) => void): void {
+    this.resizeSubscribers.push(subscriber);
+    subscriber(this.container.clientWidth, this.container.clientHeight);
+  }
+
+  /**
+   * 描画ループを開始する。
+   *
+   * ループは常時 60fps で回し、光路の再計算は `onFrame` の中で dirty フラグにより
+   * 抑制する（CLAUDE.md「Three.js 運用」）。
+   *
+   * @param onFrame 描画の直前に毎フレーム呼ぶ関数
+   */
+  start(onFrame?: () => void): void {
     this.renderer.setAnimationLoop(() => {
+      onFrame?.();
       this.renderer.render(this.scene, this.camera);
     });
   }
@@ -97,5 +118,9 @@ export default class SceneManager {
     this.renderer.setSize(clientWidth, clientHeight, false);
     this.camera.aspect = this.aspectRatio();
     this.camera.updateProjectionMatrix();
+
+    for (const subscriber of this.resizeSubscribers) {
+      subscriber(clientWidth, clientHeight);
+    }
   }
 }

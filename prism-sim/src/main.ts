@@ -1,4 +1,4 @@
-import { AmbientLight, DirectionalLight, Matrix4 } from 'three';
+import { AmbientLight, DirectionalLight, InterleavedBufferAttribute, Matrix4 } from 'three';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT, LINE_D_NM } from './optics/constants';
 import { createTriangularPrism, ray } from './optics/convexSolid';
@@ -165,6 +165,51 @@ function reportTransform(
   console.log(`  往復誤差 = ${length(sub(roundTripEntry, localEntry)).toExponential(3)}`);
 }
 
+/**
+ * 更新経路がジオメトリを作り直していないことを実データで確かめる（S-5 の主たる検証手段）。
+ *
+ * 姿勢を変えて再描画し、ジオメトリ・属性・バッファの同一性が保たれるかを見る。
+ * 最後に元の姿勢へ戻すので、スクリーンショットには影響しない。
+ *
+ * @param beams 光線の描画オブジェクト
+ * @param prism プリズム
+ * @param refresh dirty フラグ経由の更新を強制する関数
+ */
+function reportUpdateIdentity(
+  beams: BeamRenderer,
+  prism: PrismObject,
+  refresh: () => void
+): void {
+  const geometry = beams.object.geometry;
+  const attributeBefore = geometry.attributes['instanceStart'];
+  const bufferBefore =
+    attributeBefore instanceof InterleavedBufferAttribute ? attributeBefore.data : undefined;
+  const arrayBefore = bufferBefore?.array;
+  const versionBefore = bufferBefore?.version;
+
+  console.log('=== S-5 更新経路の検証（ジオメトリ再生成が起きていないこと）===');
+
+  prism.object.rotation.z = (PRISM_ROTATION_Z_DEG + 15) * RAD_PER_DEG;
+  refresh();
+
+  const attributeAfter = geometry.attributes['instanceStart'];
+  const bufferAfter =
+    attributeAfter instanceof InterleavedBufferAttribute ? attributeAfter.data : undefined;
+
+  console.log(`  rotation.z を ${PRISM_ROTATION_Z_DEG}° → ${PRISM_ROTATION_Z_DEG + 15}° に変えて再描画`);
+  console.log(`  geometry 同一 = ${geometry === beams.object.geometry}`);
+  console.log(`  instanceStart 属性 同一 = ${attributeBefore === attributeAfter}`);
+  console.log(`  InstancedInterleavedBuffer 同一 = ${bufferBefore === bufferAfter}`);
+  console.log(`  Float32Array 同一 = ${arrayBefore === bufferAfter?.array}`);
+  console.log(`  バッファ長 = ${bufferAfter?.array.length}（48 × 8 × 2 × 3 = 2304）`);
+  // needsUpdate は getter を持たない setter なので、増える version が更新の証拠になる
+  console.log(`  version ${versionBefore} → ${bufferAfter?.version}（needsUpdate が立った回数）`);
+
+  // 元の姿勢へ戻す。以降の描画は S-3 / S-4 と同じ 20° の状態になる
+  prism.object.rotation.z = PRISM_ROTATION_Z_DEG * RAD_PER_DEG;
+  refresh();
+}
+
 /** termination ごとの本数を数える（全反射で欠ける波長がないかの確認）。 */
 function summarizeTerminations(paths: readonly LightPath[]): string {
   const counts = new Map<string, number>();
@@ -200,19 +245,46 @@ function main(): void {
   const worldToLocal = new Matrix4().copy(localToWorld).invert();
 
   const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+  const wavelengths = sampleWavelengths(CONTINUOUS_SAMPLE_COUNT);
 
   // 光源も world 空間で同じだけ回すので、局所空間では S-2 / S-3 と同一のレイになる
   const localReferenceRay = createLocalIncidentRay(INCIDENCE_ANGLE_DEG);
+  // 光源はワールドに固定する。プリズムを回すと局所空間での入射角が変わる
   const worldIncidentRay = transformRay(localReferenceRay, localToWorld);
   const localIncidentRay = transformRay(worldIncidentRay, worldToLocal);
 
-  const localPaths = traceSpectrum(
-    localIncidentRay,
-    solid,
-    BK7,
-    sampleWavelengths(CONTINUOUS_SAMPLE_COUNT)
-  );
-  const worldPaths = localPaths.map((path) => transformLightPath(path, localToWorld));
+  // 色は波長ごとに一定なので、ここで一度だけ決まる
+  const beams = new BeamRenderer(wavelengths);
+  sceneManager.scene.add(beams.object);
+  sceneManager.onResize((width, height) => {
+    beams.setResolution(width, height);
+  });
+
+  // 光路の再計算は姿勢や入射角が変わったフレームだけ行う（CLAUDE.md「Three.js 運用」）
+  let dirty = true;
+
+  const refreshBeams = (): void => {
+    if (!dirty) {
+      return;
+    }
+    dirty = false;
+
+    prism.object.updateMatrixWorld(true);
+    worldToLocal.copy(localToWorld).invert();
+
+    const localRay = transformRay(worldIncidentRay, worldToLocal);
+    const localPaths = traceSpectrum(localRay, solid, BK7, wavelengths);
+
+    // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
+    beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
+  };
+
+  const forceRefresh = (): void => {
+    dirty = true;
+    refreshBeams();
+  };
+
+  forceRefresh();
 
   // 変換の検証には d 線を使う。屈折率は S-2 と同じカタログ値 n_d を直接渡し、
   // 偏角 38.646695472 度と厳密に突き合わせられるようにする
@@ -226,12 +298,9 @@ function main(): void {
     transformLightPath(localDLinePath, localToWorld),
     localToWorld
   );
+  reportUpdateIdentity(beams, prism, forceRefresh);
 
-  const beams = new BeamRenderer();
-  beams.update(worldPaths);
-  sceneManager.scene.add(beams.object);
-
-  sceneManager.start();
+  sceneManager.start(refreshBeams);
 }
 
 main();
