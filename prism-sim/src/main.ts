@@ -1,10 +1,10 @@
-import { AmbientLight, DirectionalLight, InterleavedBufferAttribute, Matrix4 } from 'three';
+import { AmbientLight, DirectionalLight, Matrix4 } from 'three';
 
-import { BK7, CONTINUOUS_SAMPLE_COUNT, LINE_D_NM } from './optics/constants';
+import { BK7, CONTINUOUS_SAMPLE_COUNT } from './optics/constants';
 import { createTriangularPrism, ray } from './optics/convexSolid';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
-import { traceRay, traceSpectrum } from './optics/tracer';
-import { addScaled, dot, length, normalize, sub, vec3 } from './optics/vec3';
+import { traceSpectrum } from './optics/tracer';
+import { addScaled, dot, normalize, sub, vec3 } from './optics/vec3';
 import BeamRenderer from './scene/BeamRenderer';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
@@ -14,11 +14,14 @@ import type { ConvexSolid, LightPath, Ray, Vec3 } from './types/optics';
 import './styles/main.css';
 
 /**
- * walking skeleton（S-2）の配線。
+ * アプリ全体の配線。
  *
- * プリズムを Z 軸まわりに回転させ、world⇔local のレイ変換を通す（S-4）。
- * 光源は world 空間で同じ角度だけ回すので、local 空間の光路は S-2 / S-3 と一致するはずである。
- * これにより「物理は回転に不変」「変換だけが姿勢を担う」ことを数値で確かめられる。
+ * 姿勢の単一の真実は `PrismObject.object.matrixWorld` で、光路は常にプリズムの局所空間で
+ * 追跡してからワールドへ戻す（SPEC.md「光路計算」1）。光路の再計算は dirty フラグで
+ * 抑制し、描画ループ自体は常時回す（CLAUDE.md「Three.js 運用」）。
+ *
+ * NOTE: S-4（world⇔local 変換）と S-5（更新経路がジオメトリを再生成しないこと）の
+ *       検証ログは、確認済みのため撤去した。分光の数値検証 `reportSpectrum` のみ残す。
  */
 
 /** 左側面の中点（局所座標）。tracer のテストが入射点として使う実績値。 */
@@ -139,98 +142,6 @@ function reportSpectrum(incidentRay: Ray, solid: ConvexSolid, exaggeration: numb
   console.log(`  termination の内訳 = ${summarizeTerminations(paths)}`);
 }
 
-/**
- * 局所空間の光路と、ワールドへ戻した光路を突き合わせて出す（S-4 の主たる検証手段）。
- *
- * @param localPaths 局所空間の光路
- * @param worldPaths ワールドへ移した光路
- * @param localToWorld 局所 → ワールドの変換行列
- */
-function reportTransform(
-  localPath: LightPath,
-  worldPath: LightPath,
-  localToWorld: Matrix4
-): void {
-  const format = (v: Vec3): string =>
-    `(${v.x.toFixed(9)}, ${v.y.toFixed(9)}, ${v.z.toFixed(9)})`;
-
-  console.log(`=== S-4 変換の検証（プリズム rotation.z = ${PRISM_ROTATION_Z_DEG}°）===`);
-  console.log(
-    `  検証に使う波長 = ${localPath.wavelengthNm} nm / 屈折率 = ${localPath.refractiveIndex}` +
-      '（S-2 と同一条件）'
-  );
-
-  const localEntry = localPath.segments[0]?.end ?? vec3(0, 0, 0);
-  const worldEntry = worldPath.segments[0]?.end ?? vec3(0, 0, 0);
-
-  // R_z(20°)·(-0.5, 0.288675134594813, 0) を独立に計算した期待値
-  const rotationRad = PRISM_ROTATION_Z_DEG * RAD_PER_DEG;
-  const expectedWorldEntry = vec3(
-    LEFT_FACE_MIDPOINT.x * Math.cos(rotationRad) - LEFT_FACE_MIDPOINT.y * Math.sin(rotationRad),
-    LEFT_FACE_MIDPOINT.x * Math.sin(rotationRad) + LEFT_FACE_MIDPOINT.y * Math.cos(rotationRad),
-    0
-  );
-
-  console.log(`  local 入射点 ${format(localEntry)}（S-2 と同一なら回転不変）`);
-  console.log(`  world 入射点 ${format(worldEntry)}`);
-  console.log(`  期待値 R_z(20°)·局所入射点 ${format(expectedWorldEntry)}`);
-  console.log(`  差 = ${length(sub(worldEntry, expectedWorldEntry)).toExponential(3)}`);
-  console.log(`  local 偏角 = ${deviationDeg(localPath).toFixed(9)} 度（S-2 の 38.646695472 と一致するか）`);
-  console.log(`  world 偏角 = ${deviationDeg(worldPath).toFixed(9)} 度（回転で偏角は変わらない）`);
-
-  // 往復が恒等であることを実データで確認する
-  const worldToLocal = new Matrix4().copy(localToWorld).invert();
-  const roundTrip = transformLightPath(worldPath, worldToLocal);
-  const roundTripEntry = roundTrip.segments[0]?.end ?? vec3(0, 0, 0);
-  console.log(`  往復後の入射点 ${format(roundTripEntry)}`);
-  console.log(`  往復誤差 = ${length(sub(roundTripEntry, localEntry)).toExponential(3)}`);
-}
-
-/**
- * 更新経路がジオメトリを作り直していないことを実データで確かめる（S-5 の主たる検証手段）。
- *
- * 姿勢を変えて再描画し、ジオメトリ・属性・バッファの同一性が保たれるかを見る。
- * 最後に元の姿勢へ戻すので、スクリーンショットには影響しない。
- *
- * @param beams 光線の描画オブジェクト
- * @param prism プリズム
- * @param refresh dirty フラグ経由の更新を強制する関数
- */
-function reportUpdateIdentity(
-  beams: BeamRenderer,
-  prism: PrismObject,
-  refresh: () => void
-): void {
-  const geometry = beams.object.geometry;
-  const attributeBefore = geometry.attributes['instanceStart'];
-  const bufferBefore =
-    attributeBefore instanceof InterleavedBufferAttribute ? attributeBefore.data : undefined;
-  const arrayBefore = bufferBefore?.array;
-  const versionBefore = bufferBefore?.version;
-
-  console.log('=== S-5 更新経路の検証（ジオメトリ再生成が起きていないこと）===');
-
-  prism.object.rotation.z = (PRISM_ROTATION_Z_DEG + 15) * RAD_PER_DEG;
-  refresh();
-
-  const attributeAfter = geometry.attributes['instanceStart'];
-  const bufferAfter =
-    attributeAfter instanceof InterleavedBufferAttribute ? attributeAfter.data : undefined;
-
-  console.log(`  rotation.z を ${PRISM_ROTATION_Z_DEG}° → ${PRISM_ROTATION_Z_DEG + 15}° に変えて再描画`);
-  console.log(`  geometry 同一 = ${geometry === beams.object.geometry}`);
-  console.log(`  instanceStart 属性 同一 = ${attributeBefore === attributeAfter}`);
-  console.log(`  InstancedInterleavedBuffer 同一 = ${bufferBefore === bufferAfter}`);
-  console.log(`  Float32Array 同一 = ${arrayBefore === bufferAfter?.array}`);
-  console.log(`  バッファ長 = ${bufferAfter?.array.length}（48 × 8 × 2 × 3 = 2304）`);
-  // needsUpdate は getter を持たない setter なので、増える version が更新の証拠になる
-  console.log(`  version ${versionBefore} → ${bufferAfter?.version}（needsUpdate が立った回数）`);
-
-  // 元の姿勢へ戻す。以降の描画は S-3 / S-4 と同じ 20° の状態になる
-  prism.object.rotation.z = PRISM_ROTATION_Z_DEG * RAD_PER_DEG;
-  refresh();
-}
-
 /** termination ごとの本数を数える（全反射で欠ける波長がないかの確認）。 */
 function summarizeTerminations(paths: readonly LightPath[]): string {
   const counts = new Map<string, number>();
@@ -300,26 +211,9 @@ function main(): void {
     beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
   };
 
-  const forceRefresh = (): void => {
-    dirty = true;
-    refreshBeams();
-  };
-
-  forceRefresh();
-
-  // 変換の検証には d 線を使う。屈折率は S-2 と同じカタログ値 n_d を直接渡し、
-  // 偏角 38.646695472 度と厳密に突き合わせられるようにする
-  // （描画側の 48 波長は Cauchy 式の n(λ) を使う。n_d と n(587.56) は 3.4e-5 ずれ、
-  //   偏角にすると 0.003 度の差になるため、条件を揃えないと照合にならない）
-  const localDLinePath = traceRay(localIncidentRay, solid, BK7.catalogNd, LINE_D_NM);
+  refreshBeams();
 
   reportSpectrum(localIncidentRay, solid, DISPERSION_EXAGGERATION);
-  reportTransform(
-    localDLinePath,
-    transformLightPath(localDLinePath, localToWorld),
-    localToWorld
-  );
-  reportUpdateIdentity(beams, prism, forceRefresh);
 
   sceneManager.start(refreshBeams);
 }
