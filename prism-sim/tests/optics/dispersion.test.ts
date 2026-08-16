@@ -8,7 +8,7 @@ import {
   LINE_F_NM,
 } from '../../src/optics/constants';
 import type { PrismMaterial } from '../../src/types/optics';
-import { refractiveIndex } from '../../src/optics/dispersion';
+import { exaggerateIndex, refractiveIndex } from '../../src/optics/dispersion';
 
 /**
  * src/optics/dispersion.ts の受け入れ条件。
@@ -174,5 +174,86 @@ describe('不正入力: 波長が正の有限数でなければ RangeError を�
 
     // Act & Assert
     expect(() => refractiveIndex(material, validWavelengthNm)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 受け入れ条件 5: 分散誇張 exaggerateIndex（1-2-1b / F-23）
+// ---------------------------------------------------------------------------
+//
+// n'(λ) = n_d + factor × (n(λ) - n_d)
+//
+// 期待値は Float32/丸めの議論を避けるため、2 進で厳密に表現できる値
+// （整数・0.25・0.125 など）だけを使う。実屈折率での恒等性は Cauchy 値で確認する。
+
+describe('exaggerateIndex: factor=1 は実屈折率を厳密にそのまま返す', () => {
+  it('任意の n_d に対して nLambda を返す（丸めを混入させない）', () => {
+    // Arrange: 実在しうる Cauchy 屈折率（BK7 の n(587.56)）
+    const nLambda = 1.516765916911719;
+    const nD = 1.5168;
+
+    // Act
+    const actual = exaggerateIndex(nLambda, nD, 1);
+
+    // Assert: closeTo ではなく厳密一致。factor=1 は物理そのものなので丸めが乗ってはならない
+    expect(actual).toBe(nLambda);
+  });
+
+  it('ピボット n_d と異なる値でも nLambda をそのまま返す', () => {
+    // Arrange
+    const nLambda = 1.72827;
+    const nD = 1.5;
+
+    // Act & Assert
+    expect(exaggerateIndex(nLambda, nD, 1)).toBe(nLambda);
+  });
+});
+
+describe('exaggerateIndex: factor>1 は n_d からの隔たりを factor 倍する', () => {
+  it('ピボットより上の屈折率を既知の値へ広げる', () => {
+    // Arrange: 1.25 + 2×(1.5 - 1.25) = 1.75（すべて 2 進で厳密）
+    // Act & Assert
+    expect(exaggerateIndex(1.5, 1.25, 2)).toBe(1.75);
+  });
+
+  it('ピボットより下の屈折率も対称に広げる', () => {
+    // Arrange: 1.5 + 2×(1.25 - 1.5) = 1.0
+    // Act & Assert
+    expect(exaggerateIndex(1.25, 1.5, 2)).toBe(1.0);
+  });
+
+  it('2 波長の屈折率差はちょうど factor 倍になる（ピボットに依らない）', () => {
+    // Arrange: (a-nD)·f - (b-nD)·f = f·(a-b)。nD を変えても差は不変
+    const a = 1.5;
+    const b = 1.25;
+    const factor = 4;
+
+    // Act
+    const gap = exaggerateIndex(a, 1.375, factor) - exaggerateIndex(b, 1.375, factor);
+
+    // Assert: 4 × (1.5 - 1.25) = 1.0
+    expect(gap).toBe(1.0);
+  });
+});
+
+describe('exaggerateIndex: 誇張倍率が 1 以上の有限数でなければ RangeError を投げる', () => {
+  // 誇張倍率は「隔たりを広げる」意味しか持たないため、1 未満（圧縮・反転）は弾く。
+  // 実屈折率はこの関数内では信頼できる入力（refractiveIndex が検証済み）なので factor のみ検証する。
+  it.each([0.5, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    '誇張倍率 %p で RangeError を投げる',
+    (invalidFactor) => {
+      // Act & Assert
+      expect(() => exaggerateIndex(1.52, 1.5, invalidFactor)).toThrow(RangeError);
+    }
+  );
+
+  it('誇張倍率 1（下限）では例外を投げない', () => {
+    // Act & Assert
+    expect(() => exaggerateIndex(1.52, 1.5, 1)).not.toThrow();
+  });
+
+  it('誇張倍率 10（UI 上限）でも例外を投げない', () => {
+    // Act & Assert
+    expect(() => exaggerateIndex(1.52, 1.5, 10)).not.toThrow();
   });
 });

@@ -21,7 +21,7 @@ import type {
 
 import { EXIT_EXTENSION_LENGTH, MAX_BOUNCE_COUNT } from './constants';
 import { intersectRayConvexSolid, pointOnRay, ray } from './convexSolid';
-import { refractiveIndex } from './dispersion';
+import { exaggerateIndex, refractiveIndex } from './dispersion';
 import { canTransmit } from './fresnel';
 import { refractionAngleDeg } from './refraction';
 import { addScaled, dot, length, lengthSquared, negate, normalize, scale, sub } from './vec3';
@@ -249,21 +249,31 @@ export function traceRay(
  * 波長ごとの追跡は独立で、互いに影響しない。本関数は屈折率を引いて traceRay へ渡すだけの
  * 薄いラッパーであり、固有の物理を持たない。
  *
+ * 分散誇張倍率 exaggeration を指定すると、各波長の屈折率を n_d 基準で誇張してから追跡する
+ * （SPEC.md「分散誇張（F-23）」）。既定値 1 では物理的に正しい実屈折率をそのまま用いる。
+ *
  * @param incidentRay 入射光線（局所空間。direction は単位ベクトル）
  * @param solid プリズムを表す凸多面体（外向き法線つき平面の集合）
  * @param material プリズムの材質（Cauchy 分散パラメータ）
  * @param wavelengths 追跡する波長の並び [nm]
+ * @param exaggeration 分散誇張倍率 m。1 以上の有限数。既定 1（実物理）。検証は exaggerateIndex に委譲する
  * @returns 波長リストと同じ順序・同じ本数の光路
- * @throws {RangeError} 波長や引数が定義域外の場合（検証は refractiveIndex と traceRay に委譲する）
+ * @throws {RangeError} 波長や引数が定義域外の場合（検証は refractiveIndex / exaggerateIndex / traceRay に委譲する）
  */
 export function traceSpectrum(
   incidentRay: Ray,
   solid: ConvexSolid,
   material: PrismMaterial,
-  wavelengths: readonly number[]
+  wavelengths: readonly number[],
+  exaggeration = 1
 ): readonly LightPath[] {
   return wavelengths.map((wavelengthNm) =>
-    traceRay(incidentRay, solid, refractiveIndex(material, wavelengthNm), wavelengthNm)
+    traceRay(
+      incidentRay,
+      solid,
+      exaggerateIndex(refractiveIndex(material, wavelengthNm), material.catalogNd, exaggeration),
+      wavelengthNm
+    )
   );
 }
 

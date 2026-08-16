@@ -17,7 +17,7 @@ import {
   WATER,
 } from '../../src/optics/constants';
 import { createTriangularPrism, ray } from '../../src/optics/convexSolid';
-import { refractiveIndex } from '../../src/optics/dispersion';
+import { exaggerateIndex, refractiveIndex } from '../../src/optics/dispersion';
 import { canTransmit } from '../../src/optics/fresnel';
 import { minimumDeviationDeg, prismDeviationDeg } from '../../src/optics/prism';
 import { refractionAngleDeg } from '../../src/optics/refraction';
@@ -1008,5 +1008,111 @@ describe('O. traceSpectrum: 白色光が波長ごとに分かれる（分光）'
     // Assert
     expect(Math.abs(bk7Deg - 38.643699466)).toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
     expect(Math.abs(sf10Deg - 64.278502828)).toBeLessThanOrEqual(DEVIATION_TOLERANCE_DEG);
+  });
+});
+
+// ===========================================================================
+// P. traceSpectrum の分散誇張（1-2-1b / F-23）
+// ===========================================================================
+//
+// n'(λ) = n_d + m × (n(λ) - n_d)。m=1 で実物理、m>1 で分離を拡大する。
+// 誇張は「屈折率を n_d 基準で広げてから追跡する」だけなので、記録された refractiveIndex を
+// exaggerateIndex と直接照合すれば追跡を経ずに機構を固定できる。
+
+describe('P. traceSpectrum: 分散誇張倍率で分離を強調する', () => {
+  const RED_NM = 660;
+  const VIOLET_NM = 410;
+
+  function spectrumIncidentRay(): Ray {
+    return incidentRayOnLeftFace(49.323347736);
+  }
+
+  function elementAt<T>(items: readonly T[], index: number): T {
+    const item = items[index];
+
+    if (item === undefined) {
+      throw new Error(`要素[${index}] が存在しません（長さ: ${items.length}）`);
+    }
+
+    return item;
+  }
+
+  it('exaggeration=1 は引数なし（実物理）と全フィールド厳密一致する', () => {
+    // Arrange
+    const wavelengths = [RED_NM, VIOLET_NM];
+    const incident = spectrumIncidentRay();
+
+    // Act
+    const withDefault = traceSpectrum(incident, PRISM, BK7, wavelengths);
+    const withOne = traceSpectrum(incident, PRISM, BK7, wavelengths, 1);
+
+    // Assert: 物理そのものなので closeTo ではなく厳密一致
+    expect(withOne).toEqual(withDefault);
+  });
+
+  it('記録される屈折率が exaggerateIndex（n(λ), n_d, m）と厳密一致する', () => {
+    // Arrange
+    const factor = 5;
+    const wavelengths = [RED_NM, VIOLET_NM];
+
+    // Act
+    const paths = traceSpectrum(spectrumIncidentRay(), PRISM, BK7, wavelengths, factor);
+
+    // Assert
+    wavelengths.forEach((wavelengthNm, index) => {
+      const expected = exaggerateIndex(refractiveIndex(BK7, wavelengthNm), BK7.catalogNd, factor);
+      expect(elementAt(paths, index).refractiveIndex).toBe(expected);
+    });
+  });
+
+  it('m>1 では赤〜紫の偏角の広がりが実物理より大きくなる', () => {
+    // Arrange
+    const incident = spectrumIncidentRay();
+    const spread = (factor: number): number => {
+      const [red, violet] = traceSpectrum(incident, PRISM, BK7, [RED_NM, VIOLET_NM], factor);
+      return deviationDeg(violet as LightPath) - deviationDeg(red as LightPath);
+    };
+
+    // Act
+    const physicalSpread = spread(1);
+    const exaggeratedSpread = spread(5);
+
+    // Assert
+    expect(exaggeratedSpread).toBeGreaterThan(physicalSpread);
+  });
+
+  it('m>1 でも赤が紫より偏角が小さい（分散の順序が保たれる）', () => {
+    // Arrange & Act
+    const [red, violet] = traceSpectrum(
+      spectrumIncidentRay(),
+      PRISM,
+      BK7,
+      [RED_NM, VIOLET_NM],
+      5
+    );
+
+    // Assert
+    expect(deviationDeg(red as LightPath)).toBeLessThan(deviationDeg(violet as LightPath));
+  });
+
+  it('d 線（587.56nm）は m を上げてもほぼ動かない（ピボットの担保）', () => {
+    // Arrange: n_d をピボットにするので中心波長の偏角は倍率にほぼ不変
+    const incident = spectrumIncidentRay();
+    const deviationAt = (factor: number): number =>
+      deviationDeg(elementAt(traceSpectrum(incident, PRISM, BK7, [TEST_WAVELENGTH_NM], factor), 0));
+
+    // Act
+    const physical = deviationAt(1);
+    const exaggerated = deviationAt(5);
+
+    // Assert
+    expect(Math.abs(exaggerated - physical)).toBeLessThanOrEqual(SPEC_TOLERANCE_DEG);
+  });
+
+  it('誇張倍率が 1 未満なら RangeError を伝播する（exaggerateIndex に委譲）', () => {
+    // Act & Assert
+    expect(() =>
+      traceSpectrum(spectrumIncidentRay(), PRISM, BK7, [RED_NM], 0.5)
+    ).toThrow(RangeError);
   });
 });
