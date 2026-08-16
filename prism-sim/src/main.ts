@@ -1,13 +1,14 @@
 import { AmbientLight, DirectionalLight } from 'three';
 
-import { BK7, LINE_D_NM } from './optics/constants';
+import { BK7, CONTINUOUS_SAMPLE_COUNT } from './optics/constants';
 import { createTriangularPrism, ray } from './optics/convexSolid';
-import { traceRay } from './optics/tracer';
+import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
+import { traceSpectrum } from './optics/tracer';
 import { addScaled, dot, normalize, sub, vec3 } from './optics/vec3';
 import BeamRenderer from './scene/BeamRenderer';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
 import SceneManager from './scene/SceneManager';
-import type { LightPath, Ray, Vec3 } from './types/optics';
+import type { ConvexSolid, LightPath, Ray, Vec3 } from './types/optics';
 
 import './styles/main.css';
 
@@ -66,21 +67,61 @@ function deviationDeg(path: LightPath): number {
   return Math.acos(Math.min(Math.max(dot(incident, exit), -1), 1)) * DEG_PER_RAD;
 }
 
-/** 追跡結果を既知オラクルと照合できる形でコンソールへ出す（S-2 の主たる検証手段）。 */
-function reportLightPath(path: LightPath): void {
+/**
+ * 分光の結果を既知オラクルと照合できる形でコンソールへ出す（S-3 の主たる検証手段）。
+ *
+ * @param incidentRay 入射レイ
+ * @param solid プリズムの平面集合
+ */
+function reportSpectrum(incidentRay: Ray, solid: ConvexSolid): void {
   const format = (v: Vec3): string =>
     `(${v.x.toFixed(9)}, ${v.y.toFixed(9)}, ${v.z.toFixed(9)})`;
 
-  console.log('=== S-2 光路の数値（恒等姿勢・world = local）===');
-  console.log(`波長 = ${path.wavelengthNm} nm / 屈折率 = ${path.refractiveIndex}`);
-  console.log(`termination = ${path.termination} / 区間数 = ${path.segments.length}`);
-
-  path.segments.forEach((segment, index) => {
-    const label = segment.insidePrism ? '内部' : '外部';
-    console.log(`  [${index}] ${label} ${format(segment.start)} -> ${format(segment.end)}`);
+  // 代表 3 波長。spectrum / tracer のテストが持つ確定値と直接照合できる
+  console.log('=== S-3 代表波長の偏角（恒等姿勢・world = local）===');
+  const referencePaths = traceSpectrum(incidentRay, solid, BK7, [660, 550, 410]);
+  referencePaths.forEach((path) => {
+    const rgb = wavelengthToRgb(path.wavelengthNm);
+    console.log(
+      `  λ=${path.wavelengthNm}nm  n=${path.refractiveIndex.toFixed(15)}` +
+        `  偏角=${deviationDeg(path).toFixed(9)}度` +
+        `  rgb=(${rgb.r.toFixed(6)}, ${rgb.g.toFixed(6)}, ${rgb.b.toFixed(6)})`
+    );
   });
 
-  console.log(`偏角 = ${deviationDeg(path).toFixed(9)} 度`);
+  const red = referencePaths[0];
+  const violet = referencePaths[2];
+  if (red !== undefined && violet !== undefined) {
+    const separationDeg = deviationDeg(violet) - deviationDeg(red);
+    console.log(`  分離幅（紫 - 赤） = ${separationDeg.toFixed(9)} 度`);
+  }
+
+  // 実際に描画する連続スペクトル
+  const paths = traceSpectrum(incidentRay, solid, BK7, sampleWavelengths(CONTINUOUS_SAMPLE_COUNT));
+  const first = paths[0];
+  const last = paths[paths.length - 1];
+
+  console.log(`=== 連続スペクトル（${paths.length} 波長）===`);
+  if (first !== undefined && last !== undefined) {
+    console.log(
+      `  λ=${first.wavelengthNm}nm 偏角=${deviationDeg(first).toFixed(9)}度` +
+        ` / λ=${last.wavelengthNm}nm 偏角=${deviationDeg(last).toFixed(9)}度` +
+        ` / 扇の広がり=${(deviationDeg(first) - deviationDeg(last)).toFixed(9)}度`
+    );
+    console.log(`  入射点 ${format(first.segments[0]?.end ?? vec3(0, 0, 0))}`);
+  }
+  console.log(`  termination の内訳 = ${summarizeTerminations(paths)}`);
+}
+
+/** termination ごとの本数を数える（全反射で欠ける波長がないかの確認）。 */
+function summarizeTerminations(paths: readonly LightPath[]): string {
+  const counts = new Map<string, number>();
+
+  for (const path of paths) {
+    counts.set(path.termination, (counts.get(path.termination) ?? 0) + 1);
+  }
+
+  return [...counts].map(([key, value]) => `${key}: ${value}`).join(', ');
 }
 
 function main(): void {
@@ -103,12 +144,17 @@ function main(): void {
   // プリズムは恒等姿勢なので、world のレイをそのまま local として追跡できる
   const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
   const incidentRay = createIncidentRay(INCIDENCE_ANGLE_DEG);
-  const path = traceRay(incidentRay, solid, BK7.catalogNd, LINE_D_NM);
+  const paths = traceSpectrum(
+    incidentRay,
+    solid,
+    BK7,
+    sampleWavelengths(CONTINUOUS_SAMPLE_COUNT)
+  );
 
-  reportLightPath(path);
+  reportSpectrum(incidentRay, solid);
 
   const beams = new BeamRenderer();
-  beams.update([path]);
+  beams.update(paths);
   sceneManager.scene.add(beams.object);
 
   sceneManager.start();
