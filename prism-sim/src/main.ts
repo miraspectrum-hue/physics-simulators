@@ -200,6 +200,9 @@ function main(): void {
     dirty = true;
   };
 
+  /** 直前に出力した termination の内訳。変化した時だけログを出すために持つ。 */
+  let lastTerminationSummary = '';
+
   const refreshBeams = (): void => {
     if (!dirty) {
       return;
@@ -214,6 +217,14 @@ function main(): void {
 
     // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
     beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
+
+    // 内訳が変わった瞬間だけ出す。プリズムをビームから外すと missed へ倒れる（TASKS 3-8）
+    const summary = summarizeTerminations(localPaths);
+
+    if (summary !== lastTerminationSummary) {
+      lastTerminationSummary = summary;
+      console.log(`[追跡] termination の内訳 = ${summary}`);
+    }
   };
 
   refreshBeams();
@@ -228,7 +239,10 @@ function main(): void {
   );
   interaction.attachTarget(prism.object);
   interaction.onPoseChange(markDirty);
-  // I-1 は回転のみ。モード切替の UI は I-2 以降で付ける
+  interaction.onModeChange((mode) => {
+    console.log(`[操作] モード = ${mode}`);
+  });
+  // 切替は R（回転）/ G（移動）/ Esc（カメラ）。パネルからの切替は I-3 で足す
   interaction.setMode('rotate');
 
   sceneManager.start((deltaSeconds) => {

@@ -3,14 +3,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 /**
- * 操作モード。`camera` はカメラ操作のみ、`rotate` はプリズムの回転ギズモを出す。
- *
- * NOTE: 移動ギズモ（`translate`）は I-2 で追加する。
+ * 操作モード。`camera` はカメラ操作のみ、`rotate` は回転ギズモ、`translate` は移動ギズモを出す。
  */
-export type InteractionMode = 'camera' | 'rotate';
+export type InteractionMode = 'camera' | 'rotate' | 'translate';
 
 /** ギズモの大きさ。プリズムの一辺 2 に対して掴みやすい値。 */
 const GIZMO_SIZE = 1.2;
+
+/**
+ * キーボードによるモード切替の対応表。
+ *
+ * R = rotate（回転）、G = translate（掴んで動かす。Blender の grab に倣う）、
+ * Escape = camera（ギズモを外してカメラ操作へ戻る）。
+ * 入力欄で打鍵しているときは切り替えない（I-3 でスライダーが載るため先に備える）。
+ */
+const MODE_KEYS: Readonly<Record<string, InteractionMode>> = {
+  KeyR: 'rotate',
+  KeyG: 'translate',
+  Escape: 'camera',
+};
 
 /**
  * カメラ操作（OrbitControls）とプリズム操作（TransformControls）を所有し、調停する。
@@ -39,6 +50,12 @@ export default class InteractionCtl {
 
   /** 姿勢が変わったときに呼ぶ購読者。 */
   private readonly poseSubscribers: Array<() => void> = [];
+
+  /** モードが変わったときに呼ぶ購読者。 */
+  private readonly modeSubscribers: Array<(mode: InteractionMode) => void> = [];
+
+  /** キーボード切替のリスナ。dispose で外すために保持する。 */
+  private readonly keyListener: (event: KeyboardEvent) => void;
 
   /**
    * @param camera 操作対象のカメラ
@@ -72,6 +89,22 @@ export default class InteractionCtl {
         subscriber();
       }
     });
+
+    this.keyListener = (event: KeyboardEvent): void => {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      const mode = MODE_KEYS[event.code];
+
+      if (mode === undefined) {
+        return;
+      }
+
+      event.preventDefault();
+      this.setMode(mode);
+    };
+    window.addEventListener('keydown', this.keyListener);
   }
 
   /**
@@ -90,8 +123,16 @@ export default class InteractionCtl {
    * @param mode `camera` でカメラ操作のみ、`rotate` で回転ギズモを表示
    */
   setMode(mode: InteractionMode): void {
+    if (mode === this.mode) {
+      return;
+    }
+
     this.mode = mode;
     this.applyMode();
+
+    for (const subscriber of this.modeSubscribers) {
+      subscriber(mode);
+    }
   }
 
   /** 現在の操作モード。 */
@@ -109,6 +150,15 @@ export default class InteractionCtl {
   }
 
   /**
+   * 操作モードの変化を購読する。
+   *
+   * @param subscriber 切り替わった後のモードを受け取る
+   */
+  onModeChange(subscriber: (mode: InteractionMode) => void): void {
+    this.modeSubscribers.push(subscriber);
+  }
+
+  /**
    * 毎フレームの更新。`enableDamping` を使うため呼び出しが必須。
    *
    * @param deltaSeconds 前フレームからの経過時間 [s]
@@ -119,13 +169,14 @@ export default class InteractionCtl {
 
   /** イベントリスナと GPU リソースを解放する。 */
   dispose(): void {
+    window.removeEventListener('keydown', this.keyListener);
     this.transform.detach();
     this.scene.remove(this.helper);
     this.transform.dispose();
     this.orbit.dispose();
   }
 
-  /** モードと対象からギズモの着脱を決める。 */
+  /** モードと対象からギズモの着脱と種類を決める。 */
   private applyMode(): void {
     if (this.mode === 'camera' || this.target === null) {
       this.transform.detach();
@@ -133,6 +184,28 @@ export default class InteractionCtl {
       return;
     }
 
+    this.transform.mode = this.mode;
     this.transform.attach(this.target);
   }
+}
+
+/**
+ * 打鍵先が文字入力を受け取る要素かどうかを判定する。
+ *
+ * スライダーやテキスト欄を操作している最中に R/G がモード切替へ吸われないようにする。
+ *
+ * @param target イベントの発生元
+ * @returns 入力欄なら true
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
 }
