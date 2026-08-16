@@ -1037,17 +1037,20 @@ describe('P. traceSpectrum: 分散誇張倍率で分離を強調する', () => {
     return item;
   }
 
-  it('exaggeration=1 は引数なし（実物理）と全フィールド厳密一致する', () => {
-    // Arrange
+  it('exaggeration=1 は誇張なしの実屈折率での追跡と全フィールド一致する', () => {
+    // Arrange: 誇張を一切経ない生の追跡を期待値にする。
+    //   既定引数どうしを比べても同じコードパスを通るだけで、実物理との一致は言えない
     const wavelengths = [RED_NM, VIOLET_NM];
     const incident = spectrumIncidentRay();
 
     // Act
-    const withDefault = traceSpectrum(incident, PRISM, BK7, wavelengths);
+    const physical = wavelengths.map((wavelengthNm) =>
+      traceRay(incident, PRISM, refractiveIndex(BK7, wavelengthNm), wavelengthNm)
+    );
     const withOne = traceSpectrum(incident, PRISM, BK7, wavelengths, 1);
 
     // Assert: 物理そのものなので closeTo ではなく厳密一致
-    expect(withOne).toEqual(withDefault);
+    expect(withOne).toEqual(physical);
   });
 
   it('記録される屈折率が exaggerateIndex（n(λ), n_d, m）と厳密一致する', () => {
@@ -1069,8 +1072,8 @@ describe('P. traceSpectrum: 分散誇張倍率で分離を強調する', () => {
     // Arrange
     const incident = spectrumIncidentRay();
     const spread = (factor: number): number => {
-      const [red, violet] = traceSpectrum(incident, PRISM, BK7, [RED_NM, VIOLET_NM], factor);
-      return deviationDeg(violet as LightPath) - deviationDeg(red as LightPath);
+      const paths = traceSpectrum(incident, PRISM, BK7, [RED_NM, VIOLET_NM], factor);
+      return deviationDeg(elementAt(paths, 1)) - deviationDeg(elementAt(paths, 0));
     };
 
     // Act
@@ -1083,16 +1086,10 @@ describe('P. traceSpectrum: 分散誇張倍率で分離を強調する', () => {
 
   it('m>1 でも赤が紫より偏角が小さい（分散の順序が保たれる）', () => {
     // Arrange & Act
-    const [red, violet] = traceSpectrum(
-      spectrumIncidentRay(),
-      PRISM,
-      BK7,
-      [RED_NM, VIOLET_NM],
-      5
-    );
+    const paths = traceSpectrum(spectrumIncidentRay(), PRISM, BK7, [RED_NM, VIOLET_NM], 5);
 
     // Assert
-    expect(deviationDeg(red as LightPath)).toBeLessThan(deviationDeg(violet as LightPath));
+    expect(deviationDeg(elementAt(paths, 0))).toBeLessThan(deviationDeg(elementAt(paths, 1)));
   });
 
   it('d 線（587.56nm）は m を上げてもほぼ動かない（ピボットの担保）', () => {
