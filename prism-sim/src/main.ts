@@ -30,6 +30,20 @@ const INCIDENCE_ANGLE_DEG = 49.323347736;
 /** プリズムの Z 軸まわりの回転角 [deg]。変換が効いていることを確かめるための固定値。 */
 const PRISM_ROTATION_Z_DEG = 20;
 
+/**
+ * 描画に用いる分散誇張倍率 m（1-2-1b / F-23）。
+ *
+ * BK7 の実分散は約 1.36° と狭く、m=1 では既定カメラで七色が白く飽和して見えないため、
+ * 既定表示は誇張する（"Dark Side らしさ" 優先の方針）。m=1 に戻せば実物理になる。
+ *
+ * 値は実機の絵を見て 6 に決めた。扇の広がりは 1.92° → 12.29°。m=8 以上にすると更に広がるが、
+ * 48 サンプルが個別の線に分離して縞に見え始め、連続スペクトルとしての見えを損なう
+ * （偏角が λ に対し非線形なので、紫側ほど間隔が開く）。
+ *
+ * TODO(4-4): この固定値は暫定。UI スライダー（×1〜×10）で可変にする。
+ */
+const DISPERSION_EXAGGERATION = 6;
+
 /** 入射点までの助走距離。 */
 const APPROACH_DISTANCE = 3;
 
@@ -77,13 +91,14 @@ function deviationDeg(path: LightPath): number {
  *
  * @param incidentRay 入射レイ
  * @param solid プリズムの平面集合
+ * @param exaggeration 描画に用いる分散誇張倍率（参照 3 波長は物理検証のため常に m=1 で出す）
  */
-function reportSpectrum(incidentRay: Ray, solid: ConvexSolid): void {
+function reportSpectrum(incidentRay: Ray, solid: ConvexSolid, exaggeration: number): void {
   const format = (v: Vec3): string =>
     `(${v.x.toFixed(9)}, ${v.y.toFixed(9)}, ${v.z.toFixed(9)})`;
 
-  // 代表 3 波長。spectrum / tracer のテストが持つ確定値と直接照合できる
-  console.log('=== 代表波長の偏角（局所空間）===');
+  // 代表 3 波長は m=1 の実物理。spectrum / tracer のテストが持つ確定値と直接照合できる
+  console.log('=== 代表波長の偏角（局所空間・m=1 実物理）===');
   const referencePaths = traceSpectrum(incidentRay, solid, BK7, [660, 550, 410]);
   referencePaths.forEach((path) => {
     const rgb = wavelengthToRgb(path.wavelengthNm);
@@ -101,12 +116,18 @@ function reportSpectrum(incidentRay: Ray, solid: ConvexSolid): void {
     console.log(`  分離幅（紫 - 赤） = ${separationDeg.toFixed(9)} 度`);
   }
 
-  // 実際に描画する連続スペクトル
-  const paths = traceSpectrum(incidentRay, solid, BK7, sampleWavelengths(CONTINUOUS_SAMPLE_COUNT));
+  // 実際に描画する連続スペクトル（分散誇張を適用）
+  const paths = traceSpectrum(
+    incidentRay,
+    solid,
+    BK7,
+    sampleWavelengths(CONTINUOUS_SAMPLE_COUNT),
+    exaggeration
+  );
   const first = paths[0];
   const last = paths[paths.length - 1];
 
-  console.log(`=== 連続スペクトル（${paths.length} 波長）===`);
+  console.log(`=== 連続スペクトル（${paths.length} 波長・分散誇張 m=${exaggeration}）===`);
   if (first !== undefined && last !== undefined) {
     console.log(
       `  λ=${first.wavelengthNm}nm 偏角=${deviationDeg(first).toFixed(9)}度` +
@@ -273,7 +294,7 @@ function main(): void {
     worldToLocal.copy(localToWorld).invert();
 
     const localRay = transformRay(worldIncidentRay, worldToLocal);
-    const localPaths = traceSpectrum(localRay, solid, BK7, wavelengths);
+    const localPaths = traceSpectrum(localRay, solid, BK7, wavelengths, DISPERSION_EXAGGERATION);
 
     // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
     beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
@@ -292,7 +313,7 @@ function main(): void {
   //   偏角にすると 0.003 度の差になるため、条件を揃えないと照合にならない）
   const localDLinePath = traceRay(localIncidentRay, solid, BK7.catalogNd, LINE_D_NM);
 
-  reportSpectrum(localIncidentRay, solid);
+  reportSpectrum(localIncidentRay, solid, DISPERSION_EXAGGERATION);
   reportTransform(
     localDLinePath,
     transformLightPath(localDLinePath, localToWorld),
