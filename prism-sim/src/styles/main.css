@@ -4,6 +4,12 @@
   --color-background-top: #0d1220;
   --color-background-bottom: #05070d;
   --color-text: #e6ecf5;
+  --color-panel: #111826;
+  --color-panel-border: #1e2a3d;
+  --color-muted: #8fa0bb;
+  --color-accent: #5b8dff;
+
+  --panel-width: 320px;
 
   color-scheme: dark;
 }
@@ -23,11 +29,73 @@ body {
   background: linear-gradient(180deg, var(--color-background-top), var(--color-background-bottom));
   color: var(--color-text);
   font-family: 'Noto Sans JP', 'Yu Gothic', sans-serif;
+
+  /* ビューポートと操作パネルの 2 段組（SPEC.md「画面構成」） */
+  display: flex;
 }
 
 #app {
-  width: 100%;
+  flex: 1;
   height: 100%;
+  /* flex 子要素の既定 min-width: auto だと canvas が縮まないため明示的に外す */
+  min-width: 0;
+}
+
+.control-panel {
+  flex: none;
+  width: var(--panel-width);
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto;
+  background: var(--color-panel);
+  border-left: 1px solid var(--color-panel-border);
+}
+
+.control-panel__title {
+  margin: 0 0 20px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.control-panel__section {
+  margin-bottom: 20px;
+}
+
+.control-panel__legend {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.control-panel__row,
+.control-panel__readout {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.control-panel__readout {
+  margin-top: 12px;
+  color: var(--color-muted);
+}
+
+.control-panel__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.control-panel__slider {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.control-panel__slider:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* レンダラが生成する canvas。ビューポート全域を占める。 */

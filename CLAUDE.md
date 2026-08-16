@@ -14,7 +14,7 @@
 | 3D | Three.js 0.185.1 + @types/three 0.185.4（WebGL2） |
 | ビルド | Vite 8.2.1 |
 | スタイル | 素の CSS（CSS Variables でテーマ管理、CSS フレームワーク不使用） |
-| テスト | Vitest 4.1.10（`src/optics/` と、Three の数学（`Matrix4` / `Vector3`）のみに依存する `src/scene/` の純粋関数が対象。WebGL・DOM に触るモジュールは対象外） |
+| テスト | Vitest 4.1.10（**DOM・WebGL に触れない純粋ロジックが対象**。`src/optics/` の全体、Three の数学（`Matrix4` / `Vector3`）のみに依存する `src/scene/` の純粋関数、`src/ui/store.ts` のような状態ロジックを含む。シーングラフ・DOM を触るモジュールは対象外） |
 | パッケージ管理 | npm |
 | 実行環境 | Chrome 最新版 / デスクトップ |
 

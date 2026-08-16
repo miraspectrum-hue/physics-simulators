@@ -1,16 +1,23 @@
-import { AmbientLight, DirectionalLight, Matrix4 } from 'three';
+import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT } from './optics/constants';
-import { createTriangularPrism, ray } from './optics/convexSolid';
+import { createTriangularPrism, intersectRayConvexSolid } from './optics/convexSolid';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
-import { traceSpectrum } from './optics/tracer';
-import { addScaled, dot, normalize, sub, vec3 } from './optics/vec3';
+import { incidenceAngleDeg, traceSpectrum } from './optics/tracer';
+import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
 import BeamRenderer from './scene/BeamRenderer';
 import InteractionCtl from './scene/InteractionCtl';
+import {
+  createIncidentRay,
+  faceNormalAngleDeg,
+  sourceAngleToWorldDeg,
+} from './scene/lightSource';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
 import type { ConvexSolid, LightPath, Ray, Vec3 } from './types/optics';
+import ControlPanel from './ui/ControlPanel';
+import { createStore } from './ui/store';
 
 import './styles/main.css';
 
@@ -28,46 +35,52 @@ import './styles/main.css';
 /** 左側面の中点（局所座標）。tracer のテストが入射点として使う実績値。 */
 const LEFT_FACE_MIDPOINT: Vec3 = vec3(-0.5, 0.288675134594813, 0);
 
-/** 入射角 [deg]。BK7 が対称通過（最小偏角）となる角度。 */
-const INCIDENCE_ANGLE_DEG = 49.323347736;
-
-/** プリズムの Z 軸まわりの回転角 [deg]。変換が効いていることを確かめるための固定値。 */
+/**
+ * 意図した既定姿勢：プリズムの Z 軸まわりの回転角 [deg]。
+ *
+ * リセット（3-7）の戻り先であり、光源の狙点と入射角の較正もこの姿勢を基準に凍結する。
+ * 以後プリズムを回してもこの値は動かない（姿勢の現在値は matrixWorld が持つ）。
+ */
 const PRISM_ROTATION_Z_DEG = 20;
 
-/**
- * 描画に用いる分散誇張倍率 m（1-2-1b / F-23）。
- *
- * BK7 の実分散は約 1.36° と狭く、m=1 では既定カメラで七色が白く飽和して見えないため、
- * 既定表示は誇張する（"Dark Side らしさ" 優先の方針）。m=1 に戻せば実物理になる。
- *
- * 値は実機の絵を見て 6 に決めた。扇の広がりは 1.92° → 12.29°。m=8 以上にすると更に広がるが、
- * 48 サンプルが個別の線に分離して縞に見え始め、連続スペクトルとしての見えを損なう
- * （偏角が λ に対し非線形なので、紫側ほど間隔が開く）。
- *
- * TODO(4-4): この固定値は暫定。UI スライダー（×1〜×10）で可変にする。
- */
-const DISPERSION_EXAGGERATION = 6;
+/** 入射面（左側面）の平面集合における添字。 */
+const ENTRY_PLANE_INDEX = 0;
 
-/** 入射点までの助走距離。 */
+/** 狙点までの助走距離。 */
 const APPROACH_DISTANCE = 3;
-
-/** 左側面の内向き法線が +x から倒れている角度 [deg]。 */
-const LEFT_FACE_NORMAL_TILT_DEG = -30;
 
 const DEG_PER_RAD = 180 / Math.PI;
 const RAD_PER_DEG = Math.PI / 180;
 
-/**
- * 左側面の中点へ、面法線から指定の入射角だけ倒した向きで入射するレイを作る（局所座標）。
- *
- * @param incidenceAngleDeg 入射角 [deg]
- * @returns 局所座標の入射レイ
- */
-function createLocalIncidentRay(incidenceAngleDeg: number): Ray {
-  const directionRad = (incidenceAngleDeg + LEFT_FACE_NORMAL_TILT_DEG) * RAD_PER_DEG;
-  const direction = vec3(Math.cos(directionRad), Math.sin(directionRad), 0);
+/** 起動時の座標変換に使う作業用インスタンス。毎フレームの経路では使わない。 */
+const workVector = new Vector3();
 
-  return ray(addScaled(LEFT_FACE_MIDPOINT, direction, -APPROACH_DISTANCE), direction);
+/**
+ * 点を局所座標からワールドへ移す。
+ *
+ * @param point 局所座標の点
+ * @param localToWorld 局所 → ワールドの変換行列
+ * @returns ワールド座標の点
+ */
+function toWorldPoint(point: Vec3, localToWorld: Matrix4): Vec3 {
+  const moved = workVector.set(point.x, point.y, point.z).applyMatrix4(localToWorld);
+
+  return vec3(moved.x, moved.y, moved.z);
+}
+
+/**
+ * 方向を局所座標からワールドへ移す（平行移動は効かない）。
+ *
+ * @param direction 局所座標の方向（単位ベクトル）
+ * @param localToWorld 局所 → ワールドの変換行列
+ * @returns ワールド座標の方向（単位ベクトル）
+ */
+function toWorldDirection(direction: Vec3, localToWorld: Matrix4): Vec3 {
+  const moved = workVector
+    .set(direction.x, direction.y, direction.z)
+    .transformDirection(localToWorld);
+
+  return vec3(moved.x, moved.y, moved.z);
 }
 
 /**
@@ -143,6 +156,66 @@ function reportSpectrum(incidentRay: Ray, solid: ConvexSolid, exaggeration: numb
   console.log(`  termination の内訳 = ${summarizeTerminations(paths)}`);
 }
 
+/**
+ * 入射面での実測の入射角を求める。
+ *
+ * スライダーは「既定姿勢での入射角」を指すので、プリズムを回すとこの実測値は乖離する。
+ * それが案 A（光源はワールド固定）の帰結であり、乖離そのものを見せることに意味がある。
+ *
+ * @param localRay 局所空間の入射レイ
+ * @param solid プリズムの平面集合
+ * @returns 入射角 [deg]。ビームがプリズムを外れていれば null（NaN を返さない）
+ */
+function measuredIncidenceDeg(localRay: Ray, solid: ConvexSolid): number | null {
+  const hit = intersectRayConvexSolid(localRay, solid);
+
+  if (hit === null || hit.tExit <= 0) {
+    return null;
+  }
+
+  return incidenceAngleDeg(localRay.direction, hit.enterPlane.normal);
+}
+
+/**
+ * スライダー角の較正が正しいことをコンソールへ出す（I-3 の主たる検証手段）。
+ *
+ * 既定姿勢では「スライダー値 == 実測 θ₁」が成り立つ。成り立たなければ較正がずれている。
+ *
+ * @param sliderAngleDeg スライダーの入射角 [deg]
+ * @param aimPoint 凍結した狙点（ワールド座標）
+ * @param entryNormalAngleDeg 凍結した入射面法線のワールド角 [deg]
+ * @param worldToLocal ワールド → 局所の変換行列
+ * @param solid プリズムの平面集合
+ */
+function reportCalibration(
+  sliderAngleDeg: number,
+  aimPoint: Vec3,
+  entryNormalAngleDeg: number,
+  worldToLocal: Matrix4,
+  solid: ConvexSolid
+): void {
+  console.log('=== I-3 スライダー角の較正 ===');
+  console.log(`  入射面法線のワールド角 = ${entryNormalAngleDeg.toFixed(9)} 度`);
+  console.log(
+    `  狙点（ワールド） = (${aimPoint.x.toFixed(9)}, ${aimPoint.y.toFixed(9)}, ` +
+      `${aimPoint.z.toFixed(9)})`
+  );
+
+  for (const angleDeg of [0, 30, sliderAngleDeg, 89]) {
+    const worldRay = createIncidentRay(
+      aimPoint,
+      sourceAngleToWorldDeg(angleDeg, entryNormalAngleDeg),
+      APPROACH_DISTANCE
+    );
+    const measured = measuredIncidenceDeg(transformRay(worldRay, worldToLocal), solid);
+
+    console.log(
+      `  スライダー ${angleDeg.toFixed(6)}度 → 実測 ` +
+        `${measured === null ? '—' : `${measured.toFixed(9)}度`}`
+    );
+  }
+}
+
 /** termination ごとの本数を数える（全反射で欠ける波長がないかの確認）。 */
 function summarizeTerminations(paths: readonly LightPath[]): string {
   const counts = new Map<string, number>();
@@ -180,11 +253,18 @@ function main(): void {
   const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
   const wavelengths = sampleWavelengths(CONTINUOUS_SAMPLE_COUNT);
 
-  // 光源も world 空間で同じだけ回すので、局所空間では S-2 / S-3 と同一のレイになる
-  const localReferenceRay = createLocalIncidentRay(INCIDENCE_ANGLE_DEG);
-  // 光源はワールドに固定する。プリズムを回すと局所空間での入射角が変わる
-  const worldIncidentRay = transformRay(localReferenceRay, localToWorld);
-  const localIncidentRay = transformRay(worldIncidentRay, worldToLocal);
+  // 光源はプリズムから独立してワールドに存在する。狙点と入射角の基準は「意図した既定姿勢」から
+  // 起動時に一度だけ導出して凍結する。以後プリズムを動かしても、この 2 つは追従しない
+  // （追従させると、プリズムを動かしてもビームが外れなくなり 3-8 が成立しない）
+  const aimPoint = toWorldPoint(LEFT_FACE_MIDPOINT, localToWorld);
+  const entryPlane = solid[ENTRY_PLANE_INDEX];
+  const entryNormalAngleDeg =
+    entryPlane === undefined
+      ? 0
+      : faceNormalAngleDeg(toWorldDirection(negate(entryPlane.normal), localToWorld));
+
+  const store = createStore();
+  const panel = new ControlPanel(document.body, store);
 
   // 色は波長ごとに一定なので、ここで一度だけ決まる
   const beams = new BeamRenderer(wavelengths);
@@ -209,27 +289,56 @@ function main(): void {
     }
     dirty = false;
 
+    const state = store.getState();
+
     prism.object.updateMatrixWorld(true);
     worldToLocal.copy(localToWorld).invert();
 
+    const worldIncidentRay = createIncidentRay(
+      aimPoint,
+      sourceAngleToWorldDeg(state.sourceAngleDeg, entryNormalAngleDeg),
+      APPROACH_DISTANCE
+    );
     const localRay = transformRay(worldIncidentRay, worldToLocal);
-    const localPaths = traceSpectrum(localRay, solid, BK7, wavelengths, DISPERSION_EXAGGERATION);
+    const localPaths = traceSpectrum(localRay, solid, BK7, wavelengths, state.exaggeration);
 
     // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
     beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
+
+    // スライダーは既定姿勢での入射角。プリズムを回すとここが乖離する（案 A の肝）
+    panel.setMeasuredIncidenceDeg(measuredIncidenceDeg(localRay, solid));
 
     // 内訳が変わった瞬間だけ出す。プリズムをビームから外すと missed へ倒れる（TASKS 3-8）
     const summary = summarizeTerminations(localPaths);
 
     if (summary !== lastTerminationSummary) {
       lastTerminationSummary = summary;
-      console.log(`[追跡] termination の内訳 = ${summary}`);
+      const measured = measuredIncidenceDeg(localRay, solid);
+      console.log(
+        `[追跡] termination の内訳 = ${summary}` +
+          ` / スライダー θ₁ = ${state.sourceAngleDeg.toFixed(6)}度` +
+          ` / 実測 θ₁ = ${measured === null ? '—' : `${measured.toFixed(6)}度`}`
+      );
     }
   };
 
+  store.subscribe(markDirty);
   refreshBeams();
 
-  reportSpectrum(localIncidentRay, solid, DISPERSION_EXAGGERATION);
+  // 起動時の検証。既定姿勢では実測 θ₁ とスライダー値が一致するはず（較正の正しさ）
+  reportCalibration(store.getState().sourceAngleDeg, aimPoint, entryNormalAngleDeg, worldToLocal, solid);
+  reportSpectrum(
+    transformRay(
+      createIncidentRay(
+        aimPoint,
+        sourceAngleToWorldDeg(store.getState().sourceAngleDeg, entryNormalAngleDeg),
+        APPROACH_DISTANCE
+      ),
+      worldToLocal
+    ),
+    solid,
+    store.getState().exaggeration
+  );
 
   // ギズモはプリズムの matrixWorld を直接動かす。姿勢の変化を dirty に流すだけでよい
   const interaction = new InteractionCtl(
