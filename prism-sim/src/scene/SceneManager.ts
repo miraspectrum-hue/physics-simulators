@@ -36,6 +36,9 @@ export default class SceneManager {
   /** 描画面の大きさが変わったときに呼ぶ購読者。`LineMaterial.resolution` の更新に使う。 */
   private readonly resizeSubscribers: Array<(width: number, height: number) => void> = [];
 
+  /** 直前フレームの時刻 [ms]。経過時間の算出に使う。 */
+  private lastFrameTimeMs: number | null = null;
+
   /**
    * @param container canvas を追加する要素。この要素の大きさに追従する
    */
@@ -66,6 +69,13 @@ export default class SceneManager {
   }
 
   /**
+   * イベントを拾う要素（レンダラの canvas）。コントロール類の接続先になる。
+   */
+  get domElement(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  /**
    * 描画面の大きさの変化を購読する。登録時にも現在の大きさで一度呼ぶ。
    *
    * @param subscriber 幅・高さ [px] を受け取る関数
@@ -81,11 +91,15 @@ export default class SceneManager {
    * ループは常時 60fps で回し、光路の再計算は `onFrame` の中で dirty フラグにより
    * 抑制する（CLAUDE.md「Three.js 運用」）。
    *
-   * @param onFrame 描画の直前に毎フレーム呼ぶ関数
+   * @param onFrame 描画の直前に毎フレーム呼ぶ関数。前フレームからの経過時間 [s] を受け取る
    */
-  start(onFrame?: () => void): void {
-    this.renderer.setAnimationLoop(() => {
-      onFrame?.();
+  start(onFrame?: (deltaSeconds: number) => void): void {
+    this.renderer.setAnimationLoop((time) => {
+      // 初回は前フレームが無いので 0 とする
+      const deltaSeconds = this.lastFrameTimeMs === null ? 0 : (time - this.lastFrameTimeMs) / 1000;
+      this.lastFrameTimeMs = time;
+
+      onFrame?.(deltaSeconds);
       this.renderer.render(this.scene, this.camera);
     });
   }

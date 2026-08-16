@@ -6,6 +6,7 @@ import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import { traceSpectrum } from './optics/tracer';
 import { addScaled, dot, normalize, sub, vec3 } from './optics/vec3';
 import BeamRenderer from './scene/BeamRenderer';
+import InteractionCtl from './scene/InteractionCtl';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
@@ -195,6 +196,10 @@ function main(): void {
   // 光路の再計算は姿勢や入射角が変わったフレームだけ行う（CLAUDE.md「Three.js 運用」）
   let dirty = true;
 
+  const markDirty = (): void => {
+    dirty = true;
+  };
+
   const refreshBeams = (): void => {
     if (!dirty) {
       return;
@@ -215,7 +220,21 @@ function main(): void {
 
   reportSpectrum(localIncidentRay, solid, DISPERSION_EXAGGERATION);
 
-  sceneManager.start(refreshBeams);
+  // ギズモはプリズムの matrixWorld を直接動かす。姿勢の変化を dirty に流すだけでよい
+  const interaction = new InteractionCtl(
+    sceneManager.camera,
+    sceneManager.domElement,
+    sceneManager.scene
+  );
+  interaction.attachTarget(prism.object);
+  interaction.onPoseChange(markDirty);
+  // I-1 は回転のみ。モード切替の UI は I-2 以降で付ける
+  interaction.setMode('rotate');
+
+  sceneManager.start((deltaSeconds) => {
+    interaction.update(deltaSeconds);
+    refreshBeams();
+  });
 }
 
 main();
