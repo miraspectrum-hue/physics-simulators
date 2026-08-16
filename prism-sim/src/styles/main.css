@@ -1,0 +1,38 @@
+/* ダークテーマ固定（SPEC.md「デザイン」）。prizm.png の暗背景に合わせる。 */
+
+:root {
+  --color-background-top: #0d1220;
+  --color-background-bottom: #05070d;
+  --color-text: #e6ecf5;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: linear-gradient(180deg, var(--color-background-top), var(--color-background-bottom));
+  color: var(--color-text);
+  font-family: 'Noto Sans JP', 'Yu Gothic', sans-serif;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+/* レンダラが生成する canvas。ビューポート全域を占める。 */
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
