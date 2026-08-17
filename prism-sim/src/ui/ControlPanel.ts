@@ -8,14 +8,21 @@ import {
 /** 値が定まらないときの表示。NaN をそのまま出さないための記号。 */
 const UNAVAILABLE = '—';
 
+/** 姿勢スライダーの下限・上限 [deg]。Euler の Z が取りうる範囲に合わせる。 */
+const ROTATION_MIN_DEG = -180;
+const ROTATION_MAX_DEG = 180;
+
 /**
  * 右側の操作パネル（SPEC.md「画面構成」）。
  *
  * store とだけ結び、three にもレンダラにも触れない。UI からの入力は store へ、
  * store の変化は表示へ、という一方向の往復に閉じる。
  *
- * NOTE: I-3 の骨格。入射角スライダーと、実測 θ₁ の最小表示だけを持つ。
- *       材質セレクト・誇張スライダーは I-5、数値パネル一式は I-6（4-6）で足す。
+ * **プリズムの姿勢だけは store を経由しない。** 姿勢の単一の真実は `matrixWorld` であり、
+ * 姿勢スライダーはギズモと並ぶ「もう一つのビュー」にすぎない。パネルは three を知らないので、
+ * 実際の読み書きは `onRotationInput` / `setRotationDeg` を通じて配線側に委ねる。
+ *
+ * NOTE: I-4 時点。材質セレクト・誇張スライダーは I-5、数値パネル一式は I-6（4-6）で足す。
  */
 export default class ControlPanel {
   /** パネルのルート要素。 */
@@ -24,6 +31,14 @@ export default class ControlPanel {
   private readonly angleSlider: HTMLInputElement;
   private readonly angleValue: HTMLElement;
   private readonly measuredValue: HTMLElement;
+  private readonly rotationSlider: HTMLInputElement;
+  private readonly rotationValue: HTMLElement;
+
+  /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
+  private readonly rotationSubscribers: Array<(angleDeg: number) => void> = [];
+
+  /** リセットが押されたときに呼ぶ購読者。 */
+  private readonly resetSubscribers: Array<() => void> = [];
 
   /**
    * @param parent パネルを差し込む親要素
@@ -87,12 +102,100 @@ export default class ControlPanel {
     measured.append(measuredLabel, this.measuredValue);
     section.appendChild(measured);
 
+    // 姿勢セクション。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
+    const poseSection = document.createElement('section');
+    poseSection.className = 'control-panel__section';
+
+    const poseLegend = document.createElement('h2');
+    poseLegend.className = 'control-panel__legend';
+    poseLegend.textContent = 'プリズム';
+    poseSection.appendChild(poseLegend);
+
+    const poseLabel = document.createElement('label');
+    poseLabel.className = 'control-panel__row';
+    poseLabel.htmlFor = 'prism-rotation';
+
+    const poseLabelText = document.createElement('span');
+    poseLabelText.textContent = 'Z 軸回転';
+
+    this.rotationValue = document.createElement('span');
+    this.rotationValue.className = 'control-panel__value';
+
+    poseLabel.append(poseLabelText, this.rotationValue);
+
+    this.rotationSlider = document.createElement('input');
+    this.rotationSlider.type = 'range';
+    this.rotationSlider.id = 'prism-rotation';
+    this.rotationSlider.className = 'control-panel__slider';
+    this.rotationSlider.min = String(ROTATION_MIN_DEG);
+    this.rotationSlider.max = String(ROTATION_MAX_DEG);
+    this.rotationSlider.step = '0.5';
+
+    this.rotationSlider.addEventListener('input', () => {
+      const angleDeg = Number(this.rotationSlider.value);
+      this.rotationValue.textContent = `${angleDeg.toFixed(1)}°`;
+
+      for (const subscriber of this.rotationSubscribers) {
+        subscriber(angleDeg);
+      }
+    });
+
+    poseSection.append(poseLabel, this.rotationSlider);
+
+    const hint = document.createElement('p');
+    hint.className = 'control-panel__hint';
+    hint.textContent = 'R: 回転ギズモ / G: 移動ギズモ / Esc: カメラ操作';
+    poseSection.appendChild(hint);
+
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.className = 'control-panel__button';
+    resetButton.textContent = '初期状態に戻す';
+    resetButton.addEventListener('click', () => {
+      for (const subscriber of this.resetSubscribers) {
+        subscriber();
+      }
+    });
+    poseSection.appendChild(resetButton);
+
+    this.element.appendChild(poseSection);
+
     parent.appendChild(this.element);
 
     store.subscribe((state) => {
       this.render(state);
     });
     this.render(store.getState());
+  }
+
+  /**
+   * 姿勢スライダーが動かされたときの購読者を登録する。
+   *
+   * @param subscriber 新しい Z 軸回転角 [deg] を受け取る
+   */
+  onRotationInput(subscriber: (angleDeg: number) => void): void {
+    this.rotationSubscribers.push(subscriber);
+  }
+
+  /** リセットが押されたときの購読者を登録する。 */
+  onReset(subscriber: () => void): void {
+    this.resetSubscribers.push(subscriber);
+  }
+
+  /**
+   * 姿勢スライダーの**表示だけ**を更新する（ギズモ操作の反映用）。
+   *
+   * `value` への代入は `input` イベントを発火しないので、これを呼んでも
+   * `onRotationInput` の購読者は動かない。ギズモ → スライダー → ギズモ、という
+   * エコーが原理的に起こらないのはこの性質による。
+   *
+   * @param angleDeg Z 軸回転角 [deg]
+   */
+  setRotationDeg(angleDeg: number): void {
+    const text = angleDeg.toFixed(1);
+
+    this.rotationSlider.value = text;
+    this.rotationValue.textContent = `${text}°`;
   }
 
   /**

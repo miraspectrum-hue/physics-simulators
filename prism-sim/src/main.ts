@@ -323,6 +323,54 @@ function main(): void {
   };
 
   store.subscribe(markDirty);
+
+  // ギズモはプリズムの matrixWorld を直接動かす。姿勢の変化を dirty に流すだけでよい
+  const interaction = new InteractionCtl(
+    sceneManager.camera,
+    sceneManager.domElement,
+    sceneManager.scene
+  );
+  interaction.attachTarget(prism.object);
+  interaction.onPoseChange(markDirty);
+  interaction.onModeChange((mode) => {
+    console.log(`[操作] モード = ${mode}`);
+  });
+  // 切替は R（回転）/ G（移動）/ Esc（カメラ）
+  interaction.setMode('rotate');
+
+  /** 現在の姿勢（Z 軸回転）[deg]。単一の真実である Object3D から読む。 */
+  const currentRotationDeg = (): number => prism.object.rotation.z * DEG_PER_RAD;
+
+  /**
+   * 姿勢を設定して再計算を予約する。
+   *
+   * @param angleDeg Z 軸回転角 [deg]
+   */
+  const applyRotationDeg = (angleDeg: number): void => {
+    prism.object.rotation.z = angleDeg * RAD_PER_DEG;
+    prism.object.updateMatrixWorld(true);
+    markDirty();
+  };
+
+  // スライダー → 姿勢。ギズモのヘルパーはプリズムを見ているので自動で追従する
+  panel.onRotationInput(applyRotationDeg);
+
+  // ギズモ → スライダー。表示だけ書き換えるので input が再発火せず、エコーにならない
+  interaction.onPoseChange(() => {
+    panel.setRotationDeg(currentRotationDeg());
+  });
+
+  panel.onReset(() => {
+    store.reset();
+    prism.object.position.set(0, 0, 0);
+    prism.object.rotation.set(0, 0, PRISM_ROTATION_Z_DEG * RAD_PER_DEG);
+    prism.object.updateMatrixWorld(true);
+    panel.setRotationDeg(currentRotationDeg());
+    markDirty();
+    console.log(`[操作] リセット → 姿勢 ${currentRotationDeg().toFixed(1)}度`);
+  });
+
+  panel.setRotationDeg(currentRotationDeg());
   refreshBeams();
 
   // 起動時の検証。既定姿勢では実測 θ₁ とスライダー値が一致するはず（較正の正しさ）
@@ -339,20 +387,6 @@ function main(): void {
     solid,
     store.getState().exaggeration
   );
-
-  // ギズモはプリズムの matrixWorld を直接動かす。姿勢の変化を dirty に流すだけでよい
-  const interaction = new InteractionCtl(
-    sceneManager.camera,
-    sceneManager.domElement,
-    sceneManager.scene
-  );
-  interaction.attachTarget(prism.object);
-  interaction.onPoseChange(markDirty);
-  interaction.onModeChange((mode) => {
-    console.log(`[操作] モード = ${mode}`);
-  });
-  // 切替は R（回転）/ G（移動）/ Esc（カメラ）。パネルからの切替は I-3 で足す
-  interaction.setMode('rotate');
 
   sceneManager.start((deltaSeconds) => {
     interaction.update(deltaSeconds);

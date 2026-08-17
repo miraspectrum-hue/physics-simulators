@@ -176,7 +176,7 @@ export default class InteractionCtl {
     this.orbit.dispose();
   }
 
-  /** モードと対象からギズモの着脱と種類を決める。 */
+  /** モードと対象からギズモの着脱・種類・見せる軸を決める。 */
   private applyMode(): void {
     if (this.mode === 'camera' || this.target === null) {
       this.transform.detach();
@@ -185,7 +185,33 @@ export default class InteractionCtl {
     }
 
     this.transform.mode = this.mode;
+    this.applyAxisConstraint();
     this.transform.attach(this.target);
+  }
+
+  /**
+   * 操作の自由度を主断面（XY 平面）に閉じる。
+   *
+   * 回転は Z 軸まわりのみ、移動は XY 面内のみに制約する。主断面内で完結させることで、
+   * 1 自由度の姿勢スライダーとギズモが素直に双方向同期する（自由度が増えると
+   * スライダー側が姿勢を表現しきれず、両者の表示が食い違う）。
+   * 3D 的な斜め入射を見たい場合はカメラを回して観察する。
+   */
+  private applyAxisConstraint(): void {
+    const isRotate = this.mode === 'rotate';
+
+    this.transform.showX = !isRotate;
+    this.transform.showY = !isRotate;
+    this.transform.showZ = isRotate;
+
+    // 平面ハンドルは移動の XY だけ残す
+    this.transform.showXY = !isRotate;
+    this.transform.showYZ = false;
+    this.transform.showXZ = false;
+
+    // 回転の E（画面内まわり）と XYZE（自由回転）は主断面から外れるので出さない
+    this.transform.showE = false;
+    this.transform.showXYZE = false;
   }
 }
 
