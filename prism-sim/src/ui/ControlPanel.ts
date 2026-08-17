@@ -1,4 +1,9 @@
+import { ALL_MATERIALS, APEX_ANGLE_DEG, MATERIALS } from '../optics/constants';
+import { canTransmitThroughPrism } from '../optics/prism';
+import type { MaterialName } from '../types/optics';
 import {
+  EXAGGERATION_MAX,
+  EXAGGERATION_MIN,
   SOURCE_ANGLE_MAX_DEG,
   SOURCE_ANGLE_MIN_DEG,
   type AppState,
@@ -13,6 +18,16 @@ const ROTATION_MIN_DEG = -180;
 const ROTATION_MAX_DEG = 180;
 
 /**
+ * 頂角 60° で直接透過が起きない材質の警告文（TASKS 4-2b）。
+ *
+ * ダイヤモンドは臨界角 24.4° が小さすぎ、第 2 面の内部入射角（60°−θᵣ ≥ 35.6°）が
+ * 常にこれを超えるため必ず全反射する。バグではなく物理的に正しい挙動である
+ * （SPEC.md「ダイヤの全反射」）。
+ */
+const NO_DISPERSION_WARNING =
+  '臨界角が小さく、この頂角（60°）では直接透過せず七色が出ません（全反射のデモ）。';
+
+/**
  * 右側の操作パネル（SPEC.md「画面構成」）。
  *
  * store とだけ結び、three にもレンダラにも触れない。UI からの入力は store へ、
@@ -22,7 +37,7 @@ const ROTATION_MAX_DEG = 180;
  * 姿勢スライダーはギズモと並ぶ「もう一つのビュー」にすぎない。パネルは three を知らないので、
  * 実際の読み書きは `onRotationInput` / `setRotationDeg` を通じて配線側に委ねる。
  *
- * NOTE: I-4 時点。材質セレクト・誇張スライダーは I-5、数値パネル一式は I-6（4-6）で足す。
+ * NOTE: I-5 時点。数値パネル一式は I-6（4-6）で足す。
  */
 export default class ControlPanel {
   /** パネルのルート要素。 */
@@ -33,6 +48,10 @@ export default class ControlPanel {
   private readonly measuredValue: HTMLElement;
   private readonly rotationSlider: HTMLInputElement;
   private readonly rotationValue: HTMLElement;
+  private readonly materialSelect: HTMLSelectElement;
+  private readonly materialWarning: HTMLElement;
+  private readonly exaggerationSlider: HTMLInputElement;
+  private readonly exaggerationValue: HTMLElement;
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
   private readonly rotationSubscribers: Array<(angleDeg: number) => void> = [];
@@ -101,6 +120,74 @@ export default class ControlPanel {
 
     measured.append(measuredLabel, this.measuredValue);
     section.appendChild(measured);
+
+    // 材質セクション（4-2）。選択肢は ALL_MATERIALS から生やすので追記漏れが起きない
+    const materialSection = document.createElement('section');
+    materialSection.className = 'control-panel__section';
+
+    const materialLegend = document.createElement('h2');
+    materialLegend.className = 'control-panel__legend';
+    materialLegend.textContent = '材質';
+    materialSection.appendChild(materialLegend);
+
+    const materialLabel = document.createElement('label');
+    materialLabel.className = 'control-panel__row';
+    materialLabel.htmlFor = 'material';
+    materialLabel.textContent = 'ガラスの種類';
+
+    this.materialSelect = document.createElement('select');
+    this.materialSelect.id = 'material';
+    this.materialSelect.className = 'control-panel__select';
+
+    for (const material of ALL_MATERIALS) {
+      const option = document.createElement('option');
+      option.value = material.name;
+      option.textContent = `${material.name}（n_d = ${material.catalogNd.toFixed(3)}）`;
+      this.materialSelect.appendChild(option);
+    }
+
+    this.materialSelect.addEventListener('change', () => {
+      store.update({ material: toMaterialName(this.materialSelect.value) });
+    });
+
+    this.materialWarning = document.createElement('p');
+    this.materialWarning.className = 'control-panel__warning';
+    this.materialWarning.hidden = true;
+    this.materialWarning.textContent = NO_DISPERSION_WARNING;
+
+    materialSection.append(materialLabel, this.materialSelect, this.materialWarning);
+
+    // 分散誇張（4-4）。m=1 が実物理で、上げるほど教育用に分離を強調する
+    const exaggerationLabel = document.createElement('label');
+    exaggerationLabel.className = 'control-panel__row';
+    exaggerationLabel.htmlFor = 'exaggeration';
+
+    const exaggerationText = document.createElement('span');
+    exaggerationText.textContent = '分散の誇張';
+
+    this.exaggerationValue = document.createElement('span');
+    this.exaggerationValue.className = 'control-panel__value';
+
+    exaggerationLabel.append(exaggerationText, this.exaggerationValue);
+
+    this.exaggerationSlider = document.createElement('input');
+    this.exaggerationSlider.type = 'range';
+    this.exaggerationSlider.id = 'exaggeration';
+    this.exaggerationSlider.className = 'control-panel__slider';
+    this.exaggerationSlider.min = String(EXAGGERATION_MIN);
+    this.exaggerationSlider.max = String(EXAGGERATION_MAX);
+    this.exaggerationSlider.step = '1';
+
+    this.exaggerationSlider.addEventListener('input', () => {
+      store.update({ exaggeration: Number(this.exaggerationSlider.value) });
+    });
+
+    const exaggerationHint = document.createElement('p');
+    exaggerationHint.className = 'control-panel__hint';
+    exaggerationHint.textContent = '×1 が実際の物理。上げるほど七色の広がりを強調します。';
+
+    materialSection.append(exaggerationLabel, this.exaggerationSlider, exaggerationHint);
+    this.element.appendChild(materialSection);
 
     // 姿勢セクション。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
     const poseSection = document.createElement('section');
@@ -221,5 +308,46 @@ export default class ControlPanel {
       this.angleSlider.value = angleText;
     }
     this.angleValue.textContent = `${angleText}°`;
+
+    if (this.materialSelect.value !== state.material) {
+      this.materialSelect.value = state.material;
+    }
+    // 頂角 60° で直接透過しない材質のときだけ注意書きを出す（TASKS 4-2b）
+    this.materialWarning.hidden = !isNoDispersionMaterial(state.material);
+
+    const exaggerationText = String(state.exaggeration);
+    if (this.exaggerationSlider.value !== exaggerationText) {
+      this.exaggerationSlider.value = exaggerationText;
+    }
+    this.exaggerationValue.textContent =
+      state.exaggeration === 1 ? '×1（実物理）' : `×${exaggerationText}`;
   }
+}
+
+/**
+ * セレクトの値を `MaterialName` へ絞り込む。
+ *
+ * 選択肢は `ALL_MATERIALS` から生やしているので実際には常に一致するが、
+ * DOM の値は `string` なので、キャストを使わずに型を回復させる。
+ *
+ * @param value セレクトの値
+ * @returns 材質名。未知の値なら既定の BK7
+ */
+function toMaterialName(value: string): MaterialName {
+  const matched = ALL_MATERIALS.find((material) => material.name === value);
+
+  return matched?.name ?? 'BK7';
+}
+
+/**
+ * 頂角 60° のプリズムで直接透過が起きない材質かどうか。
+ *
+ * 材質名で決め打ちにせず、条件 `A < 2·θc` を検証済みの `canTransmitThroughPrism` に
+ * 委ねる。こうしておけば、将来 屈折率の高い材質を足したときも警告が自動で追従する。
+ *
+ * @param material 材質名
+ * @returns 直接透過しないなら true
+ */
+function isNoDispersionMaterial(material: MaterialName): boolean {
+  return !canTransmitThroughPrism(APEX_ANGLE_DEG, MATERIALS[material].catalogNd);
 }

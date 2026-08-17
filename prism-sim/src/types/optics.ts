@@ -92,9 +92,18 @@ export interface ConvexSolidHit {
  * 実際の材質データ（BK7 / SF10 / 水 / ダイヤモンド）は `optics/constants.ts` が持つ。
  * ここには形だけを置き、値の出典と検算はデータ側に集約する。
  */
+/**
+ * 材質の識別子。UI のセレクトの値であり、`MATERIALS` レコードのキーでもある。
+ *
+ * `PrismMaterial.name` をこの型にすることで、材質定数を足したときに
+ * 「ユニオンへの追記」と「レコードへの登録」の両方をコンパイラが要求するようになる
+ * （TASKS 2-8。手書き列挙の追記漏れを塞ぐ）。
+ */
+export type MaterialName = 'BK7' | 'SF10' | '水' | 'ダイヤモンド';
+
 export interface PrismMaterial {
-  /** 表示名 */
-  readonly name: string;
+  /** 表示名。レコードのキーと一致する */
+  readonly name: MaterialName;
   /** Cauchy 式の A 項（無次元） */
   readonly cauchyA: number;
   /** Cauchy 式の B 項 [µm²] */

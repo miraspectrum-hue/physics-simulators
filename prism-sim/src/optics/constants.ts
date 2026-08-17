@@ -5,7 +5,7 @@
  * 変更する場合は SPEC.md 側と必ず同時に更新し、n_d とアッベ数の検算を通すこと。
  */
 
-import type { PrismMaterial } from '../types/optics';
+import type { MaterialName, PrismMaterial } from '../types/optics';
 
 // ---------------------------------------------------------------------------
 // 基準スペクトル線
@@ -116,5 +116,22 @@ export const DIAMOND: PrismMaterial = {
   catalogAbbe: 55.3,
 };
 
-/** UI の材質セレクトに並べる順（分散の小さい順ではなく既定→分散大→分散小→デモ用）。 */
-export const ALL_MATERIALS: readonly PrismMaterial[] = [BK7, SF10, WATER, DIAMOND];
+/**
+ * 材質名から材質定数を引くレコード（TASKS 2-8）。
+ *
+ * `Record<MaterialName, PrismMaterial>` と型付けることで、`MaterialName` に材質を足したら
+ * ここへの登録をコンパイラが強制する。逆にここへ足しても `PrismMaterial.name` が
+ * `MaterialName` なのでユニオンへの追記も強制される。手書きの列挙にあった
+ * 「足したのに追記し忘れて静かに未検証になる」穴はこれで塞がれる。
+ *
+ * 並び順は UI のセレクトに出す順（既定 → 分散大 → 分散小 → デモ用）。
+ */
+export const MATERIALS: Record<MaterialName, PrismMaterial> = {
+  BK7,
+  SF10,
+  水: WATER,
+  ダイヤモンド: DIAMOND,
+};
+
+/** UI の材質セレクトに並べる順。レコードから導出するので追記漏れが起きない。 */
+export const ALL_MATERIALS: readonly PrismMaterial[] = Object.values(MATERIALS);

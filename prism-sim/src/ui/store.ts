@@ -1,3 +1,5 @@
+import type { MaterialName } from '../types/optics';
+
 /**
  * アプリ状態の単一の保持と変更通知（簡易 observable）。
  *
@@ -27,12 +29,17 @@ export const DEFAULT_SOURCE_ANGLE_DEG = 49.323347736;
 /** 既定の分散誇張倍率。実機の絵を見て決めた値（6e67192）。 */
 export const DEFAULT_EXAGGERATION = 6;
 
+/** 既定の材質。SPEC.md の既定材質に合わせる。 */
+export const DEFAULT_MATERIAL: MaterialName = 'BK7';
+
 /** アプリ状態。 */
 export interface AppState {
   /** 入射角 [deg]。主断面内の 1 自由度 */
   readonly sourceAngleDeg: number;
   /** 分散誇張倍率 m */
   readonly exaggeration: number;
+  /** 材質。`MATERIALS` のキー */
+  readonly material: MaterialName;
 }
 
 /** 状態の保持と通知。 */
@@ -58,7 +65,11 @@ export function createStore(): Store {
 
   /** 状態を差し替える。値が変わらなければ通知しない（無駄な再追跡を避ける）。 */
   const commit = (next: AppState): void => {
-    if (next.sourceAngleDeg === state.sourceAngleDeg && next.exaggeration === state.exaggeration) {
+    if (
+      next.sourceAngleDeg === state.sourceAngleDeg &&
+      next.exaggeration === state.exaggeration &&
+      next.material === state.material
+    ) {
       return;
     }
 
@@ -91,6 +102,7 @@ function initialState(): AppState {
   return {
     sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
     exaggeration: DEFAULT_EXAGGERATION,
+    material: DEFAULT_MATERIAL,
   };
 }
 
@@ -107,6 +119,8 @@ function clampState(state: AppState): AppState {
   return {
     sourceAngleDeg: clamp(state.sourceAngleDeg, SOURCE_ANGLE_MIN_DEG, SOURCE_ANGLE_MAX_DEG),
     exaggeration: clamp(state.exaggeration, EXAGGERATION_MIN, EXAGGERATION_MAX),
+    // 材質は連続量ではないので丸めない。型が値域そのものになっている
+    material: state.material,
   };
 }
 

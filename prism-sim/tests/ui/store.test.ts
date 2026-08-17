@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_EXAGGERATION,
+  DEFAULT_MATERIAL,
   DEFAULT_SOURCE_ANGLE_DEG,
   EXAGGERATION_MAX,
   EXAGGERATION_MIN,
@@ -40,6 +41,7 @@ describe('U-1. createStore: 初期状態', () => {
     expect(store.getState()).toEqual({
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: DEFAULT_EXAGGERATION,
+      material: DEFAULT_MATERIAL,
     });
   });
 
@@ -82,6 +84,7 @@ describe('U-2. createStore: 更新すると購読者が呼ばれる', () => {
     expect(listener).toHaveBeenCalledWith({
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: 4,
+      material: DEFAULT_MATERIAL,
     });
   });
 
@@ -173,6 +176,7 @@ describe('U-3. createStore: 値域外はクランプする', () => {
     expect(store.getState()).toEqual({
       sourceAngleDeg: SOURCE_ANGLE_MAX_DEG,
       exaggeration: EXAGGERATION_MAX,
+      material: DEFAULT_MATERIAL,
     });
   });
 });
@@ -194,6 +198,7 @@ describe('U-4. createStore: reset で初期状態へ戻る', () => {
     expect(store.getState()).toEqual({
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: DEFAULT_EXAGGERATION,
+      material: DEFAULT_MATERIAL,
     });
   });
 
@@ -279,7 +284,77 @@ describe('U-5. createStore: 値が変わらなければ通知しない', () => {
     // Act
     store.update({ sourceAngleDeg: 5, exaggeration: DEFAULT_EXAGGERATION });
 
+
     // Assert
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U-6. 材質（TASKS 4-2 / 2-8）
+// ---------------------------------------------------------------------------
+
+describe('U-6. createStore: 材質を保持する', () => {
+  it('既定の材質は BK7 である', () => {
+    // Arrange & Act
+    const store = createStore();
+
+    // Assert
+    expect(store.getState().material).toBe('BK7');
+    expect(DEFAULT_MATERIAL).toBe('BK7');
+  });
+
+  it('材質を更新すると読み出せる', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    store.update({ material: 'SF10' });
+
+    // Assert
+    expect(store.getState().material).toBe('SF10');
+  });
+
+  it('材質の更新で購読者が呼ばれる', () => {
+    // Arrange: 材質が変われば n(λ) が変わるので、光路の再計算が要る
+    const store = createStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    // Act
+    store.update({ material: 'ダイヤモンド' });
+
+    // Assert
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
+      exaggeration: DEFAULT_EXAGGERATION,
+      material: 'ダイヤモンド',
+    });
+  });
+
+  it('同じ材質で更新しても通知しない', () => {
+    // Arrange
+    const store = createStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    // Act
+    store.update({ material: DEFAULT_MATERIAL });
+
+    // Assert
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('reset で材質が既定へ戻る', () => {
+    // Arrange
+    const store = createStore();
+    store.update({ material: '水' });
+
+    // Act
+    store.reset();
+
+    // Assert
+    expect(store.getState().material).toBe(DEFAULT_MATERIAL);
   });
 });

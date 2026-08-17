@@ -1,6 +1,6 @@
 import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
-import { BK7, CONTINUOUS_SAMPLE_COUNT } from './optics/constants';
+import { BK7, CONTINUOUS_SAMPLE_COUNT, MATERIALS } from './optics/constants';
 import { createTriangularPrism, intersectRayConvexSolid } from './optics/convexSolid';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import { incidenceAngleDeg, traceSpectrum } from './optics/tracer';
@@ -216,6 +216,29 @@ function reportCalibration(
   }
 }
 
+/**
+ * 扇の広がり（両端の波長の偏角差）を求める。材質・誇張倍率の効きを数値で見るための指標。
+ *
+ * ダイヤモンドのように「左面で入射 → 右面で全反射 → 底面から射出」する経路では、
+ * 正三角形の幾何から r₃ = r₁ となり θ₃ = θ₁ が導かれるため、偏角が屈折率に依存しない
+ * （定偏角プリズムと同じ原理）。この場合の 0 は不具合ではなく物理的に正しい値である。
+ *
+ * NaN を 0 に潰さないのは、それが診断値であり、異常を隠すと切り分けができなくなるため。
+ *
+ * @param paths 波長順に並んだ光路
+ * @returns 広がり [deg]。光路が空なら NaN
+ */
+function spreadDeg(paths: readonly LightPath[]): number {
+  const first = paths[0];
+  const last = paths[paths.length - 1];
+
+  if (first === undefined || last === undefined) {
+    return Number.NaN;
+  }
+
+  return deviationDeg(first) - deviationDeg(last);
+}
+
 /** termination ごとの本数を数える（全反射で欠ける波長がないかの確認）。 */
 function summarizeTerminations(paths: readonly LightPath[]): string {
   const counts = new Map<string, number>();
@@ -300,7 +323,8 @@ function main(): void {
       APPROACH_DISTANCE
     );
     const localRay = transformRay(worldIncidentRay, worldToLocal);
-    const localPaths = traceSpectrum(localRay, solid, BK7, wavelengths, state.exaggeration);
+    const material = MATERIALS[state.material];
+    const localPaths = traceSpectrum(localRay, solid, material, wavelengths, state.exaggeration);
 
     // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
     beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
@@ -308,15 +332,16 @@ function main(): void {
     // スライダーは既定姿勢での入射角。プリズムを回すとここが乖離する（案 A の肝）
     panel.setMeasuredIncidenceDeg(measuredIncidenceDeg(localRay, solid));
 
-    // 内訳が変わった瞬間だけ出す。プリズムをビームから外すと missed へ倒れる（TASKS 3-8）
-    const summary = summarizeTerminations(localPaths);
+    // 材質・誇張・姿勢のいずれかで変わる。変化した瞬間だけ出す
+    const summary =
+      `${state.material} / m=${state.exaggeration} / ${summarizeTerminations(localPaths)}`;
 
     if (summary !== lastTerminationSummary) {
       lastTerminationSummary = summary;
       const measured = measuredIncidenceDeg(localRay, solid);
       console.log(
-        `[追跡] termination の内訳 = ${summary}` +
-          ` / スライダー θ₁ = ${state.sourceAngleDeg.toFixed(6)}度` +
+        `[追跡] ${summary}` +
+          ` / 扇の広がり = ${spreadDeg(localPaths).toFixed(6)}度` +
           ` / 実測 θ₁ = ${measured === null ? '—' : `${measured.toFixed(6)}度`}`
       );
     }
