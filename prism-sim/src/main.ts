@@ -377,6 +377,10 @@ function main(): void {
     );
     const localRay = transformRay(worldIncidentRay, worldToLocal);
     const material = MATERIALS[state.material];
+
+    // 見た目だけの反映（TASKS 4-2c）。光路計算はこの下で material から独立に屈折率を引く
+    prism.setRefractiveIndex(material.catalogNd);
+
     const localPaths = traceSpectrum(localRay, solid, material, wavelengths, state.exaggeration);
 
     // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
