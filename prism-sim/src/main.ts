@@ -7,6 +7,7 @@ import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import { incidenceAngleDeg, traceSpectrum } from './optics/tracer';
 import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
 import BeamRenderer from './scene/BeamRenderer';
+import FloorObject from './scene/FloorObject';
 import InteractionCtl from './scene/InteractionCtl';
 import {
   createIncidentRay,
@@ -310,6 +311,10 @@ function main(): void {
   prism.object.rotation.z = PRISM_ROTATION_Z_DEG * RAD_PER_DEG;
   prism.object.updateMatrixWorld(true);
   sceneManager.scene.add(prism.object);
+
+  // 床と背景はシミュレーションに関与しない演出（TASKS 2-6）。光路計算はこれらを知らない
+  const floor = new FloorObject();
+  sceneManager.scene.add(floor.object);
 
   sceneManager.scene.add(new AmbientLight(0xffffff, 1.2));
   const keyLight = new DirectionalLight(0xffffff, 2);

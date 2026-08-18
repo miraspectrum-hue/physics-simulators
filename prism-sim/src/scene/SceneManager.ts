@@ -1,6 +1,6 @@
 import {
   ACESFilmicToneMapping,
-  Color,
+  CanvasTexture,
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
@@ -26,13 +26,18 @@ const DEFAULT_CAMERA_Z = 6.5;
 const MAX_PIXEL_RATIO = 2;
 
 /**
- * 背景色。
+ * 背景のラジアルグラデーション（TASKS 2-6）。中心がわずかに明るい暗青。
  *
  * ポストエフェクトを挟むと描画がレンダーターゲット経由になり、透明な canvas に
- * CSS の背景を透かす方法では Bloom の合成が破綻する。シーン側で塗って canvas を
- * 不透明にする（グラデーションは 2-6 でシーン側へ移す）。
+ * CSS の背景を透かす方法では Bloom の合成が破綻する。そのためシーン側で塗る。
+ *
+ * 閾値 1.2 の Bloom には遠く届かない暗さなので、背景そのものは滲まない。
  */
-const BACKGROUND_COLOR = 0x070a13;
+const BACKGROUND_INNER_COLOR = '#131c30';
+const BACKGROUND_OUTER_COLOR = '#04060b';
+
+/** 背景テクスチャの解像度 [px]。緩やかなグラデーションなので低くてよい。 */
+const BACKGROUND_TEXTURE_SIZE = 512;
 
 /**
  * Bloom の強さ・広がり・閾値（TASKS 2-7）。
@@ -64,6 +69,7 @@ export default class SceneManager {
 
   private readonly container: HTMLElement;
   private readonly renderer: WebGLRenderer;
+  private readonly backgroundTexture: CanvasTexture;
   private readonly composer: EffectComposer;
   private readonly bloomPass: UnrealBloomPass;
   private readonly resizeListener: () => void;
@@ -81,7 +87,8 @@ export default class SceneManager {
     this.container = container;
 
     this.scene = new Scene();
-    this.scene.background = new Color(BACKGROUND_COLOR);
+    this.backgroundTexture = createBackgroundTexture();
+    this.scene.background = this.backgroundTexture;
 
     this.camera = new PerspectiveCamera(
       FIELD_OF_VIEW_DEG,
@@ -164,6 +171,7 @@ export default class SceneManager {
     this.stop();
     window.removeEventListener('resize', this.resizeListener);
     this.composer.dispose();
+    this.backgroundTexture.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -196,4 +204,37 @@ export default class SceneManager {
       subscriber(clientWidth, clientHeight);
     }
   }
+}
+
+/**
+ * 背景に敷くラジアルグラデーションのテクスチャを作る。
+ *
+ * 2D テクスチャを `scene.background` に置くと画面いっぱいに引き伸ばして描かれる。
+ * 横長のビューポートでは円が楕円に潰れるが、緩いビネットなので破綻しない。
+ *
+ * @returns 背景として使う CanvasTexture
+ */
+function createBackgroundTexture(): CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = BACKGROUND_TEXTURE_SIZE;
+  canvas.height = BACKGROUND_TEXTURE_SIZE;
+
+  const context = canvas.getContext('2d');
+
+  if (context === null) {
+    throw new Error('2D コンテキストを取得できません');
+  }
+
+  const center = BACKGROUND_TEXTURE_SIZE / 2;
+  const gradient = context.createRadialGradient(center, center, 0, center, center, center);
+  gradient.addColorStop(0, BACKGROUND_INNER_COLOR);
+  gradient.addColorStop(1, BACKGROUND_OUTER_COLOR);
+
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, BACKGROUND_TEXTURE_SIZE, BACKGROUND_TEXTURE_SIZE);
+
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+
+  return texture;
 }
