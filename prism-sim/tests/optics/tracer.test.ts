@@ -8,8 +8,10 @@ import {
   traceSpectrum,
 } from '../../src/optics/tracer';
 import {
+  ALL_MATERIALS,
   APEX_ANGLE_DEG,
   BK7,
+  CONTINUOUS_SAMPLE_COUNT,
   DIAMOND,
   EXIT_EXTENSION_LENGTH,
   MAX_BOUNCE_COUNT,
@@ -21,9 +23,12 @@ import { exaggerateIndex, refractiveIndex } from '../../src/optics/dispersion';
 import { canTransmit } from '../../src/optics/fresnel';
 import { minimumDeviationDeg, prismDeviationDeg } from '../../src/optics/prism';
 import { refractionAngleDeg } from '../../src/optics/refraction';
+import { sampleWavelengths } from '../../src/optics/spectrum';
+import { MAX_SEGMENTS_PER_PATH } from '../../src/scene/beamPacker';
 import { addScaled, cross, dot, length, normalize, sub, vec3 } from '../../src/optics/vec3';
 import type {
   LightPath,
+  MaterialName,
   PrismMaterial,
   Ray,
   Segment,
@@ -1111,5 +1116,265 @@ describe('P. traceSpectrum: 分散誇張倍率で分離を強調する', () => {
     expect(() =>
       traceSpectrum(spectrumIncidentRay(), PRISM, BK7, [RED_NM], 0.5)
     ).toThrow(RangeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Q. 掃引の網羅: 入射角の全域 × 全材質 × 誇張倍率（TASKS 3-9）
+// ---------------------------------------------------------------------------
+//
+// M 節は「BK7・単波長・traceRay」の入射角掃引だった。ここはその上位で、UI が実際に
+// 動かせる 3 つのつまみ（入射角スライダー・材質セレクト・誇張スライダー）の直積を、
+// **描画へ渡る形**（traceSpectrum の 48 波長）で掃く。
+//
+// 担保したいのは物理の正しさではなく「描画パイプラインへ渡す前提条件が全域で崩れない」
+// こと。とくに区間数は beamPacker の固定長バッファの受け入れ範囲そのもので、これを外すと
+// 描画時に RangeError になる（scene/beamPacker.ts）。
+//
+// 掃引の規模: 4 材質 × 誇張 3 段 × 入射角 179 通り × 48 波長 = 103104 光路。
+
+/** 入射角の掃引範囲 [deg]。スライダーの可動域 -89〜89 を 1 度刻みで全て通る。 */
+const SWEEP_ANGLES_DEG: readonly number[] = Array.from({ length: 179 }, (_unused, i) => i - 89);
+
+/** 誇張倍率の掃引点。下端（実物理）・既定・上端の 3 点。 */
+const SWEEP_EXAGGERATIONS: readonly number[] = [1, 6, 10];
+
+/** 掃引に使う波長 [nm]。描画と同じ連続スペクトルのサンプル。 */
+const SWEEP_WAVELENGTHS_NM: readonly number[] = sampleWavelengths(CONTINUOUS_SAMPLE_COUNT);
+
+/** 掃引 1 通りの結果。例外は握り潰さず、どの組み合わせで出たかを添えて記録する。 */
+interface SweepCase {
+  readonly materialName: MaterialName;
+  readonly label: string;
+  readonly paths: readonly LightPath[];
+  readonly failure: string | null;
+}
+
+let sweepCache: readonly SweepCase[] | undefined;
+
+/** 全組み合わせを 1 度だけ追跡して使い回す（各テストで再計算しない）。 */
+function sweepAllCombinations(): readonly SweepCase[] {
+  if (sweepCache !== undefined) {
+    return sweepCache;
+  }
+
+  const cases: SweepCase[] = [];
+
+  for (const material of ALL_MATERIALS) {
+    for (const exaggeration of SWEEP_EXAGGERATIONS) {
+      for (const incidenceDeg of SWEEP_ANGLES_DEG) {
+        const label = `${material.name} / m=${exaggeration} / θ₁=${incidenceDeg}度`;
+
+        try {
+          const paths = traceSpectrum(
+            incidentRayOnLeftFace(incidenceDeg),
+            PRISM,
+            material,
+            SWEEP_WAVELENGTHS_NM,
+            exaggeration
+          );
+
+          cases.push({ materialName: material.name, label, paths, failure: null });
+        } catch (error) {
+          const failure = `${label}: ${String(error)}`;
+
+          cases.push({ materialName: material.name, label, paths: [], failure });
+        }
+      }
+    }
+  }
+
+  sweepCache = cases;
+
+  return cases;
+}
+
+/** 掃引で得られた全光路。 */
+function sweepPaths(): readonly LightPath[] {
+  return sweepAllCombinations().flatMap((sweepCase) => sweepCase.paths);
+}
+
+/** 区間の 6 成分（始点 xyz・終点 xyz）。 */
+function segmentComponents(segment: Segment): readonly number[] {
+  return [
+    segment.start.x, segment.start.y, segment.start.z,
+    segment.end.x, segment.end.y, segment.end.z,
+  ];
+}
+
+describe('Q. traceSpectrum: 入射角・材質・誇張倍率の全域掃引', () => {
+  it('どの組み合わせでも例外を投げない', () => {
+    // Arrange & Act
+    const failures = sweepAllCombinations()
+      .map((sweepCase) => sweepCase.failure)
+      .filter((failure): failure is string => failure !== null);
+
+    // Assert
+    expect(failures).toEqual([]);
+  });
+
+  it('掃引が 103104 本の光路を生む（本数が減れば以降の検証が空虚になる）', () => {
+    // Arrange & Act
+    const pathCount = sweepPaths().length;
+
+    // Assert
+    expect(pathCount).toBe(103104);
+  });
+
+  it('すべての区間の座標が有限数である', () => {
+    // Arrange
+    const offenders: string[] = [];
+
+    // Act
+    for (const sweepCase of sweepAllCombinations()) {
+      for (const path of sweepCase.paths) {
+        const hasNonFinite = path.segments.some((segment) =>
+          segmentComponents(segment).some((value) => !Number.isFinite(value))
+        );
+
+        if (hasNonFinite) {
+          offenders.push(`${sweepCase.label} / λ=${path.wavelengthNm}nm`);
+        }
+      }
+    }
+
+    // Assert
+    expect(offenders).toEqual([]);
+  });
+
+  it('記録された屈折率の最小値が 1 を超える（誇張 ×10 でも空気より密なまま）', () => {
+    // Arrange & Act
+    const minIndex = sweepPaths().reduce(
+      (min, path) => Math.min(min, path.refractiveIndex),
+      Number.POSITIVE_INFINITY
+    );
+
+    // Assert
+    expect(minIndex).toBeGreaterThan(1);
+    // 最小は 水 / m=10 / λ=750nm。分散の下端を 10 倍に引き離した点
+    expect(minIndex).toBe(1.2981155555555566);
+  });
+
+  it('区間数が beamPacker の受け入れ範囲（1〜MAX_SEGMENTS_PER_PATH）に収まる', () => {
+    // Arrange
+    const offenders: string[] = [];
+    let maxCount = 0;
+
+    // Act
+    for (const sweepCase of sweepAllCombinations()) {
+      for (const path of sweepCase.paths) {
+        const count = path.segments.length;
+
+        maxCount = Math.max(maxCount, count);
+
+        if (count < 1 || count > MAX_SEGMENTS_PER_PATH) {
+          offenders.push(`${sweepCase.label} / λ=${path.wavelengthNm}nm: ${count} 区間`);
+        }
+      }
+    }
+
+    // Assert
+    expect(offenders).toEqual([]);
+    // 実測の上限は 4（入射 1 + 内部 2 + 射出 1）。上限 8 に対し余裕がある
+    expect(maxCount).toBe(4);
+  });
+});
+
+// 掃引が「危険な側」を実際に通っていることの担保。全反射を 1 本も通らない掃引なら、
+// 上の有限性テストは通っても 3-9 の目的（全反射域で破綻しない）を果たさない。
+/** [材質名, 直接透過の本数, 全反射を経た本数]。合計は 179 × 3 × 48 = 25776。 */
+const SWEEP_MODE_COUNTS: readonly [MaterialName, number, number][] = [
+  ['BK7', 17038, 8738],
+  ['SF10', 10820, 14956],
+  ['水', 21114, 4662],
+  ['ダイヤモンド', 0, 25776],
+];
+
+describe('Q. traceSpectrum: 掃引が直接透過と全反射の両方を通る', () => {
+  it.each(SWEEP_MODE_COUNTS)(
+    '%s: 直接透過 %i 本・全反射経由 %i 本',
+    (materialName, expectedDirect, expectedTotalReflection) => {
+      // Arrange
+      const paths = sweepAllCombinations()
+        .filter((sweepCase) => sweepCase.materialName === materialName)
+        .flatMap((sweepCase) => sweepCase.paths);
+
+      // Act
+      const direct = paths.filter((path) => innerSegments(path).length === 1).length;
+      const totalReflection = paths.filter((path) => innerSegments(path).length >= 2).length;
+
+      // Assert
+      expect(direct).toBe(expectedDirect);
+      expect(totalReflection).toBe(expectedTotalReflection);
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// R. 頂点直撃（掃引で見つかった縮退ケース）
+// ---------------------------------------------------------------------------
+//
+// θ₁ = 0（左面へ垂直入射）では、内部の光が底辺と右面の交点＝頂点 (1, -1/√3) を
+// **正確に**射抜く。ここは「底辺で全反射して右面から射出」と「右面で全反射して底面から
+// 射出」の分岐点で、その極限として長さ 0 の内部区間が 1 本できる。
+// NaN でも例外でもないが、区間の向きを normalize する側（InfoOverlay 等）には落とし穴に
+// なるため、事実として固定しておく。
+
+describe('R. traceRay: 垂直入射は頂点を直撃して長さ 0 の内部区間を生む', () => {
+  it('θ₁=0 の内部 2 本目が始点と終点のほぼ一致する縮退区間になる', () => {
+    // Arrange
+    const path = traceThroughBk7(0);
+
+    // Act
+    const degenerate = innerSegmentAt(path, 1);
+
+    // Assert
+    expect(length(sub(degenerate.end, degenerate.start))).toBe(1.1102230246251565e-16);
+  });
+
+  it('縮退区間の位置がプリズム右下の頂点である', () => {
+    // Arrange
+    const path = traceThroughBk7(0);
+
+    // Act
+    const degenerate = innerSegmentAt(path, 1);
+
+    // Assert
+    expectVec3ToBeCloseWithin(degenerate.start, vec3(1, -0.577350269189626, 0), POINT_TOLERANCE);
+  });
+
+  it('縮退区間があっても exited で終わり、区間数は 4 のままである', () => {
+    // Arrange
+    const path = traceThroughBk7(0);
+
+    // Act & Assert
+    expect(path.termination).toBe('exited');
+    expect(path.segments.length).toBe(4);
+  });
+});
+
+// 頂点は「底辺で全反射」「右面で全反射」の分岐点なので、丸めが 1 ULP 動くだけで
+// もう一方の枝に落ちる。そちらでは頂点から出る面が見つからず、射出しないまま打ち切られる。
+// 実アプリの θ₁ = 0 はこの枝で、情報バーの「射出せず内部で打ち切り」表示はこれを指す。
+describe('R. traceRay: 頂点直撃のもう一方の枝では射出せず打ち切られる', () => {
+  /** 入射点を 2 ULP ほど上へずらしたレイ。頂点の反対側の枝に落ちる。 */
+  function rayJustAboveMidpoint(): Ray {
+    return incidentRayAt(vec3(-0.5, 0.288675134594813 + 1e-16, 0), 0);
+  }
+
+  it('termination が bounceLimit になる', () => {
+    // Arrange & Act
+    const path = traceRay(rayJustAboveMidpoint(), PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert
+    expect(path.termination).toBe('bounceLimit');
+  });
+
+  it('内部区間が 1 本しかない（区間数だけでは全反射を検出できない）', () => {
+    // Arrange & Act
+    const path = traceRay(rayJustAboveMidpoint(), PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert
+    expect(innerSegments(path).length).toBe(1);
   });
 });

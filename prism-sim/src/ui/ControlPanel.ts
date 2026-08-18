@@ -10,9 +10,6 @@ import {
   type Store,
 } from './store';
 
-/** 値が定まらないときの表示。NaN をそのまま出さないための記号。 */
-const UNAVAILABLE = '—';
-
 /** 姿勢スライダーの下限・上限 [deg]。Euler の Z が取りうる範囲に合わせる。 */
 const ROTATION_MIN_DEG = -180;
 const ROTATION_MAX_DEG = 180;
@@ -37,7 +34,7 @@ const NO_DISPERSION_WARNING =
  * 姿勢スライダーはギズモと並ぶ「もう一つのビュー」にすぎない。パネルは three を知らないので、
  * 実際の読み書きは `onRotationInput` / `setRotationDeg` を通じて配線側に委ねる。
  *
- * NOTE: I-5 時点。数値パネル一式は I-6（4-6）で足す。
+ * 計算結果の数値表示は持たない。そちらは `InfoOverlay`（情報バー）の責務。
  */
 export default class ControlPanel {
   /** パネルのルート要素。 */
@@ -45,7 +42,6 @@ export default class ControlPanel {
 
   private readonly angleSlider: HTMLInputElement;
   private readonly angleValue: HTMLElement;
-  private readonly measuredValue: HTMLElement;
   private readonly rotationSlider: HTMLInputElement;
   private readonly rotationValue: HTMLElement;
   private readonly materialSelect: HTMLSelectElement;
@@ -104,22 +100,13 @@ export default class ControlPanel {
       store.update({ sourceAngleDeg: Number(this.angleSlider.value) });
     });
 
-    section.append(label, this.angleSlider);
+    const angleHint = document.createElement('p');
+    angleHint.className = 'control-panel__hint';
+    angleHint.textContent =
+      'スライダーは「既定姿勢での入射角」です。プリズムを回すと実測 θ₁（下の情報バー）と乖離します。';
+
+    section.append(label, this.angleSlider, angleHint);
     this.element.appendChild(section);
-
-    // 実測 θ₁。スライダー値は「既定姿勢での入射角」なので、プリズムを回すと乖離する
-    const measured = document.createElement('p');
-    measured.className = 'control-panel__readout';
-
-    const measuredLabel = document.createElement('span');
-    measuredLabel.textContent = '実測 θ₁';
-
-    this.measuredValue = document.createElement('span');
-    this.measuredValue.className = 'control-panel__value';
-    this.measuredValue.textContent = UNAVAILABLE;
-
-    measured.append(measuredLabel, this.measuredValue);
-    section.appendChild(measured);
 
     // 材質セクション（4-2）。選択肢は ALL_MATERIALS から生やすので追記漏れが起きない
     const materialSection = document.createElement('section');
@@ -283,16 +270,6 @@ export default class ControlPanel {
 
     this.rotationSlider.value = text;
     this.rotationValue.textContent = `${text}°`;
-  }
-
-  /**
-   * 実測の入射角を表示する。
-   *
-   * @param angleDeg 入射角 [deg]。ビームがプリズムを外れていれば null
-   */
-  setMeasuredIncidenceDeg(angleDeg: number | null): void {
-    this.measuredValue.textContent =
-      angleDeg === null || !Number.isFinite(angleDeg) ? UNAVAILABLE : `${angleDeg.toFixed(2)}°`;
   }
 
   /**

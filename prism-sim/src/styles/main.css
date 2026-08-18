@@ -35,10 +35,44 @@ body {
 }
 
 #app {
+  position: relative;
   flex: 1;
   height: 100%;
   /* flex 子要素の既定 min-width: auto だと canvas が縮まないため明示的に外す */
   min-width: 0;
+}
+
+/* ビューポート下端の情報バー（SPEC.md「画面構成」）。数値表示専用で操作は持たない。 */
+.info-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  padding: 10px 16px;
+  font-size: 12px;
+  background: rgba(5, 7, 13, 0.72);
+  border-top: 1px solid var(--color-panel-border);
+  /* カメラ操作の邪魔をしない。バーの上でドラッグしても OrbitControls に届く */
+  pointer-events: none;
+}
+
+.info-overlay__item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.info-overlay__label {
+  color: var(--color-muted);
+}
+
+.info-overlay__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
 }
 
 .control-panel {

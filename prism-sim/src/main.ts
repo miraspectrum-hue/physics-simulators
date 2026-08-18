@@ -2,6 +2,7 @@ import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT, MATERIALS } from './optics/constants';
 import { createTriangularPrism, intersectRayConvexSolid } from './optics/convexSolid';
+import { refractiveIndex } from './optics/dispersion';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import { incidenceAngleDeg, traceSpectrum } from './optics/tracer';
 import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
@@ -17,6 +18,7 @@ import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
 import type { ConvexSolid, LightPath, Ray, Vec3 } from './types/optics';
 import ControlPanel from './ui/ControlPanel';
+import InfoOverlay, { type InfoValues } from './ui/InfoOverlay';
 import { createStore } from './ui/store';
 
 import './styles/main.css';
@@ -45,6 +47,15 @@ const PRISM_ROTATION_Z_DEG = 20;
 
 /** 入射面（左側面）の平面集合における添字。 */
 const ENTRY_PLANE_INDEX = 0;
+
+/**
+ * 情報バーに出す代表波長 [nm]。赤端と紫端。
+ *
+ * `reportSpectrum` の参照 3 波長と揃えてあるので、起動時のコンソール出力（m=1 の確定値）と
+ * 画面の表示を直接突き合わせられる。
+ */
+const REPORT_RED_NM = 660;
+const REPORT_VIOLET_NM = 410;
 
 /** 狙点までの助走距離。 */
 const APPROACH_DISTANCE = 3;
@@ -101,6 +112,26 @@ function deviationDeg(path: LightPath): number {
   const exit = normalize(sub(last.end, last.start));
 
   return Math.acos(Math.min(Math.max(dot(incident, exit), -1), 1)) * DEG_PER_RAD;
+}
+
+/**
+ * 射出した光路の偏角。情報バーに出す δ の唯一の源。
+ *
+ * `deviationDeg` は外部区間（入射・射出）だけを見るので、θ₁ = 0 で内部区間が長さ 0 に
+ * 縮退しても影響を受けない。射出しなかった光路（全反射で打ち切られた・外れた）には
+ * 偏角が定義できないため null を返す。NaN は返さない。
+ *
+ * @param path 光路。存在しなければ undefined でよい
+ * @returns 偏角 [deg]。定義できなければ null
+ */
+function exitedDeviationDeg(path: LightPath | undefined): number | null {
+  if (path === undefined || path.termination !== 'exited') {
+    return null;
+  }
+
+  const value = deviationDeg(path);
+
+  return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -239,6 +270,22 @@ function spreadDeg(paths: readonly LightPath[]): number {
   return deviationDeg(first) - deviationDeg(last);
 }
 
+/**
+ * 全反射を経た光路の本数を数える。
+ *
+ * 内部区間が 2 本以上あることが「途中の面で全反射した」ことと同値になる
+ * （1 本なら入射面から出射面へ直接抜けている）。区間の向きは使わないので、
+ * θ₁ = 0 の縮退区間があっても数え方は壊れない。
+ *
+ * @param paths 光路の束
+ * @returns 全反射を経た本数
+ */
+function countTotalReflectionPaths(paths: readonly LightPath[]): number {
+  return paths.filter(
+    (path) => path.segments.filter((segment) => segment.insidePrism).length >= 2
+  ).length;
+}
+
 /** termination ごとの本数を数える（全反射で欠ける波長がないかの確認）。 */
 function summarizeTerminations(paths: readonly LightPath[]): string {
   const counts = new Map<string, number>();
@@ -288,6 +335,7 @@ function main(): void {
 
   const store = createStore();
   const panel = new ControlPanel(document.body, store);
+  const overlay = new InfoOverlay(container);
 
   // 色は波長ごとに一定なので、ここで一度だけ決まる
   const beams = new BeamRenderer(wavelengths);
@@ -330,7 +378,39 @@ function main(): void {
     beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
 
     // スライダーは既定姿勢での入射角。プリズムを回すとここが乖離する（案 A の肝）
-    panel.setMeasuredIncidenceDeg(measuredIncidenceDeg(localRay, solid));
+    const measured = measuredIncidenceDeg(localRay, solid);
+
+    // 情報バーの主役は「物理の事実」なので、n と δ は誇張を掛けない m=1 で別に追跡する。
+    // 2 波長ぶんなので描画用の 48 波長に比べれば無視できる
+    const referenceWavelengths = [REPORT_RED_NM, REPORT_VIOLET_NM];
+    const physicalPaths = traceSpectrum(localRay, solid, material, referenceWavelengths);
+
+    // 描画側の分離幅も同じ 2 波長で測る。48 サンプルの両端（380/750nm）で測ると
+    // 実物理の値と波長範囲が食い違い、括弧内の比較が成り立たなくなる
+    const drawnPaths =
+      state.exaggeration === 1
+        ? physicalPaths
+        : traceSpectrum(localRay, solid, material, referenceWavelengths, state.exaggeration);
+    const drawnRed = exitedDeviationDeg(drawnPaths[0]);
+    const drawnViolet = exitedDeviationDeg(drawnPaths[1]);
+
+    const info: InfoValues = {
+      measuredIncidenceDeg: measured,
+      redWavelengthNm: REPORT_RED_NM,
+      violetWavelengthNm: REPORT_VIOLET_NM,
+      redIndex: refractiveIndex(material, REPORT_RED_NM),
+      violetIndex: refractiveIndex(material, REPORT_VIOLET_NM),
+      redDeviationDeg: exitedDeviationDeg(physicalPaths[0]),
+      violetDeviationDeg: exitedDeviationDeg(physicalPaths[1]),
+      drawnSpreadDeg: drawnViolet === null || drawnRed === null ? null : drawnViolet - drawnRed,
+      exaggeration: state.exaggeration,
+      totalReflectionCount: countTotalReflectionPaths(localPaths),
+      trappedCount: localPaths.filter((path) => path.termination === 'bounceLimit').length,
+      pathCount: localPaths.length,
+      missed: measured === null,
+    };
+
+    overlay.update(info);
 
     // 材質・誇張・姿勢のいずれかで変わる。変化した瞬間だけ出す
     const summary =
@@ -338,7 +418,6 @@ function main(): void {
 
     if (summary !== lastTerminationSummary) {
       lastTerminationSummary = summary;
-      const measured = measuredIncidenceDeg(localRay, solid);
       console.log(
         `[追跡] ${summary}` +
           ` / 扇の広がり = ${spreadDeg(localPaths).toFixed(6)}度` +

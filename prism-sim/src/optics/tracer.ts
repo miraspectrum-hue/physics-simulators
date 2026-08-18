@@ -217,7 +217,8 @@ export function traceRay(
     const innerHit = intersectRayConvexSolid(innerRay, solid);
 
     if (innerHit === null) {
-      // 内部の点から出る面は必ず存在するため到達しない。網羅性のために打ち切る
+      // 内部の光が頂点を正確に射抜くと、その点から出る面が見つからずここへ来る。
+      // 稀だが到達する経路であり（tracer.test.ts R 節）、射出しないまま打ち切る
       return { wavelengthNm, refractiveIndex, segments, termination: 'bounceLimit' };
     }
 
