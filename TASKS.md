@@ -125,7 +125,7 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 | 2-4 | `BeamRenderer.ts`：`LightPath[]` → Line2 群（加算ブレンド） | 🔴 高 | [x] | 2-1, 1-4-4 |
 | 2-5 | 光路更新パイプライン（dirty フラグで再計算を抑制、ジオメトリは再生成しない） | 🔴 高 | [x] | 2-3, 2-4 |
 | 2-6 | 床面と背景グラデーション（`prizm.png` の雰囲気に寄せる） | 🟡 中 | [ ] | 2-1 |
-| 2-7 | UnrealBloomPass によるグロー表現 | 🟡 中 | [ ] | 2-4 |
+| 2-7 | UnrealBloomPass によるグロー表現 | 🟡 中 | [x] | 2-4 |
 | 2-8 | `MaterialName` 文字列ユニオン + `MATERIALS: Record<MaterialName, PrismMaterial>` を導入し、`ALL_MATERIALS = Object.values(MATERIALS)` を導出。材質の網羅をコンパイラ強制にする（詳細は下の注記） | 🟢 低 | [x] | 4-2 |
 
 **2-8 の背景（1-1-1c で判明・保留した課題）**
