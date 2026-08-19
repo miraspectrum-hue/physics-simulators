@@ -5,6 +5,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 
 import { wavelengthToRgb } from '../optics/spectrum';
 import { beamBufferLength, packSegmentPositions } from './beamPacker';
+import { RENDER_ORDER } from './renderOrder';
 import type { LightPath } from '../types/optics';
 
 /** 光線の太さ [px]。画面空間で一定にし、ズームしても線が痩せないようにする。 */
@@ -69,6 +70,8 @@ export default class BeamRenderer {
     });
 
     this.object = new LineSegments2(this.geometry, this.material);
+    // ガラスより後に加算する。前に描くとガラスの通常ブレンドに減光される
+    this.object.renderOrder = RENDER_ORDER.beam;
     // 自前でバッファを書き換えるとバウンディングが古いままになるため、カリングを切る
     this.object.frustumCulled = false;
   }

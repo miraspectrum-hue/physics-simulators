@@ -8,6 +8,7 @@ import {
 } from 'three';
 
 import { createPrismGeometry } from './prismGeometry';
+import { RENDER_ORDER } from './renderOrder';
 
 /** プリズムの一辺の長さ。光路計算の平面集合と共有する寸法。 */
 export const PRISM_SIDE_LENGTH = 2;
@@ -117,6 +118,7 @@ uniform float uRimStrength;`)
     };
 
     this.mesh = new Mesh(geometry, this.material);
+    this.mesh.renderOrder = RENDER_ORDER.prism;
     this.object = this.mesh;
   }
 

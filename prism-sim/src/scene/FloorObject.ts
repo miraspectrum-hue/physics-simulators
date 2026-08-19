@@ -7,6 +7,8 @@ import {
   SRGBColorSpace,
 } from 'three';
 
+import { RENDER_ORDER } from './renderOrder';
+
 /** 床の高さ [world]。プリズム（一辺 2・中心が原点）の下端よりわずかに下。 */
 export const FLOOR_Y = -1.2;
 
@@ -55,6 +57,7 @@ export default class FloorObject {
     });
 
     this.object = new Mesh(this.geometry, this.material);
+    this.object.renderOrder = RENDER_ORDER.floor;
     this.object.rotation.x = -Math.PI / 2;
     this.object.position.y = FLOOR_Y;
   }
