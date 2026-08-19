@@ -45,6 +45,48 @@ export interface Plane {
 }
 
 /**
+ * 有限で向きを持つ矩形のスクリーン面（TASKS 6-3）。
+ *
+ * **`Plane` とは別型にする。** `Plane` は `n·x = d` の**無限平面**で、凸多面体の半空間を
+ * 切り出すための道具であり、原点も面内軸も持たない。対してスクリーンは
+ * 「どこが中心か」「面内のどちらが横か」「どこまでが縁か」を持たないと
+ * 投影像の uv も縁の判定も定義できない。`Plane` を拡張すると、プリズムを構成する
+ * 5 枚の平面にまで面内軸という無意味な情報を強要することになる。
+ *
+ * 無限平面としての表現が要る場面では `plane(normal, dot(normal, origin))` で作れる。
+ *
+ * **`axisU` / `axisV` / `normal` は正規直交であることを前提とする。**
+ * 崩れると uv が面への正射影でなくなるため、生成は必ず `screenPlane()` を通すこと
+ * （`axisV` は `normal × axisU` から導出され、直交性が構造的に保証される）。
+ */
+export interface ScreenPlane {
+  /** 面の中心（ワールド座標）。uv の原点でもある */
+  readonly origin: Vec3;
+  /** 面の単位法線 */
+  readonly normal: Vec3;
+  /** 面内の第 1 軸（単位ベクトル）。uv の u 方向 */
+  readonly axisU: Vec3;
+  /** 面内の第 2 軸（単位ベクトル）。uv の v 方向 */
+  readonly axisV: Vec3;
+  /** 中心から縁までの距離。矩形の半幅 */
+  readonly halfExtent: number;
+}
+
+/**
+ * スクリーン面内の 2 次元座標。面の中心が原点。
+ *
+ * 単位はワールド座標と同じ（`axisU` / `axisV` が単位ベクトルのため）。
+ * 縁からのはみ出し判定（`|u| > halfExtent` など）は描画層の責務であり、
+ * この型自体は範囲を制限しない。
+ */
+export interface PlaneUV {
+  /** `axisU` 方向の座標 */
+  readonly u: number;
+  /** `axisV` 方向の座標 */
+  readonly v: number;
+}
+
+/**
  * 凸多面体。外向き法線を持つ平面が張る半空間の共通部分として表す。
  *
  * 3 次元で有界な立体を作るには半空間が最低 4 枚必要。
