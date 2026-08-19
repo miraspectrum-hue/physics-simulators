@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT, MATERIALS } from './optics/constants';
@@ -500,6 +502,22 @@ function main(): void {
     solid,
     store.getState().exaggeration
   );
+
+  // 開発時のみの診断フック。ビルド時は import.meta.env.DEV が false になり、この塊ごと落ちる。
+  // 「ガラスがビームを隠しているのか」「そもそもビームが描かれていないのか」を切り分ける
+  if (import.meta.env.DEV) {
+    (window as unknown as { __debug: unknown }).__debug = {
+      prism: prism.object,
+      beams: beams.object,
+      floor: floor.object,
+      camera: sceneManager.camera,
+      renderOrder: {
+        prism: prism.object.renderOrder,
+        beams: beams.object.renderOrder,
+        floor: floor.object.renderOrder,
+      },
+    };
+  }
 
   sceneManager.start((deltaSeconds) => {
     interaction.update(deltaSeconds);

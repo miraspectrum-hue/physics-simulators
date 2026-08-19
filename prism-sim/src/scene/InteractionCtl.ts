@@ -1,3 +1,4 @@
+import { Vector3 } from 'three';
 import type { Camera, Object3D, Scene } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
@@ -9,6 +10,24 @@ export type InteractionMode = 'camera' | 'rotate' | 'translate';
 
 /** ギズモの大きさ。プリズムの一辺 2 に対して掴みやすい値。 */
 const GIZMO_SIZE = 1.2;
+
+/** 回転リングが乗る平面の法線。回転は Z 軸まわりのみなので、リングは XY 平面上にある。 */
+const RING_NORMAL = new Vector3(0, 0, 1);
+
+/**
+ * 回転ギズモを隠す視線の閾値。
+ *
+ * `|視線 · リング法線|` で測る。1 ならリングを正面から見ている状態、0 なら真横＝リングが
+ * 線に潰れた状態。**光路も XY 平面上にあるため、リングが線に潰れる視点ではリングが
+ * ビームの上に正確に重なり、光が途切れて見える**（ギズモは UI として最前面に描かれる）。
+ * その視点ではリング自体も掴めないので、隠しても操作性は落ちない。
+ *
+ * 0.15 は視線が主断面から約 8.6 度以内に入ったとき、という意味になる。
+ */
+const RING_EDGE_ON_THRESHOLD = 0.15;
+
+/** 視線の計算に使う作業用インスタンス。毎フレーム new しない（CLAUDE.md「Three.js 運用」）。 */
+const workViewDirection = new Vector3();
 
 /**
  * キーボードによるモード切替の対応表。
@@ -38,6 +57,7 @@ const MODE_KEYS: Readonly<Record<string, InteractionMode>> = {
  *    見えないままポインタを拾い続け、プリズムの奥のクリックを奪う。
  */
 export default class InteractionCtl {
+  private readonly camera: Camera;
   private readonly orbit: OrbitControls;
   private readonly transform: TransformControls;
   private readonly scene: Scene;
@@ -63,6 +83,7 @@ export default class InteractionCtl {
    * @param scene ギズモのヘルパーを追加するシーン
    */
   constructor(camera: Camera, domElement: HTMLElement, scene: Scene) {
+    this.camera = camera;
     this.scene = scene;
 
     this.orbit = new OrbitControls(camera, domElement);
@@ -165,6 +186,31 @@ export default class InteractionCtl {
    */
   update(deltaSeconds: number): void {
     this.orbit.update(deltaSeconds);
+    this.applyRingVisibility();
+  }
+
+  /**
+   * 回転リングが線に潰れる視点では、リングを隠す。
+   *
+   * リングは光路と同じ XY 平面上にあるので、真横から見ると光の上に重なって
+   * ビームを途切れて見せてしまう。掴めない向きでもあるため、隠す方が素直。
+   * 見た目だけでなく `enabled` も落とし、見えないギズモがクリックを奪わないようにする。
+   */
+  private applyRingVisibility(): void {
+    if (this.mode !== 'rotate') {
+      this.helper.visible = true;
+      this.transform.enabled = true;
+
+      return;
+    }
+
+    this.camera.getWorldDirection(workViewDirection);
+
+    const alignment = Math.abs(workViewDirection.dot(RING_NORMAL));
+    const visible = alignment >= RING_EDGE_ON_THRESHOLD;
+
+    this.helper.visible = visible;
+    this.transform.enabled = visible;
   }
 
   /** イベントリスナと GPU リソースを解放する。 */
