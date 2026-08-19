@@ -7,6 +7,7 @@
  */
 
 const DEG_PER_RAD = 180 / Math.PI;
+const RAD_PER_DEG = Math.PI / 180;
 
 /** 入射角の定義域 [deg]。界面法線からの角なので 0〜90°。 */
 const INCIDENCE_ANGLE_MIN_DEG = 0;
@@ -98,4 +99,104 @@ export function canTransmit(nFrom: number, nTo: number, incidenceAngleDeg: numbe
   }
 
   return incidenceAngleDeg < criticalAngle(nFrom, nTo);
+}
+
+/**
+ * スネル則から屈折側の cos θt を求める。
+ *
+ * sin θt = (nFrom / nTo)·sin θi  →  cos θt = √(1 − sin²θt)
+ *
+ * **透過が確定してから呼ぶこと。** 全反射域では sin θt > 1 となり平方根の中が負になるが、
+ * ここでは判定しない（判定元を canTransmit に一本化するため）。
+ *
+ * @param nFrom 入射側媒質の屈折率（無次元）
+ * @param nTo 射出側媒質の屈折率（無次元）
+ * @param incidenceAngleDeg 界面法線から測った入射角 [deg]
+ * @returns 屈折角の余弦（0〜1）
+ */
+function cosTransmissionAngle(nFrom: number, nTo: number, incidenceAngleDeg: number): number {
+  const sinTransmission = (nFrom * Math.sin(incidenceAngleDeg * RAD_PER_DEG)) / nTo;
+
+  return Math.sqrt(1 - sinTransmission * sinTransmission);
+}
+
+/**
+ * s 偏光（電場が入射面に垂直）の反射率を求める。
+ *
+ * フレネルの式（非磁性体）:
+ *   Rs = |(nFrom·cos θi − nTo·cos θt) / (nFrom·cos θi + nTo·cos θt)|²
+ *
+ * 全反射域では 1 を返す。判定は canTransmit に委譲し、臨界角を再導出しない。
+ * 屈折角と違い反射率は全反射域でも定義される（＝ 1）ので、例外は投げない。
+ *
+ * @param nFrom 入射側媒質の屈折率（無次元）。1 以上の有限数
+ * @param nTo 射出側媒質の屈折率（無次元）。1 以上の有限数
+ * @param incidenceAngleDeg 界面法線から測った入射角 [deg]。0〜90 度
+ * @returns s 偏光の反射率（0〜1 の無次元）
+ * @throws {RangeError} 屈折率または入射角が定義域外の場合
+ */
+export function reflectanceS(nFrom: number, nTo: number, incidenceAngleDeg: number): number {
+  // 引数の検証も canTransmit が行う（屈折率・入射角ともに不正なら RangeError）
+  if (!canTransmit(nFrom, nTo, incidenceAngleDeg)) {
+    return 1;
+  }
+
+  const cosIncidence = Math.cos(incidenceAngleDeg * RAD_PER_DEG);
+  const cosTransmission = cosTransmissionAngle(nFrom, nTo, incidenceAngleDeg);
+
+  return (
+    ((nFrom * cosIncidence - nTo * cosTransmission) /
+      (nFrom * cosIncidence + nTo * cosTransmission)) **
+    2
+  );
+}
+
+/**
+ * p 偏光（電場が入射面に平行）の反射率を求める。
+ *
+ * フレネルの式（非磁性体）:
+ *   Rp = |(nFrom·cos θt − nTo·cos θi) / (nFrom·cos θt + nTo·cos θi)|²
+ *
+ * ブリュースター角 θB = atan(nTo / nFrom) でちょうど 0 になる。
+ * 全反射域では 1 を返す（判定は canTransmit に委譲）。
+ *
+ * @param nFrom 入射側媒質の屈折率（無次元）。1 以上の有限数
+ * @param nTo 射出側媒質の屈折率（無次元）。1 以上の有限数
+ * @param incidenceAngleDeg 界面法線から測った入射角 [deg]。0〜90 度
+ * @returns p 偏光の反射率（0〜1 の無次元）
+ * @throws {RangeError} 屈折率または入射角が定義域外の場合
+ */
+export function reflectanceP(nFrom: number, nTo: number, incidenceAngleDeg: number): number {
+  if (!canTransmit(nFrom, nTo, incidenceAngleDeg)) {
+    return 1;
+  }
+
+  const cosIncidence = Math.cos(incidenceAngleDeg * RAD_PER_DEG);
+  const cosTransmission = cosTransmissionAngle(nFrom, nTo, incidenceAngleDeg);
+
+  return (
+    ((nFrom * cosTransmission - nTo * cosIncidence) /
+      (nFrom * cosTransmission + nTo * cosIncidence)) **
+    2
+  );
+}
+
+/**
+ * 無偏光（自然光）の反射率を求める。
+ *
+ * 光源は偏光していないものとして扱うため、s 偏光と p 偏光の平均を取る
+ * （SPEC.md「フレネル反射（F-28）」の R = (Rs + Rp) / 2）。
+ *
+ * @param nFrom 入射側媒質の屈折率（無次元）。1 以上の有限数
+ * @param nTo 射出側媒質の屈折率（無次元）。1 以上の有限数
+ * @param incidenceAngleDeg 界面法線から測った入射角 [deg]。0〜90 度
+ * @returns 反射率（0〜1 の無次元）。残り 1 − R が透過する
+ * @throws {RangeError} 屈折率または入射角が定義域外の場合
+ */
+export function reflectance(nFrom: number, nTo: number, incidenceAngleDeg: number): number {
+  return (
+    (reflectanceS(nFrom, nTo, incidenceAngleDeg) +
+      reflectanceP(nFrom, nTo, incidenceAngleDeg)) /
+    2
+  );
 }

@@ -7,6 +7,7 @@ import {
   SRGBColorSpace,
 } from 'three';
 
+import { reflectance } from '../optics/fresnel';
 import { createPrismGeometry } from './prismGeometry';
 import { RENDER_ORDER } from './renderOrder';
 
@@ -25,6 +26,9 @@ export const PRISM_DEPTH = 2;
  */
 const IOR_MIN = 1;
 const IOR_MAX = 2.333;
+
+/** 空気の屈折率。縁の反射率を「空気からの垂直入射」として求めるために使う。 */
+const N_AIR = 1;
 
 /** 環境マップの解像度 [px]。粗い反射を作るだけなので小さくてよい（PMREM 化も一度きり）。 */
 const ENV_TEXTURE_WIDTH = 256;
@@ -138,9 +142,10 @@ uniform float uRimStrength;`)
       this.material.ior = clamped;
     }
 
-    // 誘電体の垂直反射率 F0 = ((n-1)/(n+1))²。頭打ちのない生の n_d から求める
-    const normalReflectance =
-      ((refractiveIndex - 1) / (refractiveIndex + 1)) ** 2;
+    // 誘電体の垂直反射率 F0。空気からの垂直入射の反射率そのものなので optics から引く
+    // （6-4 でテスト済み。((n-1)/(n+1))² を書き写すと検証されない式が 2 か所に増える）。
+    // ior の頭打ちとは無関係に、生の n_d から求める
+    const normalReflectance = reflectance(N_AIR, refractiveIndex, 0);
 
     this.rimStrength.value = normalReflectance * RIM_GAIN;
   }
