@@ -197,10 +197,10 @@ export default class InteractionCtl {
    * 見た目だけでなく `enabled` も落とし、見えないギズモがクリックを奪わないようにする。
    */
   private applyRingVisibility(): void {
+    // **ここは「隠す」方向にしか働かせない。** `camera` モードでは applyMode() が detach 済みで
+    // ギズモは出ないのに、毎フレーム visible = true を書き戻すと detach を打ち消してしまう
+    // （実際に camera モードでリングが残る回帰を出した）。見せ直しは applyMode() の責務。
     if (this.mode !== 'rotate') {
-      this.helper.visible = true;
-      this.transform.enabled = true;
-
       return;
     }
 
@@ -233,6 +233,10 @@ export default class InteractionCtl {
     this.transform.mode = this.mode;
     this.applyAxisConstraint();
     this.transform.attach(this.target);
+
+    // 直前が rotate で、リングを隠したまま切り替わった場合の復帰
+    this.helper.visible = true;
+    this.transform.enabled = true;
   }
 
   /**
