@@ -29,6 +29,21 @@ export const DEFAULT_SOURCE_ANGLE_DEG = 49.323347736;
 /** 既定の分散誇張倍率。実機の絵を見て決めた値（6e67192）。 */
 export const DEFAULT_EXAGGERATION = 6;
 
+/**
+ * スクリーン距離の下限・上限（TASKS 6-3）。
+ *
+ * 上限は実測の D_overflow（BK7・m=6・既定アンカーで最外波長が半幅 2.5 を超える距離 = 16.93）
+ * の 1.3 倍。はみ出しを確実に体験でき、超えた先で脱落波長が増える様子まで見える。
+ * 下限は実測から決めた。凍結アンカーの方向に沿ったプリズム最遠点は 0.7702 なので、
+ * ここを超えていれば板の平面はプリズムを切らない。Z 軸回転の全域でも最遠点は 0.785 で、
+ * 2.0 なら余裕 1.21 以上が常に残る。
+ */
+export const SCREEN_DISTANCE_MIN = 2;
+export const SCREEN_DISTANCE_MAX = 22;
+
+/** 既定のスクリーン距離。B-1 の固定配置と同じ値。 */
+export const DEFAULT_SCREEN_DISTANCE = 4;
+
 /** 既定の材質。SPEC.md の既定材質に合わせる。 */
 export const DEFAULT_MATERIAL: MaterialName = 'BK7';
 
@@ -40,6 +55,8 @@ export interface AppState {
   readonly exaggeration: number;
   /** 材質。`MATERIALS` のキー */
   readonly material: MaterialName;
+  /** 射出点からスクリーンまでの距離 */
+  readonly screenDistance: number;
 }
 
 /** 状態の保持と通知。 */
@@ -68,7 +85,8 @@ export function createStore(): Store {
     if (
       next.sourceAngleDeg === state.sourceAngleDeg &&
       next.exaggeration === state.exaggeration &&
-      next.material === state.material
+      next.material === state.material &&
+      next.screenDistance === state.screenDistance
     ) {
       return;
     }
@@ -103,6 +121,7 @@ function initialState(): AppState {
     sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
     exaggeration: DEFAULT_EXAGGERATION,
     material: DEFAULT_MATERIAL,
+    screenDistance: DEFAULT_SCREEN_DISTANCE,
   };
 }
 
@@ -121,6 +140,7 @@ function clampState(state: AppState): AppState {
     exaggeration: clamp(state.exaggeration, EXAGGERATION_MIN, EXAGGERATION_MAX),
     // 材質は連続量ではないので丸めない。型が値域そのものになっている
     material: state.material,
+    screenDistance: clamp(state.screenDistance, SCREEN_DISTANCE_MIN, SCREEN_DISTANCE_MAX),
   };
 }
 

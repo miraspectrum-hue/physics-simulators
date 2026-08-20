@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_EXAGGERATION,
   DEFAULT_MATERIAL,
+  DEFAULT_SCREEN_DISTANCE,
   DEFAULT_SOURCE_ANGLE_DEG,
+  SCREEN_DISTANCE_MAX,
+  SCREEN_DISTANCE_MIN,
   EXAGGERATION_MAX,
   EXAGGERATION_MIN,
   SOURCE_ANGLE_MAX_DEG,
@@ -42,6 +45,7 @@ describe('U-1. createStore: 初期状態', () => {
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: DEFAULT_EXAGGERATION,
       material: DEFAULT_MATERIAL,
+      screenDistance: DEFAULT_SCREEN_DISTANCE,
     });
   });
 
@@ -85,6 +89,7 @@ describe('U-2. createStore: 更新すると購読者が呼ばれる', () => {
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: 4,
       material: DEFAULT_MATERIAL,
+      screenDistance: DEFAULT_SCREEN_DISTANCE,
     });
   });
 
@@ -177,6 +182,7 @@ describe('U-3. createStore: 値域外はクランプする', () => {
       sourceAngleDeg: SOURCE_ANGLE_MAX_DEG,
       exaggeration: EXAGGERATION_MAX,
       material: DEFAULT_MATERIAL,
+      screenDistance: DEFAULT_SCREEN_DISTANCE,
     });
   });
 });
@@ -199,6 +205,7 @@ describe('U-4. createStore: reset で初期状態へ戻る', () => {
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: DEFAULT_EXAGGERATION,
       material: DEFAULT_MATERIAL,
+      screenDistance: DEFAULT_SCREEN_DISTANCE,
     });
   });
 
@@ -330,6 +337,7 @@ describe('U-6. createStore: 材質を保持する', () => {
       sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
       exaggeration: DEFAULT_EXAGGERATION,
       material: 'ダイヤモンド',
+      screenDistance: DEFAULT_SCREEN_DISTANCE,
     });
   });
 
@@ -356,5 +364,124 @@ describe('U-6. createStore: 材質を保持する', () => {
 
     // Assert
     expect(store.getState().material).toBe(DEFAULT_MATERIAL);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U-7. スクリーン距離（TASKS 6-3 B-2）
+// ---------------------------------------------------------------------------
+//
+// 値域の根拠は実測。BK7・m=6・既定アンカーで最外波長の |u| が半幅 2.5 を超える距離
+// （D_overflow）は 16.93 で、`screenProjection.projectPathsToScreen` を実際に呼んで
+// 二分法で求めた値である。上限はその 1.3 倍を取り、はみ出しを確実に体験できるようにする。
+
+describe('U-7. createStore: スクリーン距離を保持する', () => {
+  it('既定の距離で始まる', () => {
+    // Arrange & Act
+    const store = createStore();
+
+    // Assert
+    expect(store.getState().screenDistance).toBe(DEFAULT_SCREEN_DISTANCE);
+  });
+
+  it('値域内の距離を更新すると読み出せる', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    store.update({ screenDistance: 12 });
+
+    // Assert
+    expect(store.getState().screenDistance).toBe(12);
+  });
+
+  it('下限より小さい距離は下限へ丸める', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    store.update({ screenDistance: SCREEN_DISTANCE_MIN - 5 });
+
+    // Assert
+    expect(store.getState().screenDistance).toBe(SCREEN_DISTANCE_MIN);
+  });
+
+  it('上限より大きい距離は上限へ丸める', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    store.update({ screenDistance: SCREEN_DISTANCE_MAX + 100 });
+
+    // Assert
+    expect(store.getState().screenDistance).toBe(SCREEN_DISTANCE_MAX);
+  });
+
+  it('境界値そのものは丸められない', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    store.update({ screenDistance: SCREEN_DISTANCE_MIN });
+    const atMin = store.getState().screenDistance;
+    store.update({ screenDistance: SCREEN_DISTANCE_MAX });
+    const atMax = store.getState().screenDistance;
+
+    // Assert
+    expect(atMin).toBe(SCREEN_DISTANCE_MIN);
+    expect(atMax).toBe(SCREEN_DISTANCE_MAX);
+  });
+
+  it('距離の更新で購読者が呼ばれる', () => {
+    // Arrange: 距離が変われば投影先が変わるので、帯の再計算が要る
+    const store = createStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    // Act
+    store.update({ screenDistance: 10 });
+
+    // Assert
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
+      exaggeration: DEFAULT_EXAGGERATION,
+      material: DEFAULT_MATERIAL,
+      screenDistance: 10,
+    });
+  });
+
+  it('同じ距離で更新しても通知しない', () => {
+    // Arrange
+    const store = createStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    // Act
+    store.update({ screenDistance: DEFAULT_SCREEN_DISTANCE });
+
+    // Assert
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('reset で既定の距離へ戻る', () => {
+    // Arrange
+    const store = createStore();
+    store.update({ screenDistance: SCREEN_DISTANCE_MAX });
+
+    // Act
+    store.reset();
+
+    // Assert
+    expect(store.getState().screenDistance).toBe(DEFAULT_SCREEN_DISTANCE);
+  });
+
+  it('上限が実測の D_overflow（16.93）を超えている', () => {
+    // Arrange: 上限がここを下回ると、案 Q のはみ出しが一度も体験できなくなる
+    const measuredOverflowDistance = 16.9284;
+
+    // Act & Assert
+    expect(SCREEN_DISTANCE_MAX).toBeGreaterThan(measuredOverflowDistance);
+    expect(SCREEN_DISTANCE_MIN).toBeLessThan(DEFAULT_SCREEN_DISTANCE);
   });
 });

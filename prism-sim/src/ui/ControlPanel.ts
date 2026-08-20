@@ -4,6 +4,8 @@ import type { MaterialName } from '../types/optics';
 import {
   EXAGGERATION_MAX,
   EXAGGERATION_MIN,
+  SCREEN_DISTANCE_MAX,
+  SCREEN_DISTANCE_MIN,
   SOURCE_ANGLE_MAX_DEG,
   SOURCE_ANGLE_MIN_DEG,
   type AppState,
@@ -48,12 +50,17 @@ export default class ControlPanel {
   private readonly materialWarning: HTMLElement;
   private readonly exaggerationSlider: HTMLInputElement;
   private readonly exaggerationValue: HTMLElement;
+  private readonly screenDistanceSlider: HTMLInputElement;
+  private readonly screenDistanceValue: HTMLElement;
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
   private readonly rotationSubscribers: Array<(angleDeg: number) => void> = [];
 
   /** リセットが押されたときに呼ぶ購読者。 */
   private readonly resetSubscribers: Array<() => void> = [];
+
+  /** 「光路に合わせる」が押されたときに呼ぶ購読者。 */
+  private readonly focusScreenSubscribers: Array<() => void> = [];
 
   /**
    * @param parent パネルを差し込む親要素
@@ -176,6 +183,58 @@ export default class ControlPanel {
     materialSection.append(exaggerationLabel, this.exaggerationSlider, exaggerationHint);
     this.element.appendChild(materialSection);
 
+    // スクリーンのセクション（TASKS 6-3）。距離は凍結アンカー上を滑るだけで、
+    // 向きはボタンを押したときにしか変わらない（案 C）
+    const screenSection = document.createElement('section');
+    screenSection.className = 'control-panel__section';
+
+    const screenLegend = document.createElement('h2');
+    screenLegend.className = 'control-panel__legend';
+    screenLegend.textContent = 'スクリーン';
+    screenSection.appendChild(screenLegend);
+
+    const distanceLabel = document.createElement('label');
+    distanceLabel.className = 'control-panel__row';
+    distanceLabel.htmlFor = 'screen-distance';
+
+    const distanceText = document.createElement('span');
+    distanceText.textContent = '距離';
+
+    this.screenDistanceValue = document.createElement('span');
+    this.screenDistanceValue.className = 'control-panel__value';
+
+    distanceLabel.append(distanceText, this.screenDistanceValue);
+
+    this.screenDistanceSlider = document.createElement('input');
+    this.screenDistanceSlider.type = 'range';
+    this.screenDistanceSlider.id = 'screen-distance';
+    this.screenDistanceSlider.className = 'control-panel__slider';
+    this.screenDistanceSlider.min = String(SCREEN_DISTANCE_MIN);
+    this.screenDistanceSlider.max = String(SCREEN_DISTANCE_MAX);
+    this.screenDistanceSlider.step = '0.5';
+
+    this.screenDistanceSlider.addEventListener('input', () => {
+      store.update({ screenDistance: Number(this.screenDistanceSlider.value) });
+    });
+
+    const focusButton = document.createElement('button');
+    focusButton.type = 'button';
+    focusButton.className = 'control-panel__button';
+    focusButton.textContent = '光路に合わせる';
+    focusButton.addEventListener('click', () => {
+      for (const subscriber of this.focusScreenSubscribers) {
+        subscriber();
+      }
+    });
+
+    const screenHint = document.createElement('p');
+    screenHint.className = 'control-panel__hint';
+    screenHint.textContent =
+      'スクリーンは置いた位置に留まります。材質を変えて光が外れたら、ボタンで捕まえ直します。';
+
+    screenSection.append(distanceLabel, this.screenDistanceSlider, screenHint, focusButton);
+    this.element.appendChild(screenSection);
+
     // 姿勢セクション。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
     const poseSection = document.createElement('section');
     poseSection.className = 'control-panel__section';
@@ -257,6 +316,16 @@ export default class ControlPanel {
   }
 
   /**
+   * 「光路に合わせる」が押されたときの購読者を登録する。
+   *
+   * スクリーンの向きは配線側（アンカーを凍結している main）が持つので、
+   * パネルは押されたことだけを伝える。
+   */
+  onFocusScreen(subscriber: () => void): void {
+    this.focusScreenSubscribers.push(subscriber);
+  }
+
+  /**
    * 姿勢スライダーの**表示だけ**を更新する（ギズモ操作の反映用）。
    *
    * `value` への代入は `input` イベントを発火しないので、これを呼んでも
@@ -298,6 +367,12 @@ export default class ControlPanel {
     }
     this.exaggerationValue.textContent =
       state.exaggeration === 1 ? '×1（実物理）' : `×${exaggerationText}`;
+
+    const distanceText = state.screenDistance.toFixed(1);
+    if (this.screenDistanceSlider.value !== distanceText) {
+      this.screenDistanceSlider.value = distanceText;
+    }
+    this.screenDistanceValue.textContent = distanceText;
   }
 }
 

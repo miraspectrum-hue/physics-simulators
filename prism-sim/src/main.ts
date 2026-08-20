@@ -18,11 +18,15 @@ import {
   sourceAngleToWorldDeg,
 } from './scene/lightSource';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
-import { clipPathsToScreen, meanExitAnchor, projectPathsToScreen } from './scene/screenProjection';
+import {
+  clipPathsToScreen,
+  meanExitAnchor,
+  projectPathsToScreen,
+  type ExitAnchor,
+} from './scene/screenProjection';
 import ScreenObject, {
-  fallbackScreenPlane,
+  FALLBACK_ANCHOR,
   screenPlaneFromAnchor,
-  SCREEN_DEFAULT_DISTANCE,
   SCREEN_HALF_EXTENT,
 } from './scene/ScreenObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
@@ -383,15 +387,23 @@ function main(): void {
     return localPaths.map((path) => transformLightPath(path, localToWorld));
   };
 
-  // スクリーンの姿勢は起動時に一度だけ凍結する。材質やプリズムを変えても追従しない
-  // （追従させると「自分で動かして虹を捕まえる」体験が失われる。B-2 でボタンから置き直す）
-  const initialAnchor = meanExitAnchor(traceWorldPaths(store.getState()));
+  // スクリーンの向きは凍結したアンカーが決める。材質を変えてもプリズムを回しても追従しない
+  // （追従させると「自分で動かして虹を捕まえる」体験が失われる。案 C）。
+  // 更新されるのは「光路に合わせる」を押したときだけで、距離スライダーはこの上を滑るだけ。
+  let screenAnchor: ExitAnchor = meanExitAnchor(traceWorldPaths(store.getState())) ?? FALLBACK_ANCHOR;
   const screen = new ScreenObject(
-    initialAnchor === null
-      ? fallbackScreenPlane(SCREEN_HALF_EXTENT)
-      : screenPlaneFromAnchor(initialAnchor, SCREEN_DEFAULT_DISTANCE, SCREEN_HALF_EXTENT)
+    screenPlaneFromAnchor(screenAnchor, store.getState().screenDistance, SCREEN_HALF_EXTENT)
   );
   sceneManager.scene.add(screen.object);
+
+  /**
+   * 現在のアンカーと距離からスクリーンの姿勢を組み直す。
+   *
+   * @param distance 射出点からの距離
+   */
+  const applyScreenPose = (distance: number): void => {
+    screen.setPlane(screenPlaneFromAnchor(screenAnchor, distance, SCREEN_HALF_EXTENT));
+  };
 
   const band = new BandRenderer(wavelengths);
   sceneManager.scene.add(band.object);
@@ -408,6 +420,9 @@ function main(): void {
 
   /** 直前に出力した termination の内訳。変化した時だけログを出すために持つ。 */
   let lastTerminationSummary = '';
+
+  /** 直前にスクリーン姿勢へ反映した距離。変化した時だけ組み直す。 */
+  let appliedScreenDistance = store.getState().screenDistance;
 
   const refreshBeams = (): void => {
     if (!dirty) {
@@ -434,6 +449,12 @@ function main(): void {
     const localPaths = traceSpectrum(localRay, solid, material, wavelengths, state.exaggeration);
 
     const worldPaths = localPaths.map((path) => transformLightPath(path, localToWorld));
+
+    // 距離スライダーはアンカー上を滑らせるだけ。向きも原点も変えない
+    if (state.screenDistance !== appliedScreenDistance) {
+      appliedScreenDistance = state.screenDistance;
+      applyScreenPose(appliedScreenDistance);
+    }
 
     // スクリーンに載る波長を選び、載ったものだけビームを交点までに縮める（(あ)）。
     // 射影の計算に EXIT_EXTENSION_LENGTH は関与しない
@@ -528,6 +549,22 @@ function main(): void {
   // ギズモ → スライダー。表示だけ書き換えるので input が再発火せず、エコーにならない
   interaction.onPoseChange(() => {
     panel.setRotationDeg(currentRotationDeg());
+  });
+
+  // 「光路に合わせる」。今の光路からアンカーを取り直し、現在の距離で置き直す
+  panel.onFocusScreen(() => {
+    const anchor = meanExitAnchor(traceWorldPaths(store.getState()));
+
+    if (anchor === null) {
+      console.log('[操作] 射出光が無いためスクリーンを合わせられません');
+
+      return;
+    }
+
+    screenAnchor = anchor;
+    applyScreenPose(store.getState().screenDistance);
+    markDirty();
+    console.log('[操作] スクリーンを光路に合わせた');
   });
 
   panel.onReset(() => {

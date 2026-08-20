@@ -9,9 +9,6 @@ import { RENDER_ORDER } from './renderOrder';
 /** スクリーンの半幅。虹の帯が収まり、かつ既定のカメラ画角に入る大きさ。 */
 export const SCREEN_HALF_EXTENT = 2.5;
 
-/** 射出点からスクリーンまでの既定距離。B-2 の距離スライダーの初期値になる。 */
-export const SCREEN_DEFAULT_DISTANCE = 4;
-
 /** 板の色。像が読めるだけの明るさに留め、虹より目立たせない。 */
 const PANEL_COLOR = 0x141a26;
 
@@ -127,18 +124,14 @@ export function screenPlaneFromAnchor(
 }
 
 /**
- * 射出光が取れないときに使う既定のスクリーン面。
+ * 射出光が取れないときに使うアンカー。
  *
  * 起動直後にビームがプリズムを外している場合でも、板だけは置いて操作の手がかりを残す。
- *
- * @param halfExtent スクリーンの半幅
- * @returns +x 方向を見込む位置に立てたスクリーン面
  */
-export function fallbackScreenPlane(halfExtent: number): ScreenPlane {
-  const fallbackAnchor: ExitAnchor = { origin: vec3(0, 0, 0), direction: vec3(1, 0, 0) };
-
-  return screenPlaneFromAnchor(fallbackAnchor, SCREEN_DEFAULT_DISTANCE, halfExtent);
-}
+export const FALLBACK_ANCHOR: ExitAnchor = {
+  origin: vec3(0, 0, 0),
+  direction: vec3(1, 0, 0),
+};
 
 /** 面内 2 次元座標をワールド座標へ戻す。帯の頂点を作るのに使う。 */
 export function planeUVToWorld(plane: ScreenPlane, u: number, v: number): Vec3 {
