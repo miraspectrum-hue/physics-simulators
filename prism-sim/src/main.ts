@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT, MATERIALS } from './optics/constants';
@@ -6,6 +8,7 @@ import { refractiveIndex } from './optics/dispersion';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import { incidenceAngleDeg, traceSpectrum } from './optics/tracer';
 import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
+import BandRenderer from './scene/BandRenderer';
 import BeamRenderer from './scene/BeamRenderer';
 import FloorObject from './scene/FloorObject';
 import InteractionCtl from './scene/InteractionCtl';
@@ -15,10 +18,18 @@ import {
   sourceAngleToWorldDeg,
 } from './scene/lightSource';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
+import { clipPathsToScreen, meanExitAnchor, projectPathsToScreen } from './scene/screenProjection';
+import ScreenObject, {
+  fallbackScreenPlane,
+  screenPlaneFromAnchor,
+  SCREEN_DEFAULT_DISTANCE,
+  SCREEN_HALF_EXTENT,
+} from './scene/ScreenObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
 import type { ConvexSolid, LightPath, Ray, Vec3 } from './types/optics';
 import ControlPanel from './ui/ControlPanel';
+import type { AppState } from './ui/store';
 import InfoOverlay, { type InfoValues } from './ui/InfoOverlay';
 import { createStore } from './ui/store';
 
@@ -345,6 +356,45 @@ function main(): void {
   // 色は波長ごとに一定なので、ここで一度だけ決まる
   const beams = new BeamRenderer(wavelengths);
   sceneManager.scene.add(beams.object);
+
+  /**
+   * 現在の状態でワールド座標の光路を求める。
+   *
+   * スクリーンの初期配置と毎フレームの更新で同じ経路を通すために切り出す。
+   *
+   * @param state 現在の状態
+   * @returns ワールド座標の光路
+   */
+  const traceWorldPaths = (state: AppState): readonly LightPath[] => {
+    const worldIncidentRay = createIncidentRay(
+      aimPoint,
+      sourceAngleToWorldDeg(state.sourceAngleDeg, entryNormalAngleDeg),
+      APPROACH_DISTANCE
+    );
+    const localRay = transformRay(worldIncidentRay, worldToLocal);
+    const localPaths = traceSpectrum(
+      localRay,
+      solid,
+      MATERIALS[state.material],
+      wavelengths,
+      state.exaggeration
+    );
+
+    return localPaths.map((path) => transformLightPath(path, localToWorld));
+  };
+
+  // スクリーンの姿勢は起動時に一度だけ凍結する。材質やプリズムを変えても追従しない
+  // （追従させると「自分で動かして虹を捕まえる」体験が失われる。B-2 でボタンから置き直す）
+  const initialAnchor = meanExitAnchor(traceWorldPaths(store.getState()));
+  const screen = new ScreenObject(
+    initialAnchor === null
+      ? fallbackScreenPlane(SCREEN_HALF_EXTENT)
+      : screenPlaneFromAnchor(initialAnchor, SCREEN_DEFAULT_DISTANCE, SCREEN_HALF_EXTENT)
+  );
+  sceneManager.scene.add(screen.object);
+
+  const band = new BandRenderer(wavelengths);
+  sceneManager.scene.add(band.object);
   sceneManager.onResize((width, height) => {
     beams.setResolution(width, height);
   });
@@ -383,8 +433,15 @@ function main(): void {
 
     const localPaths = traceSpectrum(localRay, solid, material, wavelengths, state.exaggeration);
 
+    const worldPaths = localPaths.map((path) => transformLightPath(path, localToWorld));
+
+    // スクリーンに載る波長を選び、載ったものだけビームを交点までに縮める（(あ)）。
+    // 射影の計算に EXIT_EXTENSION_LENGTH は関与しない
+    const hits = projectPathsToScreen(worldPaths, screen.plane);
+
     // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
-    beams.update(localPaths.map((path) => transformLightPath(path, localToWorld)));
+    beams.update(clipPathsToScreen(worldPaths, hits));
+    band.update(hits, screen.plane);
 
     // スライダーは既定姿勢での入射角。プリズムを回すとここが乖離する（案 A の肝）
     const measured = measuredIncidenceDeg(localRay, solid);
@@ -500,6 +557,27 @@ function main(): void {
     solid,
     store.getState().exaggeration
   );
+
+  // 開発時のみの診断フック。ビルド時は import.meta.env.DEV が false になり、この塊ごと落ちる
+  if (import.meta.env.DEV) {
+    (window as unknown as { __debug: unknown }).__debug = {
+      camera: sceneManager.camera,
+      screen: screen.object,
+      screenPlane: screen.plane,
+      band: band.object,
+      beams: beams.object,
+      prism: prism.object,
+      floor: floor.object,
+      scene: sceneManager.scene,
+      renderOrder: {
+        floor: floor.object.renderOrder,
+        screenPanel: screen.object.renderOrder,
+        screenBand: band.object.renderOrder,
+        prism: prism.object.renderOrder,
+        beams: beams.object.renderOrder,
+      },
+    };
+  }
 
   sceneManager.start((deltaSeconds) => {
     interaction.update(deltaSeconds);
