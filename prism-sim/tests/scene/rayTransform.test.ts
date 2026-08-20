@@ -65,9 +65,9 @@ function sampleLightPath(): LightPath {
     wavelengthNm: 587.56,
     refractiveIndex: 1.5168,
     segments: [
-      { start: vec3(-3, 0.5, 0), end: vec3(-0.5, 0.288675134594813, 0), insidePrism: false },
-      { start: vec3(-0.5, 0.288675134594813, 0), end: vec3(0.5, 0.288675134594813, 0), insidePrism: true },
-      { start: vec3(0.5, 0.288675134594813, 0), end: vec3(38, -12.9, 0), insidePrism: false },
+      { start: vec3(-3, 0.5, 0), end: vec3(-0.5, 0.288675134594813, 0), insidePrism: false, intensity: 0.75 },
+      { start: vec3(-0.5, 0.288675134594813, 0), end: vec3(0.5, 0.288675134594813, 0), insidePrism: true, intensity: 0.5 },
+      { start: vec3(0.5, 0.288675134594813, 0), end: vec3(38, -12.9, 0), insidePrism: false, intensity: 0.75 },
     ],
     termination: 'exited',
   };
@@ -266,5 +266,23 @@ describe('T-6. transformLightPath: 座標だけを移し、他のフィールド
     expect(inner).toBeDefined();
     expectVec3ToBeClose(inner?.start ?? vec3(0, 0, 0), vec3(-0.5, 0.288675134594813, 0));
     expectVec3ToBeClose(inner?.end ?? vec3(0, 0, 0), vec3(0.5, 0.288675134594813, 0));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 強度の透過保存（TASKS 6-5a）
+// ---------------------------------------------------------------------------
+
+describe('transformLightPath: 強度は座標変換で変わらない', () => {
+  it('各区間の intensity が変換前と一致する', () => {
+    // Arrange: 座標変換は幾何の話であって、光の強さには関与しない
+    const matrix = new Matrix4().makeRotationZ(Math.PI / 5).setPosition(1, -2, 3);
+    const source = sampleLightPath();
+
+    // Act
+    const actual = transformLightPath(source, matrix);
+
+    // Assert
+    expect(actual.segments.map((s) => s.intensity)).toEqual(source.segments.map((s) => s.intensity));
   });
 });

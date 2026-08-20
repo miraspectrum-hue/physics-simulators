@@ -34,9 +34,9 @@ const THREE_SEGMENT_PATH: LightPath = {
   wavelengthNm: 660,
   refractiveIndex: 1.5,
   segments: [
-    { start: vec3(-3, -0.5, 0), end: vec3(-0.5, 0.25, 0), insidePrism: false },
-    { start: vec3(-0.5, 0.25, 0), end: vec3(0.5, 0.25, 0), insidePrism: true },
-    { start: vec3(0.5, 0.25, 0), end: vec3(38, -12.5, 0), insidePrism: false },
+    { start: vec3(-3, -0.5, 0), end: vec3(-0.5, 0.25, 0), insidePrism: false, intensity: 1 },
+    { start: vec3(-0.5, 0.25, 0), end: vec3(0.5, 0.25, 0), insidePrism: true, intensity: 1 },
+    { start: vec3(0.5, 0.25, 0), end: vec3(38, -12.5, 0), insidePrism: false, intensity: 1 },
   ],
   termination: 'exited',
 };
@@ -45,7 +45,7 @@ const THREE_SEGMENT_PATH: LightPath = {
 const ONE_SEGMENT_PATH: LightPath = {
   wavelengthNm: 410,
   refractiveIndex: 1.53,
-  segments: [{ start: vec3(-5, 5, 0), end: vec3(35, 5, 0), insidePrism: false }],
+  segments: [{ start: vec3(-5, 5, 0), end: vec3(35, 5, 0), insidePrism: false, intensity: 1 }],
   termination: 'missed',
 };
 
@@ -250,7 +250,7 @@ describe('P-5. packSegmentPositions: 契約を満たさない入力を弾く', (
     // Arrange: tracer は上限内に収めるが、詰め込み側でも黙って切り捨てない
     const tooManySegments: Segment[] = Array.from(
       { length: MAX_SEGMENTS_PER_PATH + 1 },
-      () => ({ start: vec3(0, 0, 0), end: vec3(1, 0, 0), insidePrism: false })
+      () => ({ start: vec3(0, 0, 0), end: vec3(1, 0, 0), insidePrism: false, intensity: 1 })
     );
     const overflowPath: LightPath = {
       wavelengthNm: 500,

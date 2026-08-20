@@ -162,8 +162,9 @@ export interface PrismMaterial {
  * `insidePrism` は描画層が屈折区間だけを別マテリアルで描くために持つほか、
  * テストが内部区間を特定して δ_min の対称通過を検証するのにも使う。
  *
- * NOTE: 強度（フレネル反射率）は Phase 6 で実際に計算する値として追加する。
- *       常に 1 のダミー値を今持たせることはしない。
+ * `intensity` は入射時を 1 とした相対強度（TASKS 6-5）。界面を通るたびに透過率 (1 − R) が
+ * 掛かるので、**1 本の光路の中でも区間ごとに値が変わる**。だから `LightPath` ではなく
+ * 区間が持つ。全反射域では `reflectance` が 1 を返すため、反射側は減衰しない。
  */
 export interface Segment {
   /** 区間の始点 */
@@ -172,6 +173,8 @@ export interface Segment {
   readonly end: Vec3;
   /** この区間がプリズム内部を通るなら true */
   readonly insidePrism: boolean;
+  /** 入射時を 1 とした相対強度（0〜1） */
+  readonly intensity: number;
 }
 
 /**

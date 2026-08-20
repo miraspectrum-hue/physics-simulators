@@ -22,12 +22,15 @@ import type {
 import { EXIT_EXTENSION_LENGTH, MAX_BOUNCE_COUNT } from './constants';
 import { intersectRayConvexSolid, pointOnRay, ray } from './convexSolid';
 import { exaggerateIndex, refractiveIndex } from './dispersion';
-import { canTransmit } from './fresnel';
+import { canTransmit, reflectance } from './fresnel';
 import { refractionAngleDeg } from './refraction';
 import { addScaled, dot, length, lengthSquared, negate, normalize, scale, sub } from './vec3';
 
 const DEG_PER_RAD = 180 / Math.PI;
 const RAD_PER_DEG = Math.PI / 180;
+
+/** 入射光の強度。すべての強度はこれを 1 とした相対値（TASKS 6-5）。 */
+const INCIDENT_INTENSITY = 1;
 
 /** 周囲媒質（空気）の屈折率。 */
 const N_AIR = 1;
@@ -193,14 +196,21 @@ export function traceRay(
     return {
       wavelengthNm,
       refractiveIndex,
-      segments: [extendedSegment(incidentRay.origin, incidentRay.direction, false)],
+      segments: [
+        extendedSegment(incidentRay.origin, incidentRay.direction, false, INCIDENT_INTENSITY),
+      ],
       termination: 'missed',
     };
   }
 
   const entryPoint = pointOnRay(incidentRay, hit.tEnter);
   const segments: Segment[] = [
-    { start: incidentRay.origin, end: entryPoint, insidePrism: false },
+    {
+      start: incidentRay.origin,
+      end: entryPoint,
+      insidePrism: false,
+      intensity: INCIDENT_INTENSITY,
+    },
   ];
 
   // 入射面は空気 → プリズム（疎→密）なので全反射は起こらない
@@ -211,6 +221,14 @@ export function traceRay(
     N_AIR,
     refractiveIndex
   );
+
+  // 入射面で反射したぶんだけ弱まる。反射光そのものは traceEntryReflection の管轄（6-5b）
+  const entryReflectance = reflectance(
+    N_AIR,
+    refractiveIndex,
+    incidenceAngleDeg(incidentRay.direction, hit.enterPlane.normal)
+  );
+  let intensity = INCIDENT_INTENSITY * (1 - entryReflectance);
 
   for (let bounceCount = 0; bounceCount < MAX_BOUNCE_COUNT; bounceCount += 1) {
     const innerRay = ray(position, direction);
@@ -224,15 +242,23 @@ export function traceRay(
 
     const facePoint = pointOnRay(innerRay, innerHit.tExit);
     const faceNormal = innerHit.exitPlane.normal;
-    segments.push({ start: position, end: facePoint, insidePrism: true });
+    segments.push({ start: position, end: facePoint, insidePrism: true, intensity });
 
-    if (canTransmit(refractiveIndex, N_AIR, incidenceAngleDeg(direction, faceNormal))) {
+    const innerIncidenceDeg = incidenceAngleDeg(direction, faceNormal);
+
+    if (canTransmit(refractiveIndex, N_AIR, innerIncidenceDeg)) {
       const exitDirection = refractDirection(direction, faceNormal, refractiveIndex, N_AIR);
-      segments.push(extendedSegment(facePoint, exitDirection, false));
+      const exitReflectance = reflectance(refractiveIndex, N_AIR, innerIncidenceDeg);
+
+      segments.push(
+        extendedSegment(facePoint, exitDirection, false, intensity * (1 - exitReflectance))
+      );
 
       return { wavelengthNm, refractiveIndex, segments, termination: 'exited' };
     }
 
+    // 全反射域では reflectance が 1 を返すので、反射側は減衰しない（強度はそのまま）。
+    // 判定元は canTransmit のままで、ここに新しい物理判断は足さない
     position = facePoint;
     direction = reflectDirection(direction, faceNormal);
   }
@@ -287,8 +313,19 @@ export function traceSpectrum(
  * @param start 始点
  * @param direction 進行方向（単位ベクトル）
  * @param insidePrism プリズム内部を通る区間なら true
+ * @param intensity この区間を進む光の強度（0〜1）
  * @returns 長さ EXIT_EXTENSION_LENGTH の区間
  */
-function extendedSegment(start: Vec3, direction: Vec3, insidePrism: boolean): Segment {
-  return { start, end: addScaled(start, direction, EXIT_EXTENSION_LENGTH), insidePrism };
+function extendedSegment(
+  start: Vec3,
+  direction: Vec3,
+  insidePrism: boolean,
+  intensity: number
+): Segment {
+  return {
+    start,
+    end: addScaled(start, direction, EXIT_EXTENSION_LENGTH),
+    insidePrism,
+    intensity,
+  };
 }

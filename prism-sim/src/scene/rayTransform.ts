@@ -48,7 +48,7 @@ export function transformRay(ray: Ray, matrix: Matrix4): Ray {
 /**
  * 光路を指定の行列で移す。
  *
- * 区間の端点だけを点として変換し、波長・屈折率・内外の別・終わり方は素通しする。
+ * 区間の端点だけを点として変換し、波長・屈折率・内外の別・強度・終わり方は素通しする。
  *
  * @param path 移す前の光路
  * @param matrix 剛体変換の行列
@@ -59,6 +59,8 @@ export function transformLightPath(path: LightPath, matrix: Matrix4): LightPath 
     start: transformPoint(segment.start, matrix),
     end: transformPoint(segment.end, matrix),
     insidePrism: segment.insidePrism,
+    // 剛体変換は光の量を変えない。強度はそのまま運ぶ
+    intensity: segment.intensity,
   }));
 
   return {

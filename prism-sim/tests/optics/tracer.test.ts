@@ -1378,3 +1378,317 @@ describe('R. traceRay: 頂点直撃のもう一方の枝では射出せず打ち
     expect(innerSegments(path).length).toBe(1);
   });
 });
+
+// ===========================================================================
+// S. 強度（TASKS 6-5a・透過側）
+// ===========================================================================
+//
+// 入射時を 1 とした相対強度が、界面を通るたびに透過率 (1 − R) で減衰することを縛る。
+//
+// 設計判断:
+//   - 反射率は 6-4 の `fresnel.reflectance`（無偏光 R = (Rs + Rp)/2）に委ねる。
+//     tracer は臨界角も判別式も見ない。全反射域では reflectance が 1 を返すので
+//     透過側は 1 − R = 0、反射側は ×1 となり、`canTransmit` 一本の判定と自動的に整合する。
+//   - 内部界面で透過できるとき、物理的には R のぶんが内部反射として残るが、
+//     分岐 1 回の方針でこれは追跡しない。**透過側の減衰は正しく計上し、
+//     失われた光の行き先は描かない**という非対称を承知のうえで採る。
+//   - 入射面反射光そのもの（intensity = R_entry）とエネルギー保存は 6-5b の担当。
+//
+// 期待値の出典:
+//   すべて `reflectance` と同じフレネルの式を Python 倍精度で評価した確定値。
+//   **6-4 のオラクルと同じ物理から導いてあるので、どちらかがずれれば両方落ちる。**
+//
+// NOTE: 強度のテストは「前後で変わらないこと」ではなく**必ず具体値との比較**で書く。
+//       未実装のセンチネルが NaN のとき `Object.is(NaN, NaN)` は true なので、
+//       自己比較の形にすると未実装でも通ってしまうため。
+
+/** 強度の許容差。フレネルの式を倍精度で評価するので、式の並べ替えによる差はこの程度。 */
+const INTENSITY_TOLERANCE = 1e-12;
+
+/** 最初の内部区間（入射面を通過した直後）。 */
+function firstInnerIntensity(path: LightPath): number {
+  return innerSegmentAt(path, 0).intensity;
+}
+
+// ---------------------------------------------------------------------------
+// S-1. 垂直入射：入射面を通った光は 1 − F0 になる
+// ---------------------------------------------------------------------------
+
+describe('S-1. 垂直入射で入射面の透過率が 1 − F0 になる', () => {
+  /** [材質名, 屈折率, 1 − F0]。F0 = ((n−1)/(n+1))² は 6-4 の垂直入射オラクルと同じ値。 */
+  const NORMAL_INCIDENCE_CASES: readonly [string, number, number][] = [
+    ['水', WATER.catalogNd, 0.9795848392503409],
+    ['BK7', BK7.catalogNd, 0.9578354374054542],
+    ['SF10', SF10.catalogNd, 0.9287444185466016],
+    ['ダイヤモンド', DIAMOND.catalogNd, 0.8279885483117629],
+  ];
+
+  it.each(NORMAL_INCIDENCE_CASES)('%s: 最初の内部区間の強度が 1 − F0 になる', (_name, n, expected) => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(0);
+
+    // Act
+    const path = traceRay(incident, PRISM, n, TEST_WAVELENGTH_NM);
+
+    // Assert
+    expect(Math.abs(firstInnerIntensity(path) - expected)).toBeLessThanOrEqual(INTENSITY_TOLERANCE);
+  });
+
+  it('入射前の区間は減衰していない（強度 1）', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(0);
+
+    // Act
+    const path = traceRay(incident, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert（入射時を 1 とする定義そのもの）
+    expect(segmentAt(path, 0).intensity).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-2. 直接透過：射出区間は (1 − R_entry)(1 − R_exit)
+// ---------------------------------------------------------------------------
+
+describe('S-2. 直接透過した光の射出強度が 2 界面の透過率の積になる', () => {
+  /**
+   * [材質名, 屈折率, 対称通過の入射角, 射出強度]。
+   *
+   * 対称通過（r₁ = r₂ = 30°）なので出口の内部入射角は 30°。
+   * R_entry = reflectance(1, n, θ₁)、R_exit = reflectance(n, 1, 30°) で、
+   * 対称性から両者はほぼ等しい（下 15 桁で一致）。
+   *
+   * **ダイヤモンドは含まない。** 頂角 60° では直接透過する経路が存在しないため
+   * （1-4-11 で確定済み）、この観点を書きようがない。TIR 経路は S-3 で扱う。
+   */
+  const DIRECT_TRANSMISSION_CASES: readonly [string, number, number, number][] = [
+    ['水', WATER.catalogNd, 41.812877292, 0.9495008419616559],
+    ['BK7', BK7.catalogNd, 49.323347736, 0.8857103693974842],
+    ['SF10', SF10.catalogNd, 59.784649106, 0.768462466466849],
+  ];
+
+  it.each(DIRECT_TRANSMISSION_CASES)(
+    '%s: 射出区間の強度が確定値と一致する',
+    (_name, n, incidenceDeg, expected) => {
+      // Arrange
+      const incident = incidentRayOnLeftFace(incidenceDeg);
+
+      // Act
+      const path = traceRay(incident, PRISM, n, TEST_WAVELENGTH_NM);
+
+      // Assert
+      expect(path.termination).toBe('exited');
+      expect(Math.abs(lastSegment(path).intensity - expected)).toBeLessThanOrEqual(
+        INTENSITY_TOLERANCE
+      );
+    }
+  );
+
+  it('射出強度は入射面通過直後より小さい（出口でも透過損失がある）', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(49.323347736);
+
+    // Act
+    const path = traceRay(incident, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert
+    expect(lastSegment(path).intensity).toBeLessThan(firstInnerIntensity(path));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-3. 全反射：反射側は減衰しない
+// ---------------------------------------------------------------------------
+
+describe('S-3. 全反射では強度が変わらない', () => {
+  /** ダイヤモンドは θ₁ = 45° で必ず全反射する（1-4-11 / K 節）。 */
+  const DIAMOND_INCIDENCE_DEG = 45;
+
+  /** 空気 → ダイヤモンドの 45° 入射での透過率。全反射の前後で保たれるべき値。 */
+  const DIAMOND_ENTRY_TRANSMITTANCE = 0.8188433418454812;
+
+  it('全反射の直前（内部 1 本目）の強度が 1 − R_entry である', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(DIAMOND_INCIDENCE_DEG);
+
+    // Act
+    const path = traceRay(incident, PRISM, DIAMOND.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert（具体値で縛る。自己比較にするとセンチネルでも通ってしまう）
+    expect(Math.abs(firstInnerIntensity(path) - DIAMOND_ENTRY_TRANSMITTANCE)).toBeLessThanOrEqual(
+      INTENSITY_TOLERANCE
+    );
+  });
+
+  it('全反射の直後（内部 2 本目）の強度も同じ値のままである', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(DIAMOND_INCIDENCE_DEG);
+
+    // Act
+    const path = traceRay(incident, PRISM, DIAMOND.catalogNd, TEST_WAVELENGTH_NM);
+    const afterTotalReflection = innerSegmentAt(path, 1).intensity;
+
+    // Assert（R = 1 なので反射側は ×1。ここも具体値で縛る）
+    expect(Math.abs(afterTotalReflection - DIAMOND_ENTRY_TRANSMITTANCE)).toBeLessThanOrEqual(
+      INTENSITY_TOLERANCE
+    );
+  });
+
+  it('全反射を経ても内部区間が 2 本以上ある（前提の確認）', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(DIAMOND_INCIDENCE_DEG);
+
+    // Act
+    const path = traceRay(incident, PRISM, DIAMOND.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert
+    expect(innerSegments(path).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-4. 単調性：入射角を上げるほど透過は暗くなる
+// ---------------------------------------------------------------------------
+
+describe('S-4. 入射角が大きいほど透過強度が小さくなる', () => {
+  /** 0〜89 度を 1 度刻みで並べた入射角。 */
+  const SWEEP_ANGLES_DEG: readonly number[] = Array.from({ length: 90 }, (_unused, i) => i);
+
+  it('入射面を通った直後の強度が入射角に対して狭義単調減少する', () => {
+    // Arrange
+    const violations: string[] = [];
+    let previous = Number.POSITIVE_INFINITY;
+
+    // Act
+    for (const deg of SWEEP_ANGLES_DEG) {
+      const path = traceRay(incidentRayOnLeftFace(deg), PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM);
+      const current = firstInnerIntensity(path);
+
+      if (!(current < previous)) {
+        violations.push(`${deg}度: ${current} >= ${previous}`);
+      }
+      previous = current;
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+
+  it('かすめ入射（89 度）では大半が反射して透過が 0.0954 まで落ちる', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(89);
+
+    // Act
+    const path = traceRay(incident, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM);
+
+    // Assert
+    expect(Math.abs(firstInnerIntensity(path) - 0.09538491088548695)).toBeLessThanOrEqual(
+      INTENSITY_TOLERANCE
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-5. ブリュースター角の透過側
+// ---------------------------------------------------------------------------
+
+describe('S-5. ブリュースター角では p 偏光が全部透過する', () => {
+  it('空気→BK7 の θB で透過率が 1 − Rs/2 になる', () => {
+    // Arrange: 無偏光なので R = (Rs + Rp)/2 で、Rp = 0 だから R = Rs/2
+    const brewsterAngleDeg = Math.atan(BK7.catalogNd) * (180 / Math.PI);
+
+    // Act
+    const path = traceRay(
+      incidentRayOnLeftFace(brewsterAngleDeg),
+      PRISM,
+      BK7.catalogNd,
+      TEST_WAVELENGTH_NM
+    );
+
+    // Assert（6-4 の Rs = 0.155286959920509 から導いた値）
+    expect(Math.abs(firstInnerIntensity(path) - 0.9223565200397454)).toBeLessThanOrEqual(
+      INTENSITY_TOLERANCE
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-6. 値域：全区間の強度が 0〜1 に収まる
+// ---------------------------------------------------------------------------
+
+describe('S-6. 強度が 0 以上 1 以下に収まる', () => {
+  /** 0〜89 度を 1 度刻みで並べた入射角。 */
+  const SWEEP_ANGLES_DEG: readonly number[] = Array.from({ length: 90 }, (_unused, i) => i);
+
+  it.each([
+    ['水', WATER.catalogNd],
+    ['BK7', BK7.catalogNd],
+    ['SF10', SF10.catalogNd],
+    ['ダイヤモンド', DIAMOND.catalogNd],
+  ] as readonly [string, number][])('%s: 掃引した全区間で 0 <= 強度 <= 1', (_name, n) => {
+    // Arrange
+    const violations: string[] = [];
+
+    // Act
+    for (const deg of SWEEP_ANGLES_DEG) {
+      const path = traceRay(incidentRayOnLeftFace(deg), PRISM, n, TEST_WAVELENGTH_NM);
+
+      for (const [index, segment] of path.segments.entries()) {
+        if (!(segment.intensity >= 0 && segment.intensity <= 1)) {
+          violations.push(`${deg}度 区間${index}: ${segment.intensity}`);
+        }
+      }
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-7. traceSpectrum：波長ごとに独立して強度が付く
+// ---------------------------------------------------------------------------
+
+describe('S-7. traceSpectrum の各光路が traceRay と同じ強度を持つ', () => {
+  it('各要素の全区間の強度が同じ屈折率で traceRay を呼んだ結果と一致する', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(49.323347736);
+    const wavelengths = [660, 550, 410];
+
+    // Act
+    const spectrum = traceSpectrum(incident, PRISM, BK7, wavelengths);
+    const mismatches: string[] = [];
+
+    spectrum.forEach((path, index) => {
+      const expected = traceRay(incident, PRISM, path.refractiveIndex, path.wavelengthNm);
+
+      path.segments.forEach((segment, segmentIndex) => {
+        const other = expected.segments[segmentIndex];
+
+        if (other === undefined || segment.intensity !== other.intensity) {
+          mismatches.push(`λ=${wavelengths[index]}nm 区間${segmentIndex}`);
+        }
+      });
+    });
+
+    // Assert
+    expect(mismatches).toEqual([]);
+  });
+
+  it('分散があるので波長ごとに強度がわずかに異なる', () => {
+    // Arrange: 屈折率が違えば R も違う。同一視されていないことの確認
+    const incident = incidentRayOnLeftFace(70);
+
+    // Act
+    const spectrum = traceSpectrum(incident, PRISM, SF10, [660, 410]);
+    const red = spectrum[0];
+    const violet = spectrum[1];
+
+    // Assert（屈折率が高い紫の方が反射率が高く、透過は暗い）
+    expect(red).toBeDefined();
+    expect(violet).toBeDefined();
+    expect(firstInnerIntensity(violet as LightPath)).toBeLessThan(
+      firstInnerIntensity(red as LightPath)
+    );
+  });
+});

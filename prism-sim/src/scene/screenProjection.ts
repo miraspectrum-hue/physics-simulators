@@ -147,7 +147,13 @@ export function clipPathsToScreen(
     // 最終区間だけを差し替える。それ以外は同じ参照のまま渡す（入力は変更しない）
     const segments = path.segments.map((segment, segmentIndex) =>
       segmentIndex === lastIndex
-        ? { start: segment.start, end: hit.point, insidePrism: segment.insidePrism }
+        ? // 打ち切るのは長さだけ。強度は光の量なので運び直す
+          {
+            start: segment.start,
+            end: hit.point,
+            insidePrism: segment.insidePrism,
+            intensity: segment.intensity,
+          }
         : segment
     );
 

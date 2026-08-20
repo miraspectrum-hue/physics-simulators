@@ -64,8 +64,8 @@ const EXIT_ORIGIN: Vec3 = vec3(0, 0, 0);
  * @param insidePrism プリズム内部を通る区間なら true
  * @returns 区間
  */
-function segment(start: Vec3, end: Vec3, insidePrism: boolean): Segment {
-  return { start, end, insidePrism };
+function segment(start: Vec3, end: Vec3, insidePrism: boolean, intensity = 1): Segment {
+  return { start, end, insidePrism, intensity };
 }
 
 /**
@@ -554,5 +554,62 @@ describe('D. meanExitAnchor: 射出点と射出方向の平均', () => {
 
     // Assert
     expect(anchor).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E. 強度の透過保存（TASKS 6-5a）
+// ---------------------------------------------------------------------------
+
+describe('E. clipPathsToScreen: 強度は打ち切りで変わらない', () => {
+  it('打ち切った最終区間の intensity が元の値のままである', () => {
+    // Arrange: 区間を短くするのは描画の都合であって、光の強さには関与しない
+    const attenuated = 0.42;
+    const path: LightPath = {
+      wavelengthNm: 550,
+      refractiveIndex: 1.5,
+      segments: [
+        segment(vec3(-4, 0, 0), EXIT_ORIGIN, false, 1),
+        segment(
+          EXIT_ORIGIN,
+          addScaled(EXIT_ORIGIN, DIRECTION_HEAD_ON, EXIT_EXTENSION_LENGTH),
+          false,
+          attenuated
+        ),
+      ],
+      termination: 'exited',
+    };
+    const hits = projectPathsToScreen([path], SCREEN);
+
+    // Act
+    const clipped = pathAt(clipPathsToScreen([path], hits), 0);
+
+    // Assert
+    expect(clipped.segments[1]?.intensity).toBe(attenuated);
+  });
+
+  it('打ち切らない区間の intensity も変わらない', () => {
+    // Arrange
+    const path: LightPath = {
+      wavelengthNm: 550,
+      refractiveIndex: 1.5,
+      segments: [
+        segment(vec3(-4, 0, 0), EXIT_ORIGIN, false, 0.9),
+        segment(
+          EXIT_ORIGIN,
+          addScaled(EXIT_ORIGIN, DIRECTION_HEAD_ON, EXIT_EXTENSION_LENGTH),
+          false,
+          0.42
+        ),
+      ],
+      termination: 'exited',
+    };
+    const hits = projectPathsToScreen([path], SCREEN);
+
+    // Act
+    const clipped = pathAt(clipPathsToScreen([path], hits), 0);
+
+    // Assert
+    expect(clipped.segments[0]?.intensity).toBe(0.9);
   });
 });
