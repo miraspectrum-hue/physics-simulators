@@ -357,7 +357,8 @@ function main(): void {
   const panel = new ControlPanel(document.body, store);
   const overlay = new InfoOverlay(container);
 
-  // 色は波長ごとに一定なので、ここで一度だけ決まる
+  // 波長ごとの基準色はここで一度だけ決まる。実際に描く明るさは
+  // 「基準色 × 区間の強度」で毎フレーム決まる（TASKS 6-5a）
   const beams = new BeamRenderer(wavelengths);
   sceneManager.scene.add(beams.object);
 
@@ -603,6 +604,9 @@ function main(): void {
       screenPlane: screen.plane,
       band: band.object,
       beams: beams.object,
+      wavelengths,
+      // オラクル①-a 用。描画バッファとは独立に traceSpectrum を回して強度を取り直せる
+      tracePaths: (): readonly LightPath[] => traceWorldPaths(store.getState()),
       prism: prism.object,
       floor: floor.object,
       scene: sceneManager.scene,

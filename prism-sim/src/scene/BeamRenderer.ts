@@ -4,7 +4,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
 import { wavelengthToRgb } from '../optics/spectrum';
-import { beamBufferLength, packSegmentPositions } from './beamPacker';
+import { beamBufferLength, packSegmentColors, packSegmentPositions } from './beamPacker';
 import { RENDER_ORDER } from './renderOrder';
 import type { LightPath } from '../types/optics';
 
@@ -21,9 +21,15 @@ const LINE_WIDTH_PX = 3.5;
  * sRGB（表示参照）値なので、`Color.setRGB` の第 4 引数に `SRGBColorSpace` を渡して
  * 作業色空間へ変換してから頂点色バッファへ書く。省略すると sRGB 値が線形として
  * 扱われ、色が白っぽく浮く（SPEC.md「波長サンプリングと色」）。
- * **色は波長ごとに一定なので、この変換は構築時に一度だけ行う。**
+ * **色空間変換は波長ごとに一定なので構築時に一度だけ行い、その結果を基準色として保持する。**
  *
- * 更新時の割り当てをゼロにするため、位置バッファは自前で保持して書き換える。
+ * **頂点色は毎フレーム書き換える（TASKS 6-5a）。** 実際に描く色は
+ * 「基準色 × その区間の強度」であり、強度は界面を通るたびに透過率 (1 − R) が掛かって
+ * 落ちるため、1 本の光路の中でも区間ごとに違う（`Segment.intensity`）。
+ * 構築時に一度決めた色をそのまま使い続けると、入射前と射出後が同じ明るさになってしまう。
+ * 表示ゲインは掛けないので、絵の明暗はそのまま実物理の相対強度である。
+ *
+ * 更新時の割り当てをゼロにするため、位置・頂点色とも自前で保持したバッファを書き換える。
  * `setPositions()` / `setColors()` は呼ぶたびに `InstancedInterleavedBuffer` と
  * 属性を作り直すので、**属性を確立する構築時の一度だけ**呼ぶ
  * （CLAUDE.md「Three.js 運用」）。以降は `needsUpdate` を立てるのみ。
@@ -45,6 +51,15 @@ export default class BeamRenderer {
   /** 位置属性が載るインターリーブバッファ。更新の合図はここへ立てる。 */
   private readonly positionBuffer: InterleavedBufferAttribute['data'];
 
+  /** 波長ごとの基準色（作業色空間）。強度を掛ける前の値で、構築後は変わらない。 */
+  private readonly baseColors: Float32Array;
+
+  /** 頂点色バッファの実体。毎フレーム「基準色 × 強度」で書き換える。 */
+  private readonly colors: Float32Array;
+
+  /** 頂点色属性が載るインターリーブバッファ。 */
+  private readonly colorBuffer: InterleavedBufferAttribute['data'];
+
   /**
    * @param wavelengths 描画する波長の並び [nm]。色はここから構築時に一度だけ決まる
    */
@@ -53,13 +68,16 @@ export default class BeamRenderer {
 
     const bufferLength = beamBufferLength(this.pathCount);
     this.positions = new Float32Array(bufferLength);
+    this.baseColors = createBaseColors(wavelengths);
+    this.colors = new Float32Array(bufferLength);
 
     this.geometry = new LineSegmentsGeometry();
-    // 属性の確立。位置は初期値ゼロで枠だけ作り、中身は最初の update() が書く
+    // 属性の確立。位置も色も初期値ゼロで枠だけ作り、中身は最初の update() が書く
     this.geometry.setPositions(this.positions);
-    this.geometry.setColors(createColorBuffer(wavelengths, bufferLength));
+    this.geometry.setColors(this.colors);
 
-    this.positionBuffer = extractInterleavedBuffer(this.geometry);
+    this.positionBuffer = extractInterleavedBuffer(this.geometry, 'instanceStart');
+    this.colorBuffer = extractInterleavedBuffer(this.geometry, 'instanceColorStart');
 
     this.material = new LineMaterial({
       vertexColors: true,
@@ -77,7 +95,7 @@ export default class BeamRenderer {
   }
 
   /**
-   * 光路の座標を反映する。ジオメトリも属性も作り直さない。
+   * 光路の座標と強度を反映する。ジオメトリも属性も作り直さない。
    *
    * @param paths 描画する光路（ワールド座標）。並びは構築時の波長と同順
    * @throws {RangeError} 本数が構築時の波長数と一致しない場合
@@ -90,7 +108,9 @@ export default class BeamRenderer {
     }
 
     packSegmentPositions(paths, this.positions);
+    packSegmentColors(paths, this.baseColors, this.colors);
     this.positionBuffer.needsUpdate = true;
+    this.colorBuffer.needsUpdate = true;
   }
 
   /**
@@ -114,17 +134,16 @@ export default class BeamRenderer {
 }
 
 /**
- * 波長ごとの色を、位置バッファと同じ並びの頂点色バッファへ展開する。
+ * 波長ごとの基準色（作業色空間の rgb）を並べた配列を作る。
  *
- * 1 光路が占める枠は一定なので、その枠すべてを同じ色で埋めればよい。
+ * 強度は掛けない。ここで作るのは「その波長の色そのもの」であり、明暗は
+ * `packSegmentColors` が区間ごとに掛ける（色の正しさと強度の正しさを分けて保つ）。
  *
  * @param wavelengths 波長の並び [nm]
- * @param bufferLength 位置バッファと同じ要素数
- * @returns 頂点色バッファ
+ * @returns 長さ `wavelengths.length * 3` の基準色バッファ
  */
-function createColorBuffer(wavelengths: readonly number[], bufferLength: number): Float32Array {
-  const colors = new Float32Array(bufferLength);
-  const floatsPerPath = bufferLength / wavelengths.length;
+function createBaseColors(wavelengths: readonly number[]): Float32Array {
+  const colors = new Float32Array(wavelengths.length * 3);
   const workColor = new Color();
 
   wavelengths.forEach((wavelengthNm, pathIndex) => {
@@ -132,33 +151,33 @@ function createColorBuffer(wavelengths: readonly number[], bufferLength: number)
     // sRGB として解釈させたうえで作業色空間の値を読み出す
     workColor.setRGB(rgb.r, rgb.g, rgb.b, SRGBColorSpace);
 
-    const pathOffset = pathIndex * floatsPerPath;
-    for (let offset = 0; offset < floatsPerPath; offset += 3) {
-      colors[pathOffset + offset] = workColor.r;
-      colors[pathOffset + offset + 1] = workColor.g;
-      colors[pathOffset + offset + 2] = workColor.b;
-    }
+    const offset = pathIndex * 3;
+    colors[offset] = workColor.r;
+    colors[offset + 1] = workColor.g;
+    colors[offset + 2] = workColor.b;
   });
 
   return colors;
 }
 
 /**
- * `setPositions` が張った位置属性から、更新の合図を立てる先のバッファを取り出す。
+ * `setPositions` / `setColors` が張った属性から、更新の合図を立てる先のバッファを取り出す。
  *
  * `instanceof` で絞り込むのは、`geometry.attributes` の型が複数の属性型の合併であり、
  * キャストを使わずに `data` へ辿るため（CLAUDE.md「`any` は禁止」）。
  *
  * @param geometry 属性を確立済みのジオメトリ
- * @returns 位置が載るインターリーブバッファ
+ * @param name 属性名
+ * @returns その属性が載るインターリーブバッファ
  */
 function extractInterleavedBuffer(
-  geometry: LineSegmentsGeometry
+  geometry: LineSegmentsGeometry,
+  name: string
 ): InterleavedBufferAttribute['data'] {
-  const attribute = geometry.attributes['instanceStart'];
+  const attribute = geometry.attributes[name];
 
   if (!(attribute instanceof InterleavedBufferAttribute)) {
-    throw new Error('instanceStart 属性が確立されていません');
+    throw new Error(`${name} 属性が確立されていません`);
   }
 
   return attribute.data;

@@ -25,6 +25,14 @@ const VERTICES_PER_QUAD = 6;
 const COMPONENTS_PER_VERTEX = 3;
 
 /**
+ * 四角形 1 枚の 6 頂点が「奥側の波長」に属するかどうか。
+ *
+ * `writeQuad` が書く頂点順（near, near, far / near, far, far）と 1 対 1 に対応する。
+ * 座標・基準色・強度がこの 1 つの並びを共有するので、三者の順序が食い違う経路が無い。
+ */
+const QUAD_VERTEX_IS_FAR: readonly boolean[] = [false, false, true, false, true, true];
+
+/**
  * スクリーンに映るスペクトルの帯（TASKS 6-3）。
  *
  * **ストリップではなく独立した三角形で組む。** 隣り合う 2 波長が「どちらもスクリーンに
@@ -37,7 +45,11 @@ const COMPONENTS_PER_VERTEX = 3;
  *
  * 更新時の割り当てをゼロにするため、位置バッファは構築時に確保して書き換えるだけにする
  * （`BeamRenderer` と同じ規律）。使わない枠は面積ゼロの縮退三角形で埋める。
- * 色は「枠 i には波長 i と i+1 の色」と決まっていて動かないので、構築時に一度だけ作る。
+ *
+ * **頂点色も毎フレーム書き換える（TASKS 6-5a）。** 「枠 i には波長 i と i+1 の色」という
+ * 対応は動かないが、実際に描く色は「基準色 × スクリーンへ届いた強度」であり、強度は
+ * 入射角や材質で変わる。基準色だけを構築時に作り、明暗は毎フレーム掛け直す。
+ * 表示ゲインは掛けない（絵の明暗はそのまま実物理の相対強度）。
  */
 export default class BandRenderer {
   /** シーンに追加するノード。 */
@@ -49,10 +61,18 @@ export default class BandRenderer {
   /** 四角形の枠数。波長数 − 1。 */
   private readonly quadCount: number;
 
-  /** 位置バッファの実体。これを書き換えることが更新のすべて。 */
+  /** 位置バッファの実体。 */
   private readonly positions: Float32Array;
 
   private readonly positionAttribute: BufferAttribute;
+
+  /** 枠ごとの基準色（作業色空間）。強度を掛ける前の値で、構築後は変わらない。 */
+  private readonly baseColors: Float32Array;
+
+  /** 頂点色バッファの実体。毎フレーム「基準色 × 強度」で書き換える。 */
+  private readonly colors: Float32Array;
+
+  private readonly colorAttribute: BufferAttribute;
 
   /**
    * @param wavelengths 描画する波長の並び [nm]。色はここから構築時に一度だけ決まる
@@ -64,12 +84,13 @@ export default class BandRenderer {
     this.positions = new Float32Array(vertexCount * COMPONENTS_PER_VERTEX);
     this.positionAttribute = new BufferAttribute(this.positions, COMPONENTS_PER_VERTEX);
 
+    this.baseColors = createBandColorBuffer(wavelengths);
+    this.colors = new Float32Array(this.baseColors.length);
+    this.colorAttribute = new BufferAttribute(this.colors, COMPONENTS_PER_VERTEX);
+
     this.geometry = new BufferGeometry();
     this.geometry.setAttribute('position', this.positionAttribute);
-    this.geometry.setAttribute(
-      'color',
-      new BufferAttribute(createBandColorBuffer(wavelengths), COMPONENTS_PER_VERTEX)
-    );
+    this.geometry.setAttribute('color', this.colorAttribute);
 
     this.material = new MeshBasicMaterial({
       vertexColors: true,
@@ -87,6 +108,9 @@ export default class BandRenderer {
 
   /**
    * 投影結果を帯へ反映する。ジオメトリも属性も作り直さない。
+   *
+   * 位置は `hit.uv`、明るさは `hit.intensity` から決まる。どちらも同じ `ScreenHit` から
+   * 取るので、「位置は今フレームのもの・明るさは前フレームのもの」というずれが起きない。
    *
    * @param hits 波長ごとの投影結果（載らなかった波長は null）
    * @param screen 投影先のスクリーン面
@@ -113,6 +137,7 @@ export default class BandRenderer {
     }
 
     this.positionAttribute.needsUpdate = true;
+    this.colorAttribute.needsUpdate = true;
   }
 
   /** ジオメトリとマテリアルを解放する。 */
@@ -153,6 +178,35 @@ export default class BandRenderer {
     offset = this.writeVertex(offset, nearHigh);
     offset = this.writeVertex(offset, farHigh);
     this.writeVertex(offset, farLow);
+
+    this.writeQuadColors(quadIndex, near.intensity, far.intensity);
+  }
+
+  /**
+   * 四角形 1 枚ぶんの頂点色を「基準色 × 強度」で書き込む。
+   *
+   * 頂点の並びは `QUAD_VERTEX_IS_FAR` に従うので、`writeQuad` の座標・
+   * `createBandColorBuffer` の基準色と必ず同じ順序になる。
+   *
+   * @param quadIndex 四角形の枠の添字
+   * @param nearIntensity 手前側の波長がスクリーンへ届けた強度
+   * @param farIntensity 奥側の波長がスクリーンへ届けた強度
+   */
+  private writeQuadColors(
+    quadIndex: number,
+    nearIntensity: number,
+    farIntensity: number
+  ): void {
+    let offset = quadIndex * VERTICES_PER_QUAD * COMPONENTS_PER_VERTEX;
+
+    for (let vertex = 0; vertex < VERTICES_PER_QUAD; vertex += 1) {
+      const intensity = QUAD_VERTEX_IS_FAR[vertex] === true ? farIntensity : nearIntensity;
+
+      this.colors[offset] = (this.baseColors[offset] ?? 0) * intensity;
+      this.colors[offset + 1] = (this.baseColors[offset + 1] ?? 0) * intensity;
+      this.colors[offset + 2] = (this.baseColors[offset + 2] ?? 0) * intensity;
+      offset += COMPONENTS_PER_VERTEX;
+    }
   }
 
   /**
@@ -167,6 +221,10 @@ export default class BandRenderer {
     for (let vertex = 0; vertex < VERTICES_PER_QUAD; vertex += 1) {
       offset = this.writeVertex(offset, screen.origin);
     }
+
+    // 光が届いていない枠なので強度 0。面積ゼロで描かれないが、
+    // 残骸の色を残さないことで「消えている」ことがバッファ上でも読み取れる
+    this.writeQuadColors(quadIndex, 0, 0);
   }
 
   /**
@@ -186,17 +244,19 @@ export default class BandRenderer {
 }
 
 /**
- * 枠ごとの頂点色を作る。
+ * 枠ごとの基準色を作る。
  *
- * 枠 i は波長 i と i+1 を結ぶので、6 頂点の色は
- * `[i, i, i+1, i, i+1, i+1]` の順に並ぶ（`writeQuad` の頂点順と対応）。
+ * 枠 i は波長 i と i+1 を結ぶので、6 頂点の色は `QUAD_VERTEX_IS_FAR` の順に並ぶ。
  * 隣り合う色は GPU が線形補間するので、48 サンプルでも連続した虹に見える。
  *
  * `wavelengthToRgb` の戻り値は sRGB なので、`Color.setRGB` に色空間を伝えて
  * 作業色空間へ変換してから書く（`BeamRenderer` と同じ扱い）。
  *
+ * 強度は掛けない。ここで決まるのは「その波長の色そのもの」で、明暗は
+ * `writeQuadColors` が毎フレーム掛ける。
+ *
  * @param wavelengths 波長の並び [nm]
- * @returns 頂点色バッファ
+ * @returns 基準色バッファ
  */
 function createBandColorBuffer(wavelengths: readonly number[]): Float32Array {
   const quadCount = Math.max(wavelengths.length - 1, 0);
@@ -213,10 +273,11 @@ function createBandColorBuffer(wavelengths: readonly number[]): Float32Array {
   for (let quadIndex = 0; quadIndex < quadCount; quadIndex += 1) {
     const nearColor = workingColorOf(wavelengths[quadIndex] ?? 0);
     const farColor = workingColorOf(wavelengths[quadIndex + 1] ?? 0);
-    const order = [nearColor, nearColor, farColor, nearColor, farColor, farColor];
 
     let offset = quadIndex * VERTICES_PER_QUAD * COMPONENTS_PER_VERTEX;
-    for (const color of order) {
+    for (const isFar of QUAD_VERTEX_IS_FAR) {
+      const color = isFar ? farColor : nearColor;
+
       colors[offset] = color[0];
       colors[offset + 1] = color[1];
       colors[offset + 2] = color[2];

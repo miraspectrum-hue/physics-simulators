@@ -9,10 +9,14 @@ import type { LightPath } from '../types/optics';
  * **1 光路あたり最大区間数ぶんの枠を固定で確保し、余った枠は縮退区間（始点＝終点）で埋める**。
  * 縮退区間は長さ 0 なので描画されず、本数が変わっても確保量は一定に保てる。
  *
- * Three には依存しない（色の sRGB → 作業色空間の変換は `THREE.Color` を使う別の関心事で、
+ * Three には依存しない（基準色の sRGB → 作業色空間の変換は `THREE.Color` を使う別の関心事で、
  * 波長ごとに一定なので初期化時に一度だけ計算する）。
  *
- * NOTE: `packSegmentPositions` は呼び出し側が持つバッファへ書き込む。
+ * 頂点色も同じ枠割りで扱う（`packSegmentColors`）。強度は 1 本の光路の中でも区間ごとに
+ * 変わるため（`Segment.intensity`）、色は波長ごとに 1 回決めるだけでは足りず、
+ * **位置と同じく毎フレーム書き換える**。波長ごとに一定なのは基準色の方だけである。
+ *
+ * NOTE: `packSegmentPositions` / `packSegmentColors` は呼び出し側が持つバッファへ書き込む。
  *       `src/optics/` の純粋関数と違い、この書き込みこそが目的である
  *       （CLAUDE.md「毎フレームでの `new` を禁止」は scene 層に適用される）。
  *       同じ入力に対し同じ結果を書く点は変わらない。
@@ -49,6 +53,44 @@ export function beamBufferLength(pathCount: number): number {
 }
 
 /**
+ * 書き込み先の長さが枠と厳密に一致することを検証する。
+ *
+ * 容量ではなく厳密一致を要求する。余りが出ると「末尾に何を書くか」が未定義になるため。
+ *
+ * @param target 書き込み先
+ * @param pathCount 光路の本数
+ * @param label エラーメッセージ用のバッファ名
+ * @throws {RangeError} 長さが一致しない場合
+ */
+function assertTargetLength(target: Float32Array, pathCount: number, label: string): void {
+  const required = beamBufferLength(pathCount);
+
+  if (target.length !== required) {
+    throw new RangeError(
+      `${label}の長さが一致しません（必要 ${required} / 実際 ${target.length}）`
+    );
+  }
+}
+
+/**
+ * 光路の区間数が枠に収まることを検証する。
+ *
+ * tracer は上限内に収めるが、詰め込み側でも黙って切り捨てない。
+ * 区間 0 本は縮退の充填内容を決められないため同様に弾く。
+ *
+ * @param segmentCount 区間数
+ * @param pathIndex 光路の添字（エラーメッセージ用）
+ * @throws {RangeError} 区間数が 1〜上限の範囲外の場合
+ */
+function assertSegmentCount(segmentCount: number, pathIndex: number): void {
+  if (segmentCount === 0 || segmentCount > MAX_SEGMENTS_PER_PATH) {
+    throw new RangeError(
+      `光路 ${pathIndex} の区間数 ${segmentCount} が 1〜${MAX_SEGMENTS_PER_PATH} の範囲外です`
+    );
+  }
+}
+
+/**
  * 光路の区間を位置バッファへ詰める。
  *
  * 光路ごとに `MAX_SEGMENTS_PER_PATH` 区間ぶんの枠を占め、実際の区間を先頭から並べ、
@@ -65,23 +107,12 @@ export function packSegmentPositions(
   paths: readonly LightPath[],
   target: Float32Array
 ): Float32Array {
-  const required = beamBufferLength(paths.length);
-
-  // 容量ではなく厳密一致を要求する。余りが出ると「末尾に何を書くか」が未定義になるため
-  if (target.length !== required) {
-    throw new RangeError(
-      `位置バッファの長さが一致しません（必要 ${required} / 実際 ${target.length}）`
-    );
-  }
+  assertTargetLength(target, paths.length, '位置バッファ');
 
   paths.forEach((path, pathIndex) => {
     const { segments } = path;
 
-    if (segments.length === 0 || segments.length > MAX_SEGMENTS_PER_PATH) {
-      throw new RangeError(
-        `光路 ${pathIndex} の区間数 ${segments.length} が 1〜${MAX_SEGMENTS_PER_PATH} の範囲外です`
-      );
-    }
+    assertSegmentCount(segments.length, pathIndex);
 
     const pathOffset = pathIndex * FLOATS_PER_PATH;
 
@@ -116,6 +147,80 @@ export function packSegmentPositions(
       target[offset + 3] = last.end.x;
       target[offset + 4] = last.end.y;
       target[offset + 5] = last.end.z;
+    }
+  });
+
+  return target;
+}
+
+/**
+ * 波長ごとの基準色に区間の強度を掛け、頂点色バッファへ詰める。
+ *
+ * 枠割りは `packSegmentPositions` と同一である。同じ枠に同じ区間の色が載るので、
+ * 「位置は区間 k のもの・色は区間 k+1 のもの」というずれが構造的に起こらない。
+ *
+ * **区間ごとに掛ける。** 強度は界面を通るたびに透過率 (1 − R) が掛かって落ちるので、
+ * 1 本の光路の中でも入射区間・内部区間・射出区間で値が違う（`Segment.intensity`）。
+ * 波長ごとに 1 色を割り当てるだけでは、プリズムに入る前と出た後が同じ明るさになってしまう。
+ *
+ * 余った枠は最終区間の強度で埋める。位置側でその枠が最終区間の終点に縮退しており、
+ * 長さ 0 で描画されないため値そのものは絵に出ないが、**縮退区間は最終区間の続きである**
+ * という位置側の扱いと辻褄を合わせておく。
+ *
+ * 表示ゲインは掛けない。ここに出るのは実物理の相対強度そのものである。
+ *
+ * @param paths 詰める光路。順序はそのまま保たれる
+ * @param baseColors 波長ごとの基準色（作業色空間の rgb を並べたもの）。長さは `paths.length * 3`
+ * @param target 書き込み先。長さは `beamBufferLength(paths.length)` と一致すること
+ * @returns 書き込んだ `target` そのもの
+ * @throws {RangeError} 長さが一致しない場合、または区間数が 1〜上限の範囲外の光路がある場合
+ */
+export function packSegmentColors(
+  paths: readonly LightPath[],
+  baseColors: Float32Array,
+  target: Float32Array
+): Float32Array {
+  assertTargetLength(target, paths.length, '頂点色バッファ');
+
+  const requiredBaseLength = paths.length * COMPONENTS_PER_VERTEX;
+
+  if (baseColors.length !== requiredBaseLength) {
+    throw new RangeError(
+      `基準色バッファの長さが一致しません（必要 ${requiredBaseLength} / 実際 ${baseColors.length}）`
+    );
+  }
+
+  paths.forEach((path, pathIndex) => {
+    const { segments } = path;
+
+    assertSegmentCount(segments.length, pathIndex);
+
+    const baseOffset = pathIndex * COMPONENTS_PER_VERTEX;
+    const baseR = baseColors[baseOffset] ?? 0;
+    const baseG = baseColors[baseOffset + 1] ?? 0;
+    const baseB = baseColors[baseOffset + 2] ?? 0;
+    const pathOffset = pathIndex * FLOATS_PER_PATH;
+
+    const last = segments[segments.length - 1];
+    // assertSegmentCount を通っているので最終区間は必ず存在する
+    const fillIntensity = last === undefined ? 0 : last.intensity;
+
+    for (
+      let segmentIndex = 0;
+      segmentIndex < MAX_SEGMENTS_PER_PATH;
+      segmentIndex += 1
+    ) {
+      const segment = segments[segmentIndex];
+      const intensity = segment === undefined ? fillIntensity : segment.intensity;
+      const offset = pathOffset + segmentIndex * FLOATS_PER_SEGMENT;
+
+      // 始点・終点の 2 頂点。1 区間の中では強度が変わらないので同じ値を入れる
+      target[offset] = baseR * intensity;
+      target[offset + 1] = baseG * intensity;
+      target[offset + 2] = baseB * intensity;
+      target[offset + 3] = baseR * intensity;
+      target[offset + 4] = baseG * intensity;
+      target[offset + 5] = baseB * intensity;
     }
   });
 

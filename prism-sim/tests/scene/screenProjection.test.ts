@@ -405,7 +405,7 @@ describe('B. clipPathsToScreen: 載った波長だけ最終区間を交点まで
 
 describe('C. splitOnScreenRuns: 脱落波長を跨がない', () => {
   /** 試験用の擬似ヒット。値は使われないので中身は問わない。 */
-  const HIT: ScreenHit = { t: 1, point: vec3(0, 0, 0), uv: { u: 0, v: 0 } };
+  const HIT: ScreenHit = { t: 1, point: vec3(0, 0, 0), uv: { u: 0, v: 0 }, intensity: 1 };
 
   it('途中の脱落で run が分かれる', () => {
     // Arrange

@@ -53,6 +53,13 @@ export interface ScreenHit {
   readonly point: Vec3;
   /** スクリーン面内の 2 次元座標 */
   readonly uv: PlaneUV;
+  /**
+   * ここへ届いた光の相対強度（0〜1）。射出区間の `intensity` そのもの。
+   *
+   * 帯の明るさはこれで決まる（TASKS 6-5a）。交点の幾何とは独立な量なので、
+   * 位置が正しいかと明るさが正しいかを別々に検証できる。
+   */
+  readonly intensity: number;
 }
 
 /**
@@ -114,7 +121,7 @@ export function projectPathsToScreen(
       return null;
     }
 
-    return { t, point, uv };
+    return { t, point, uv, intensity: segment.intensity };
   });
 }
 
