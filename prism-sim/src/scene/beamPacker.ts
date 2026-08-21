@@ -53,6 +53,22 @@ export function beamBufferLength(pathCount: number): number {
 }
 
 /**
+ * 表示用の強度写像。
+ *
+ * **非物理の演出であり、モデルには一切戻さない。** 実物理の強度をそのまま色に掛けると
+ * 暗すぎて読めない光（入射面の部分反射など）を、見える明るさへ持ち上げるために使う。
+ * 区間の添字を受け取るのは、光路の一部だけを描かない（＝強度 0 にする）ためである。
+ *
+ * @param intensity モデルが持つ相対強度（0〜1）
+ * @param segmentIndex 光路内での区間の添字
+ * @returns 描画に使う強度
+ */
+export type IntensityShaping = (intensity: number, segmentIndex: number) => number;
+
+/** 既定の強度写像。何も変えない＝実物理をそのまま描く。 */
+const identityIntensity: IntensityShaping = (intensity) => intensity;
+
+/**
  * 書き込み先の長さが枠と厳密に一致することを検証する。
  *
  * 容量ではなく厳密一致を要求する。余りが出ると「末尾に何を書くか」が未定義になるため。
@@ -167,18 +183,22 @@ export function packSegmentPositions(
  * 長さ 0 で描画されないため値そのものは絵に出ないが、**縮退区間は最終区間の続きである**
  * という位置側の扱いと辻褄を合わせておく。
  *
- * 表示ゲインは掛けない。ここに出るのは実物理の相対強度そのものである。
+ * 既定では表示ゲインを掛けない。既定のまま使えば、ここに出るのは実物理の相対強度そのものである。
+ * `shapeIntensity` を渡した場合だけ、**表示のためだけに**強度を写像してから色に掛ける
+ * （モデル側の `Segment.intensity` は書き換えない）。
  *
  * @param paths 詰める光路。順序はそのまま保たれる
  * @param baseColors 波長ごとの基準色（作業色空間の rgb を並べたもの）。長さは `paths.length * 3`
  * @param target 書き込み先。長さは `beamBufferLength(paths.length)` と一致すること
+ * @param shapeIntensity 表示用の強度写像。第 2 引数は光路内での区間の添字。既定は恒等写像
  * @returns 書き込んだ `target` そのもの
  * @throws {RangeError} 長さが一致しない場合、または区間数が 1〜上限の範囲外の光路がある場合
  */
 export function packSegmentColors(
   paths: readonly LightPath[],
   baseColors: Float32Array,
-  target: Float32Array
+  target: Float32Array,
+  shapeIntensity: IntensityShaping = identityIntensity
 ): Float32Array {
   assertTargetLength(target, paths.length, '頂点色バッファ');
 
@@ -201,9 +221,11 @@ export function packSegmentColors(
     const baseB = baseColors[baseOffset + 2] ?? 0;
     const pathOffset = pathIndex * FLOATS_PER_PATH;
 
-    const last = segments[segments.length - 1];
+    const lastIndex = segments.length - 1;
+    const last = segments[lastIndex];
     // assertSegmentCount を通っているので最終区間は必ず存在する
-    const fillIntensity = last === undefined ? 0 : last.intensity;
+    const fillIntensity =
+      last === undefined ? 0 : shapeIntensity(last.intensity, lastIndex);
 
     for (
       let segmentIndex = 0;
@@ -211,7 +233,8 @@ export function packSegmentColors(
       segmentIndex += 1
     ) {
       const segment = segments[segmentIndex];
-      const intensity = segment === undefined ? fillIntensity : segment.intensity;
+      const intensity =
+        segment === undefined ? fillIntensity : shapeIntensity(segment.intensity, segmentIndex);
       const offset = pathOffset + segmentIndex * FLOATS_PER_SEGMENT;
 
       // 始点・終点の 2 頂点。1 区間の中では強度が変わらないので同じ値を入れる

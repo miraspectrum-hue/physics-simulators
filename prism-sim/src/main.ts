@@ -2,11 +2,16 @@
 
 import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
-import { BK7, CONTINUOUS_SAMPLE_COUNT, MATERIALS } from './optics/constants';
+import { BK7, CONTINUOUS_SAMPLE_COUNT, LINE_D_NM, MATERIALS } from './optics/constants';
 import { createTriangularPrism, intersectRayConvexSolid } from './optics/convexSolid';
 import { refractiveIndex } from './optics/dispersion';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
-import { incidenceAngleDeg, traceSpectrum } from './optics/tracer';
+import {
+  incidenceAngleDeg,
+  traceEntryReflection,
+  traceEntryReflectionSpectrum,
+  traceSpectrum,
+} from './optics/tracer';
 import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
 import BandRenderer from './scene/BandRenderer';
 import BeamRenderer from './scene/BeamRenderer';
@@ -31,7 +36,7 @@ import ScreenObject, {
 } from './scene/ScreenObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
-import type { ConvexSolid, LightPath, Ray, Vec3 } from './types/optics';
+import type { ConvexSolid, LightPath, PrismMaterial, Ray, Vec3 } from './types/optics';
 import ControlPanel from './ui/ControlPanel';
 import type { AppState } from './ui/store';
 import InfoOverlay, { type InfoValues } from './ui/InfoOverlay';
@@ -75,6 +80,39 @@ const REPORT_VIOLET_NM = 410;
 
 /** 狙点までの助走距離。 */
 const APPROACH_DISTANCE = 3;
+
+/**
+ * 入射面反射の表示ゲイン。
+ *
+ * 空気→ガラスの反射率は既定姿勢で 0.06 前後しかなく、そのままでは暗背景に埋もれて
+ * 「反射光が出ている」ことすら読み取れない。教材として **「入射角を上げるほど反射が
+ * 明るくなる」**という関係が読み取れるよう、見える明るさへ持ち上げる。
+ *
+ * `PrismObject` の `RIM_GAIN` と同じく**非物理の演出**であり、モデル側の
+ * `Segment.intensity`（＝実物理の R）には一切戻さない。情報バーには生の R を出す。
+ *
+ * 掛け算（min(R×k, 1)）ではなく平方根を採るのは、掛け算だと R > 1/k が 1 に張り付いて
+ * **高入射角側の明暗の勾配が潰れる**ため。平方根なら全域で単調増加が保たれる
+ * （0.059 → 0.243、0.905 → 0.951）。
+ */
+const REFLECTION_DISPLAY_EXPONENT = 0.5;
+
+/** 反射光路のうち入射区間の添字。ここは主光路が同じ線を描いているので二重に描かない。 */
+const INCIDENT_SEGMENT_INDEX = 0;
+
+/**
+ * 反射ビームの表示用強度写像。
+ *
+ * 入射区間は主光路の 1 本目とまったく同じ線分なので、強度 0 にして描かせない
+ * （加算ブレンドなので黒は何も足さない）。二重に描くと入射ビームだけが 2 倍明るくなり、
+ * 「主光路は反射の追加前後で不変」という前提が崩れる。
+ *
+ * @param intensity モデルが持つ相対強度（反射区間なら実物理の R_entry）
+ * @param segmentIndex 光路内での区間の添字
+ * @returns 描画に使う強度
+ */
+const shapeReflectionIntensity = (intensity: number, segmentIndex: number): number =>
+  segmentIndex === INCIDENT_SEGMENT_INDEX ? 0 : intensity ** REFLECTION_DISPLAY_EXPONENT;
 
 const DEG_PER_RAD = 180 / Math.PI;
 const RAD_PER_DEG = Math.PI / 180;
@@ -224,6 +262,40 @@ function measuredIncidenceDeg(localRay: Ray, solid: ConvexSolid): number | null 
 }
 
 /**
+ * 入射面の反射率を求める。情報バーに出す**生の R**の唯一の源。
+ *
+ * 表示ゲイン（`REFLECTION_DISPLAY_EXPONENT`）は掛けない。絵の明るさは演出で持ち上げるが、
+ * 数値は物理の事実を出す（I-6 で確定した「実物理を主役にする」方針と同じ）。
+ *
+ * 基準波長は d 線（CLAUDE.md「基準波長は He の d 線 587.56nm に統一する」）で、
+ * 誇張倍率も掛けない。反射率は波長でわずかに変わるが、情報バーが示すのは代表値である。
+ *
+ * @param localRay 局所空間の入射レイ
+ * @param solid プリズムの平面集合
+ * @param material プリズムの材質
+ * @returns 入射面の反射率（0〜1）。ビームがプリズムを外れていれば null
+ */
+function entryReflectanceAt(
+  localRay: Ray,
+  solid: ConvexSolid,
+  material: PrismMaterial
+): number | null {
+  const path = traceEntryReflection(
+    localRay,
+    solid,
+    refractiveIndex(material, LINE_D_NM),
+    LINE_D_NM
+  );
+
+  if (path === null) {
+    return null;
+  }
+
+  // 反射区間（2 本目）の強度が R_entry そのもの
+  return path.segments[1]?.intensity ?? null;
+}
+
+/**
  * スライダー角の較正が正しいことをコンソールへ出す（I-3 の主たる検証手段）。
  *
  * 既定姿勢では「スライダー値 == 実測 θ₁」が成り立つ。成り立たなければ較正がずれている。
@@ -362,6 +434,11 @@ function main(): void {
   const beams = new BeamRenderer(wavelengths);
   sceneManager.scene.add(beams.object);
 
+  // 入射面で跳ね返った光（TASKS 6-5b）。主光路と同じ 48 スロット機構をそのまま使う。
+  // 描画は表示ゲイン付きだが、モデルの強度は実物理のまま
+  const reflectionBeams = new BeamRenderer(wavelengths, shapeReflectionIntensity);
+  sceneManager.scene.add(reflectionBeams.object);
+
   /**
    * 現在の状態でワールド座標の光路を求める。
    *
@@ -410,6 +487,7 @@ function main(): void {
   sceneManager.scene.add(band.object);
   sceneManager.onResize((width, height) => {
     beams.setResolution(width, height);
+    reflectionBeams.setResolution(width, height);
   });
 
   // 光路の再計算は姿勢や入射角が変わったフレームだけ行う（CLAUDE.md「Three.js 運用」）
@@ -465,6 +543,17 @@ function main(): void {
     beams.update(clipPathsToScreen(worldPaths, hits));
     band.update(hits, screen.plane);
 
+    // 反射光はスクリーンとは逆（光源側）へ後退するので、投影経路には乗せない
+    // （projectPathsToScreen は 'exited' だけを拾う）。固定長 48 なので分岐は要らない
+    const localReflections = traceEntryReflectionSpectrum(
+      localRay,
+      solid,
+      material,
+      wavelengths,
+      state.exaggeration
+    );
+    reflectionBeams.update(localReflections.map((path) => transformLightPath(path, localToWorld)));
+
     // スライダーは既定姿勢での入射角。プリズムを回すとここが乖離する（案 A の肝）
     const measured = measuredIncidenceDeg(localRay, solid);
 
@@ -493,6 +582,7 @@ function main(): void {
       drawnSpreadDeg: drawnViolet === null || drawnRed === null ? null : drawnViolet - drawnRed,
       exaggeration: state.exaggeration,
       totalReflectionCount: countTotalReflectionPaths(localPaths),
+      entryReflectance: entryReflectanceAt(localRay, solid, material),
       trappedCount: localPaths.filter((path) => path.termination === 'bounceLimit').length,
       pathCount: localPaths.length,
       missed: measured === null,
@@ -604,6 +694,7 @@ function main(): void {
       screenPlane: screen.plane,
       band: band.object,
       beams: beams.object,
+      reflectionBeams: reflectionBeams.object,
       wavelengths,
       // オラクル①-a 用。描画バッファとは独立に traceSpectrum を回して強度を取り直せる
       tracePaths: (): readonly LightPath[] => traceWorldPaths(store.getState()),

@@ -16,7 +16,9 @@ import type { LightPath, Segment } from '../../src/types/optics';
  * 対象:
  *   beamBufferLength(pathCount)                  — 固定長バッファの要素数
  *   packSegmentPositions(paths, target)          — 光路を位置バッファへ詰める
- *   packSegmentColors(paths, baseColors, target) — 基準色 × 強度を頂点色バッファへ詰める
+ *   packSegmentColors(paths, baseColors, target, shapeIntensity?)
+ *                                                — 基準色 × 強度を頂点色バッファへ詰める
+ *                                                  （shapeIntensity は表示用の強度写像。既定は恒等）
  *
  * 設計判断:
  *   - 区間数は光路ごとに変わるが、バッファを毎回作り直すと更新のたびに割り当てが起きる。
@@ -424,7 +426,48 @@ describe('P-6-4. packSegmentColors: 強度 0', () => {
   });
 });
 
-describe('P-6-5. packSegmentColors: 契約を満たさない入力を弾く', () => {
+describe('P-6-5. packSegmentColors: 表示用の強度写像', () => {
+  it('写像が区間ごとに掛かる（添字で特定の区間だけ落とせる）', () => {
+    // Arrange: 入射面反射の光路は 1 本目が主光路と同じ線分なので、そこだけ描かせない。
+    // 添字で判別できなければ「反射区間だけ残す」が書けず、入射ビームが二重に描かれる
+    const target = createTarget(1);
+    const dropIncident = (intensity: number, segmentIndex: number): number =>
+      segmentIndex === 0 ? 0 : intensity;
+
+    // Act
+    packSegmentColors([VARYING_INTENSITY_PATH], createBase(BASE_RGB), target, dropIncident);
+
+    // Assert: 0 本目だけ黒に落ち、残りは写像なしと同じ値のまま
+    expect(readColorFrame(target, 0, 0)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(readColorFrame(target, 0, 1)).toEqual([
+      0.375, 0.1875, 0.09375, 0.375, 0.1875, 0.09375,
+    ]);
+    expect(readColorFrame(target, 0, 2)).toEqual([
+      0.125, 0.0625, 0.03125, 0.125, 0.0625, 0.03125,
+    ]);
+    // 余った枠は最終区間（添字 2）の写像後の強度で埋まる
+    expect(readColorFrame(target, 0, 7)).toEqual([
+      0.125, 0.0625, 0.03125, 0.125, 0.0625, 0.03125,
+    ]);
+  });
+
+  it('省略すると恒等写像になり、渡さない場合と厳密に一致する', () => {
+    // Arrange: 既定が恒等でなければ、ゲインを渡していない主光路まで色が変わる
+    const omitted = createTarget(2);
+    const explicitIdentity = createTarget(2);
+    const paths = [VARYING_INTENSITY_PATH, ONE_SEGMENT_PATH];
+    const base = createBase(BASE_RGB, [1, 1, 1]);
+
+    // Act
+    packSegmentColors(paths, base, omitted);
+    packSegmentColors(paths, base, explicitIdentity, (intensity) => intensity);
+
+    // Assert（バッファ全体で一致すること。1 枠でも差があれば既定が恒等ではない）
+    expect([...omitted]).toEqual([...explicitIdentity]);
+  });
+});
+
+describe('P-6-6. packSegmentColors: 契約を満たさない入力を弾く', () => {
   it('頂点色バッファの長さが合わなければ RangeError を投げる', () => {
     // Arrange
     const tooShort = createTarget(1);

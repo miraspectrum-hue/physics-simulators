@@ -41,6 +41,14 @@ export interface InfoValues {
   /** 分散誇張倍率 m。1 なら実物理そのもの。 */
   readonly exaggeration: number;
 
+  /**
+   * 入射面の反射率（0〜1・実物理）。ビームがプリズムを外れていれば null。
+   *
+   * **描画のゲインを掛けていない生の値を渡すこと。** 絵の中の反射光は見えるように
+   * 持ち上げてあるが、ここに出すのは物理の事実である（I-6 の方針と同じ）。
+   */
+  readonly entryReflectance: number | null;
+
   /** 全反射を経て射出した光路の本数。 */
   readonly totalReflectionCount: number;
 
@@ -72,6 +80,7 @@ export default class InfoOverlay {
   private readonly indexValue: HTMLElement;
   private readonly deviationValue: HTMLElement;
   private readonly spreadValue: HTMLElement;
+  private readonly entryReflectionValue: HTMLElement;
   private readonly reflectionValue: HTMLElement;
 
   /**
@@ -85,6 +94,7 @@ export default class InfoOverlay {
     this.indexValue = this.appendItem('屈折率 n(λ)');
     this.deviationValue = this.appendItem('偏角 δ');
     this.spreadValue = this.appendItem('分離幅');
+    this.entryReflectionValue = this.appendItem('入射面反射');
     this.reflectionValue = this.appendItem('全反射');
 
     parent.appendChild(this.element);
@@ -106,6 +116,7 @@ export default class InfoOverlay {
       `赤 ${formatAngle(values.redDeviationDeg)} / 紫 ${formatAngle(values.violetDeviationDeg)}`;
 
     this.spreadValue.textContent = formatSpread(values);
+    this.entryReflectionValue.textContent = formatEntryReflection(values.entryReflectance);
     this.reflectionValue.textContent = formatReflection(values);
   }
 
@@ -175,6 +186,24 @@ function formatSpread(values: InfoValues): string {
   }
 
   return `${physical}（描画は ×${exaggeration} で ${formatAngle(drawnSpreadDeg)}）`;
+}
+
+/**
+ * 入射面の反射率を表示用の文字列にする。
+ *
+ * **絵の明るさとは別物である。** 描画側は暗すぎて見えない反射光を表示ゲインで持ち上げるが、
+ * ここに出すのは生の R。入射角を上げると 5.9% → 90% と上がっていくのが物理の事実であり、
+ * 教材として読み取ってほしいのはこの数値の方である。
+ *
+ * @param reflectance 入射面の反射率（0〜1）。定まらなければ null
+ * @returns 例 `5.9%`
+ */
+function formatEntryReflection(reflectance: number | null): string {
+  if (reflectance === null) {
+    return UNAVAILABLE;
+  }
+
+  return `${(reflectance * 100).toFixed(1)}%`;
 }
 
 /**

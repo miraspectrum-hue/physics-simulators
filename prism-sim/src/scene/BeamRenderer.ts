@@ -4,7 +4,12 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
 import { wavelengthToRgb } from '../optics/spectrum';
-import { beamBufferLength, packSegmentColors, packSegmentPositions } from './beamPacker';
+import {
+  beamBufferLength,
+  packSegmentColors,
+  packSegmentPositions,
+  type IntensityShaping,
+} from './beamPacker';
 import { RENDER_ORDER } from './renderOrder';
 import type { LightPath } from '../types/optics';
 
@@ -60,11 +65,16 @@ export default class BeamRenderer {
   /** 頂点色属性が載るインターリーブバッファ。 */
   private readonly colorBuffer: InterleavedBufferAttribute['data'];
 
+  /** 表示用の強度写像。既定は恒等＝実物理そのまま。 */
+  private readonly shapeIntensity: IntensityShaping | undefined;
+
   /**
    * @param wavelengths 描画する波長の並び [nm]。色はここから構築時に一度だけ決まる
+   * @param shapeIntensity 表示用の強度写像（非物理の演出）。省略すると実物理の強度で描く
    */
-  constructor(wavelengths: readonly number[]) {
+  constructor(wavelengths: readonly number[], shapeIntensity?: IntensityShaping) {
     this.pathCount = wavelengths.length;
+    this.shapeIntensity = shapeIntensity;
 
     const bufferLength = beamBufferLength(this.pathCount);
     this.positions = new Float32Array(bufferLength);
@@ -108,7 +118,7 @@ export default class BeamRenderer {
     }
 
     packSegmentPositions(paths, this.positions);
-    packSegmentColors(paths, this.baseColors, this.colors);
+    packSegmentColors(paths, this.baseColors, this.colors, this.shapeIntensity);
     this.positionBuffer.needsUpdate = true;
     this.colorBuffer.needsUpdate = true;
   }
