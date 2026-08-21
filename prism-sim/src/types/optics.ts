@@ -157,6 +157,22 @@ export interface PrismMaterial {
 }
 
 /**
+ * 最小偏角の配置（TASKS 6-2）。
+ *
+ * 頂角と屈折率が決まれば一意に定まる。**探索の結果ではなく解析式の値**であり、
+ * δ_min = 2·asin(n·sin(A/2)) − A、θ₁_min = asin(n·sin(A/2))。
+ *
+ * 2 つを 1 つの型で返すのは、どちらか片方だけを使う場面が無いためである。
+ * UI は θ₁_min で光源を合わせ、δ_min を目標値として表示する。
+ */
+export interface MinimumDeviation {
+  /** 最小偏角となる入射角 θ₁_min [deg]（面法線から測る） */
+  readonly incidenceAngleDeg: number;
+  /** 最小偏角 δ_min [deg] */
+  readonly deviationDeg: number;
+}
+
+/**
  * 光路を構成する 1 区間（折れ線の 1 辺）。
  *
  * `insidePrism` は描画層が屈折区間だけを別マテリアルで描くために持つほか、

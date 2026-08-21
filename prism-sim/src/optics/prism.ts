@@ -6,6 +6,8 @@
  * 屈折率は引数で受け取る（波長依存性は呼び出し側の責務）。
  */
 
+import type { MinimumDeviation } from '../types/optics';
+
 import { criticalAngle } from './fresnel';
 import { refractionAngleDeg } from './refraction';
 
@@ -107,19 +109,10 @@ export function prismDeviationDeg(
  * @throws {RangeError} 引数が定義域外、または透過条件を満たさない場合
  */
 export function minimumDeviationDeg(apexAngleDeg: number, n: number): number {
-  assertApexAngleDeg(apexAngleDeg);
-  assertRefractiveIndex(n);
-
-  const sinHalfApex = n * Math.sin((apexAngleDeg / 2) * RAD_PER_DEG);
-
-  if (sinHalfApex >= 1) {
-    throw new RangeError(
-      `頂角 ${apexAngleDeg}° のプリズムは屈折率 ${n} では透過できません` +
-        `（n·sin(A/2) = ${sinHalfApex} >= 1。透過条件 A < 2·θc を満たさない）`
-    );
-  }
-
-  return 2 * Math.asin(sinHalfApex) * DEG_PER_RAD - apexAngleDeg;
+  // 対称通過では θ₂ = θ₁ なので δ = θ₁ + θ₂ - A = 2·θ₁_min - A。
+  // n·sin(A/2) の評価と透過不能の判定は minimumDeviationIncidenceDeg に委ねる
+  // （同じ式と同じ例外を 2 か所に持たない）。2 倍は 2 の冪なので丸めを増やさない
+  return 2 * minimumDeviationIncidenceDeg(apexAngleDeg, n) - apexAngleDeg;
 }
 
 /**
@@ -142,4 +135,68 @@ export function canTransmitThroughPrism(apexAngleDeg: number, n: number): boolea
   assertRefractiveIndex(n);
 
   return apexAngleDeg < 2 * criticalAngle(n, N_AIR);
+}
+
+/**
+ * 最小偏角となる入射角 θ₁_min を求める。
+ *
+ * 対称通過（r₁ = r₂ = A/2）のとき偏角が最小になるので、スネル則 sin θ₁ = n·sin r₁ に
+ * r₁ = A/2 を入れて θ₁_min = asin(n·sin(A/2))。
+ *
+ * **探索しない。** δ(θ₁) は下に凸な単峰関数だが、その最小点には上の閉形式がある。
+ * 数値探索を本番経路に置くと、収束の許容差が表示値に混ざり込む。黄金分割探索は
+ * 独立オラクルとしてテスト側に置き、この式と突き合わせる（TASKS 6-2・案X）。
+ *
+ * 透過条件を満たさない場合は minimumDeviationDeg と同じ流儀で RangeError を投げる。
+ * 判定式も同じ n·sin(A/2) >= 1 を使う（canTransmitThroughPrism の A < 2·θc と厳密に同値）。
+ *
+ * @param apexAngleDeg 頂角 A [deg]。0 < A < 180
+ * @param n プリズム材質の屈折率（無次元）。1 以上の有限数
+ * @returns 最小偏角となる入射角 θ₁_min [deg]
+ * @throws {RangeError} 引数が定義域外、または透過条件を満たさない場合
+ */
+export function minimumDeviationIncidenceDeg(apexAngleDeg: number, n: number): number {
+  assertApexAngleDeg(apexAngleDeg);
+  assertRefractiveIndex(n);
+
+  // スネル則 sin θ₁ = n·sin r₁ に対称通過の r₁ = A/2 を入れる
+  const sinIncidence = n * Math.sin((apexAngleDeg / 2) * RAD_PER_DEG);
+
+  if (sinIncidence >= 1) {
+    throw new RangeError(
+      `頂角 ${apexAngleDeg}° のプリズムは屈折率 ${n} では透過できません` +
+        `（n·sin(A/2) = ${sinIncidence} >= 1。透過条件 A < 2·θc を満たさない）`
+    );
+  }
+
+  return Math.asin(sinIncidence) * DEG_PER_RAD;
+}
+
+/**
+ * 最小偏角の配置を求める。UI の入口。
+ *
+ * **透過できない材質では例外ではなく null を返す。** 材質セレクトで選べる以上、
+ * 「解が無い」はふつうに起きる状態であり、呼び出し規約の違反ではない
+ * （`screenProjection.meanExitAnchor` が射出光の無いときに null を返すのと同じ流儀）。
+ * 定義域違反（頂角・屈折率が範囲外）は従来どおり RangeError で落とす。
+ *
+ * null になる条件は `canTransmitThroughPrism` の否定と厳密に一致する。
+ * 判定元を二重化しないよう、可否の判断はそちらへ委ねる。
+ *
+ * @param apexAngleDeg 頂角 A [deg]。0 < A < 180
+ * @param n プリズム材質の屈折率（無次元）。1 以上の有限数
+ * @returns 最小偏角の配置。どの入射角でも全反射する材質なら null
+ * @throws {RangeError} 引数が定義域外の場合
+ */
+export function minimumDeviation(apexAngleDeg: number, n: number): MinimumDeviation | null {
+  // 可否の判断はここに書かず canTransmitThroughPrism に委ねる。判定元を一元化しておけば、
+  // 「解が無いのに null にならない」組み合わせが原理的に作れない
+  if (!canTransmitThroughPrism(apexAngleDeg, n)) {
+    return null;
+  }
+
+  return {
+    incidenceAngleDeg: minimumDeviationIncidenceDeg(apexAngleDeg, n),
+    deviationDeg: minimumDeviationDeg(apexAngleDeg, n),
+  };
 }

@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { APEX_ANGLE_DEG, BK7, DIAMOND, SF10, WATER } from '../../src/optics/constants';
-import { canTransmit } from '../../src/optics/fresnel';
+import { createTriangularPrism, ray } from '../../src/optics/convexSolid';
+import { canTransmit, criticalAngle, reflectance } from '../../src/optics/fresnel';
 import {
   canTransmitThroughPrism,
+  minimumDeviation,
   minimumDeviationDeg,
+  minimumDeviationIncidenceDeg,
   prismDeviationDeg,
 } from '../../src/optics/prism';
 import { refractionAngleDeg } from '../../src/optics/refraction';
+import { traceRay } from '../../src/optics/tracer';
+import { addScaled, vec3 } from '../../src/optics/vec3';
 
 /**
  * src/optics/prism.ts の受け入れ条件（プリズムの偏角）。
@@ -618,4 +623,484 @@ describe('E. 整合性: 透過可否が minimumDeviationDeg の可解性と一�
       expect(mismatchedApexAnglesDeg).toEqual([]);
     }
   );
+});
+
+// ===========================================================================
+// 6-2. 最小偏角の自動探索（TASKS 6-2・段階1）
+// ===========================================================================
+//
+// 本番は解析式（案X）。黄金分割探索は**このファイルの中だけ**に置き、解析式と
+// 突き合わせる独立オラクルとして使う。src に死にコードを置かず、かつ
+// 「δ(θ₁) が単峰でその最小が解析式と一致する」ことを数値的にも縛れる。
+//
+// 期待値の出どころ:
+//   θ₁_min = asin(n·sin(A/2))、δ_min = 2·asin(n·sin(A/2)) − A を倍精度で評価した値。
+//   θ₁_min の 3 値は tracer.test.ts の SYMMETRIC_CASES（3D 追跡から独立に得た実績値）と
+//   桁まで一致する。同じ値へ 2 つの独立な経路から到達することが最大の裏付けなので、
+//   その一致自体も A 節で縛る。
+//
+// 交差検証（E 節）だけは 3D 層（traceRay）と fresnel を参照する。最小偏角という主題は
+// prism.ts のものなのでこのファイルに置くが、import が広がるのはそのためである。
+
+/** 角度の許容差 [deg]。asin/sin の往復で下位 1〜2 桁に丸めが残る。 */
+const ANGLE_TOLERANCE = 1e-12;
+
+/**
+ * 黄金分割探索の許容差 [deg]。
+ *
+ * **1e-9 度には原理的に届かない。** 最小点の近傍で δ ≈ δ_min + c(θ − θ*)² と平坦なので、
+ * 2 点の δ の差が倍精度の分解能（δ_min ≈ 38.6 に対し約 8.6e-15）を下回った時点で
+ * 大小比較が丸めに支配され、区間は θ* の周り約 sqrt(eps·δ/c) ≈ 4e-7 度で頭打ちになる。
+ * 実測は BK7 3.7e-7 / SF10 3.6e-7 / 水 1.3e-6 度。反復を増やしても改善しない。
+ */
+const SEARCH_ANGLE_TOLERANCE = 5e-6;
+
+/**
+ * 探索で得た δ の許容差 [deg]。
+ *
+ * θ が 4e-7 度ずれても δ は 2 次でしか動かないため、こちらは 7 桁厳しく縛れる。
+ * この 2 つの許容差の差そのものが「最小点の近傍が平坦である」ことの現れである。
+ */
+const SEARCH_DEVIATION_TOLERANCE = 1e-13;
+
+/** 強度の許容差。フレネルの式を倍精度で評価するだけなので下位 1 桁に収まる。 */
+const INTENSITY_TOLERANCE = 1e-12;
+
+/** [材質名, 屈折率, θ₁_min, δ_min]。tracer.test.ts の SYMMETRIC_CASES と同じ入射角。 */
+const MINIMUM_DEVIATION_CASES: readonly [string, number, number, number][] = [
+  ['水', WATER.catalogNd, 41.812877292, 23.625754584],
+  ['BK7', BK7.catalogNd, 49.323347736, 38.646695472],
+  ['SF10', SF10.catalogNd, 59.784649106, 59.569298212],
+];
+
+/** 9 桁に丸めた期待値と比べるための許容差 [deg]。 */
+const NINE_DIGIT_TOLERANCE = 5e-10;
+
+/**
+ * プリズムを透過できる入射角の下端 θ_lo。
+ *
+ * 出射面の内部入射角 r₂ = A − r₁ が臨界角に達する入射角。これより下では
+ * どの波長も出射面で全反射するので、δ(θ₁) はそもそも定義されない。
+ * θ_lo = asin(n·sin(A − θc))。探索区間の下端の根拠であり、F 節が固定する。
+ */
+function transmissionLowerBoundDeg(n: number): number {
+  return (
+    Math.asin(n * Math.sin((APEX_ANGLE_DEG - criticalAngle(n, 1)) * (Math.PI / 180))) *
+    (180 / Math.PI)
+  );
+}
+
+/**
+ * 黄金分割探索で δ(θ₁) の最小点を求める（テスト内の独立オラクル）。
+ *
+ * 本番は解析式なので、これは「探索しても同じ答えになる」ことを確かめるためだけに在る。
+ *
+ * @param n 屈折率
+ * @param iterations 反復回数
+ * @returns 最小点の入射角 [deg]
+ */
+function goldenSectionMinimum(n: number, iterations: number): number {
+  const invPhi = (Math.sqrt(5) - 1) / 2;
+  // 下端ちょうどは全反射域なので、わずかに内側から始める
+  let a = transmissionLowerBoundDeg(n) + 1e-6;
+  let b = 89.999999;
+
+  for (let index = 0; index < iterations; index += 1) {
+    const c = b - (b - a) * invPhi;
+    const d = a + (b - a) * invPhi;
+
+    if (prismDeviationDeg(APEX_ANGLE_DEG, c, n) < prismDeviationDeg(APEX_ANGLE_DEG, d, n)) {
+      b = d;
+    } else {
+      a = c;
+    }
+  }
+
+  return (a + b) / 2;
+}
+
+/** スカラー層で組み立てた透過率 T = (1 − R_entry)(1 − R_exit)。 */
+function transmittance(incidenceDeg: number, n: number): number {
+  const firstRefractionDeg = refractionAngleDeg(1, n, incidenceDeg);
+  const secondIncidenceDeg = APEX_ANGLE_DEG - firstRefractionDeg;
+
+  return (
+    (1 - reflectance(1, n, incidenceDeg)) * (1 - reflectance(n, 1, secondIncidenceDeg))
+  );
+}
+
+/** 3D 追跡（traceRay）で得た射出区間の強度。射出しなければ NaN。 */
+function tracedExitIntensity(incidenceDeg: number, n: number): number {
+  const directionRad = ((incidenceDeg - 30) * Math.PI) / 180;
+  const direction = vec3(Math.cos(directionRad), Math.sin(directionRad), 0);
+  const entry = vec3(-0.5, 0.288675134594813, 0);
+  const path = traceRay(
+    ray(addScaled(entry, direction, -3), direction),
+    createTriangularPrism(2, 2),
+    n,
+    587.56
+  );
+  const last = path.segments[path.segments.length - 1];
+
+  return path.termination === 'exited' ? (last?.intensity ?? Number.NaN) : Number.NaN;
+}
+
+// ---------------------------------------------------------------------------
+// 6-2 A. minimumDeviationIncidenceDeg: θ₁_min
+// ---------------------------------------------------------------------------
+
+describe('6-2 A. minimumDeviationIncidenceDeg: 最小偏角となる入射角', () => {
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: θ₁_min が確定値と一致し、3D 追跡側の対称入射角と同じ値になる',
+    (_name, n, expectedIncidenceDeg) => {
+      // Arrange & Act
+      const actual = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+
+      // Assert: この 9 桁値は tracer.test.ts の SYMMETRIC_CASES と同一。
+      // スカラー層の解析式と 3D 追跡が独立に同じ角へ到達することがこの節の主張
+      expect(Math.abs(actual - expectedIncidenceDeg)).toBeLessThanOrEqual(NINE_DIGIT_TOLERANCE);
+    }
+  );
+
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: θ₁_min では第一面の屈折角がちょうど A/2 になる（対称通過）',
+    (_name, n) => {
+      // Arrange
+      const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+
+      // Act: r₁ = A/2 なら幾何関係 r₂ = A − r₁ から r₂ も A/2 になる
+      const firstRefractionDeg = refractionAngleDeg(1, n, incidenceDeg);
+
+      // Assert
+      expect(Math.abs(firstRefractionDeg - APEX_ANGLE_DEG / 2)).toBeLessThanOrEqual(
+        ANGLE_TOLERANCE
+      );
+    }
+  );
+
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: θ₁_min での偏角が minimumDeviationDeg と一致する',
+    (_name, n) => {
+      // Arrange
+      const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+
+      // Act
+      const actual = prismDeviationDeg(APEX_ANGLE_DEG, incidenceDeg, n);
+
+      // Assert（2 つの関数が同じ配置を指していること）
+      expect(Math.abs(actual - minimumDeviationDeg(APEX_ANGLE_DEG, n))).toBeLessThanOrEqual(
+        ANGLE_TOLERANCE
+      );
+    }
+  );
+
+  it('ダイヤモンドは頂角 60° で解が無く RangeError を投げる', () => {
+    // Arrange: n·sin(A/2) = 1.2086 >= 1。minimumDeviationDeg と同じ流儀で落とす
+    // Act & Assert
+    expect(() => minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, DIAMOND.catalogNd)).toThrow(
+      RangeError
+    );
+  });
+
+  it('頂角が定義域外なら RangeError を投げる', () => {
+    // Arrange & Act & Assert
+    expect(() => minimumDeviationIncidenceDeg(0, BK7.catalogNd)).toThrow(RangeError);
+    expect(() => minimumDeviationIncidenceDeg(180, BK7.catalogNd)).toThrow(RangeError);
+  });
+
+  it('屈折率が定義域外なら RangeError を投げる', () => {
+    // Arrange & Act & Assert
+    expect(() => minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, 0.9)).toThrow(RangeError);
+    expect(() => minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6-2 B. minimumDeviation: UI の入口
+// ---------------------------------------------------------------------------
+
+describe('6-2 B. minimumDeviation: 解が無ければ null を返す入口', () => {
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: 2 つの値が個別の関数の結果と厳密に一致する',
+    (_name, n) => {
+      // Arrange & Act
+      const actual = minimumDeviation(APEX_ANGLE_DEG, n);
+
+      // Assert（束ねるだけで、独自の計算を持たないこと）
+      expect(actual).not.toBeNull();
+      expect(actual?.incidenceAngleDeg).toBe(minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n));
+      expect(actual?.deviationDeg).toBe(minimumDeviationDeg(APEX_ANGLE_DEG, n));
+    }
+  );
+
+  it('ダイヤモンドでは null を返す（例外を投げない）', () => {
+    // Arrange: 材質セレクトで選べる以上、解が無いのは規約違反ではなくふつうの状態
+    // Act
+    const actual = minimumDeviation(APEX_ANGLE_DEG, DIAMOND.catalogNd);
+
+    // Assert
+    expect(actual).toBeNull();
+  });
+
+  it('定義域違反は null ではなく RangeError で落とす', () => {
+    // Arrange: 「解が無い」と「呼び方が間違っている」を同じ返り値に潰さない
+    // Act & Assert
+    expect(() => minimumDeviation(0, BK7.catalogNd)).toThrow(RangeError);
+    expect(() => minimumDeviation(APEX_ANGLE_DEG, 0.9)).toThrow(RangeError);
+  });
+
+  it('null になる条件が canTransmitThroughPrism の否定と全点で一致する', () => {
+    // Arrange: 判定元が二重化していれば、どこかで食い違う
+    const mismatches: string[] = [];
+
+    // Act: 1.0 から 4.0 まで 0.001 刻み（境界 2·θc = 60° は n = 2 の近傍にある）
+    for (let index = 0; index <= 3000; index += 1) {
+      const n = 1 + index * 0.001;
+      const hasSolution = minimumDeviation(APEX_ANGLE_DEG, n) !== null;
+
+      if (hasSolution !== canTransmitThroughPrism(APEX_ANGLE_DEG, n)) {
+        mismatches.push(`n=${n}: minimumDeviation=${hasSolution}`);
+      }
+    }
+
+    // Assert
+    expect(mismatches).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6-2 C. 黄金分割探索との突き合わせ
+// ---------------------------------------------------------------------------
+
+describe('6-2 C. 数値探索が解析式と同じ最小点に到達する', () => {
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: 黄金分割探索の解が θ₁_min と一致する',
+    (_name, n) => {
+      // Arrange & Act
+      const found = goldenSectionMinimum(n, 200);
+
+      // Assert（許容差 5e-6 度の根拠は SEARCH_ANGLE_TOLERANCE の注記）
+      expect(
+        Math.abs(found - minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n))
+      ).toBeLessThanOrEqual(SEARCH_ANGLE_TOLERANCE);
+    }
+  );
+
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: 探索点での偏角が δ_min と 7 桁厳しく一致する（最小点が平坦だから）',
+    (_name, n) => {
+      // Arrange
+      const found = goldenSectionMinimum(n, 200);
+
+      // Act
+      const foundDeviationDeg = prismDeviationDeg(APEX_ANGLE_DEG, found, n);
+
+      // Assert: 比較先は UI が受け取る値そのもの（minimumDeviation の返り値）
+      expect(
+        Math.abs(foundDeviationDeg - (minimumDeviation(APEX_ANGLE_DEG, n)?.deviationDeg ?? Number.NaN))
+      ).toBeLessThanOrEqual(SEARCH_DEVIATION_TOLERANCE);
+    }
+  );
+
+  it.each(MINIMUM_DEVIATION_CASES)('%s: δ は θ₁_min の左で単調減少する', (_name, n) => {
+    // Arrange: 単峰であることが黄金分割探索の前提。前提そのものを縛る
+    const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+    const lower = transmissionLowerBoundDeg(n) + 0.01;
+    const violations: string[] = [];
+    let previous = Number.POSITIVE_INFINITY;
+
+    // Act
+    for (let index = 0; index <= 100; index += 1) {
+      const deg = lower + ((incidenceDeg - lower) * index) / 100;
+      const current = prismDeviationDeg(APEX_ANGLE_DEG, deg, n);
+
+      if (!(current <= previous)) {
+        violations.push(`${deg}度: ${current} > ${previous}`);
+      }
+      previous = current;
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+
+  it.each(MINIMUM_DEVIATION_CASES)('%s: δ は θ₁_min の右で単調増加する', (_name, n) => {
+    // Arrange
+    const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+    const violations: string[] = [];
+    let previous = Number.NEGATIVE_INFINITY;
+
+    // Act
+    for (let index = 0; index <= 100; index += 1) {
+      const deg = incidenceDeg + ((89.9 - incidenceDeg) * index) / 100;
+      const current = prismDeviationDeg(APEX_ANGLE_DEG, deg, n);
+
+      if (!(current >= previous)) {
+        violations.push(`${deg}度: ${current} < ${previous}`);
+      }
+      previous = current;
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6-2 D. 逆算オラクル
+// ---------------------------------------------------------------------------
+
+describe('6-2 D. δ_min から屈折率を逆算すると材質定数に戻る', () => {
+  it.each(MINIMUM_DEVIATION_CASES)('%s: n = sin((A+δ_min)/2)/sin(A/2)', (_name, n) => {
+    // Arrange: 教科書の最小偏角法そのもの。δ_min を測れば n が求まる
+    const result = minimumDeviation(APEX_ANGLE_DEG, n);
+    const radPerDeg = Math.PI / 180;
+
+    // Act
+    const recovered =
+      Math.sin(((APEX_ANGLE_DEG + (result?.deviationDeg ?? Number.NaN)) / 2) * radPerDeg) /
+      Math.sin((APEX_ANGLE_DEG / 2) * radPerDeg);
+
+    // Assert
+    expect(Math.abs(recovered - n)).toBeLessThanOrEqual(ANGLE_TOLERANCE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6-2 E-1. 交差検証: 対称通過では両界面の反射率が等しい
+// ---------------------------------------------------------------------------
+
+describe('6-2 E-1. θ₁_min では射出強度が入射面透過率の 2 乗になる', () => {
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: スカラー層で R_exit が R_entry と一致する',
+    (_name, n) => {
+      // Arrange: 対称通過では θ₁ = θ₂ かつ r₁ = r₂ なので、可逆性から両界面の R が等しい
+      const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+      const secondIncidenceDeg =
+        APEX_ANGLE_DEG - refractionAngleDeg(1, n, incidenceDeg);
+
+      // Act
+      const entryReflectance = reflectance(1, n, incidenceDeg);
+      const exitReflectance = reflectance(n, 1, secondIncidenceDeg);
+
+      // Assert
+      expect(Math.abs(exitReflectance - entryReflectance)).toBeLessThanOrEqual(
+        INTENSITY_TOLERANCE
+      );
+    }
+  );
+
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: 3D 追跡の射出強度が (1 − R_entry)² と一致する（6-5a / 6-5b と交差）',
+    (_name, n) => {
+      // Arrange: 対称通過でしか成り立たない。6-2 の θ₁_min・6-5a の透過減衰・
+      // 6-5b の R_entry が同時に正しいときだけ通る
+      const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+      const entryReflectance = reflectance(1, n, incidenceDeg);
+
+      // Act
+      const exitIntensity = tracedExitIntensity(incidenceDeg, n);
+
+      // Assert
+      expect(Math.abs(exitIntensity - (1 - entryReflectance) ** 2)).toBeLessThanOrEqual(
+        INTENSITY_TOLERANCE
+      );
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 6-2 E-2. 交差検証: 透過率は θ₁_min で停留する
+// ---------------------------------------------------------------------------
+//
+// δ = θ₁ + θ₂ − A なので最小偏角では dθ₂/dθ₁ = −1。可逆性から出射面の反射率も
+// 同じ関数 R で書けるので、T = (1−R(θ₁))(1−R(θ₂)) を微分すると
+//   dT/dθ₁ = −R'(θ₁)(1−R(θ₂)) + (1−R(θ₁))R'(θ₂)
+// となり、θ₁ = θ₂ で 2 項が打ち消して厳密に 0 になる。
+// **透過率の極大は最小偏角と厳密に一致する。**
+
+describe('6-2 E-2. 透過率の極大が最小偏角と一致する', () => {
+  /** 中心差分の刻み [deg]。打ち切り誤差 O(h²) と丸めの釣り合いから選んだ。 */
+  const DERIVATIVE_STEP_DEG = 1e-4;
+
+  /** 数値微分の許容差。実測は 3 材質とも 5.6e-13（倍精度の丸め床）。 */
+  const DERIVATIVE_TOLERANCE = 1e-12;
+
+  it.each(MINIMUM_DEVIATION_CASES)('%s: θ₁_min で dT/dθ₁ が 0 になる', (_name, n) => {
+    // Arrange
+    const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+
+    // Act: 中心差分
+    const derivative =
+      (transmittance(incidenceDeg + DERIVATIVE_STEP_DEG, n) -
+        transmittance(incidenceDeg - DERIVATIVE_STEP_DEG, n)) /
+      (2 * DERIVATIVE_STEP_DEG);
+
+    // Assert
+    expect(Math.abs(derivative)).toBeLessThanOrEqual(DERIVATIVE_TOLERANCE);
+  });
+
+  it('BK7 の細かい掃引で透過率が最大になる点が θ₁_min そのものになる', () => {
+    // Arrange: θ₁_min ± 0.6 度を 0.001 度刻み（1201 点）。停留するだけでなく
+    // 極大であること（極小や鞍点でないこと）をここで押さえる
+    const n = BK7.catalogNd;
+    const incidenceDeg = minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n);
+    let best = Number.NEGATIVE_INFINITY;
+    let bestAt = Number.NaN;
+
+    // Act
+    for (let step = -600; step <= 600; step += 1) {
+      const deg = incidenceDeg + step * 0.001;
+      const current = transmittance(deg, n);
+
+      if (current > best) {
+        best = current;
+        bestAt = deg;
+      }
+    }
+
+    // Assert（格子点のひとつが θ₁_min そのものなので厳密比較でよい）
+    expect(bestAt).toBe(incidenceDeg);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6-2 F. 定義域: 探索区間の下端
+// ---------------------------------------------------------------------------
+
+describe('6-2 F. θ_lo より下では偏角が定義されない', () => {
+  it.each(MINIMUM_DEVIATION_CASES)(
+    '%s: θ_lo ちょうどでは出射面が全反射して RangeError になる',
+    (_name, n) => {
+      // Arrange: r₂ が臨界角ちょうど。fresnel の「θ >= θc は全反射」規約に従う
+      const lowerBoundDeg = transmissionLowerBoundDeg(n);
+
+      // Act & Assert: 下端は定義域の外、θ₁_min は内。探索区間の両側を 1 つの観点で押さえる
+      expect(() => prismDeviationDeg(APEX_ANGLE_DEG, lowerBoundDeg, n)).toThrow(RangeError);
+      expect(() =>
+        prismDeviationDeg(APEX_ANGLE_DEG, minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n), n)
+      ).not.toThrow();
+    }
+  );
+
+  it.each(MINIMUM_DEVIATION_CASES)('%s: θ_lo のわずか上では偏角が求まる', (_name, n) => {
+    // Arrange
+    const lowerBoundDeg = transmissionLowerBoundDeg(n);
+
+    // Act
+    const actual = prismDeviationDeg(APEX_ANGLE_DEG, lowerBoundDeg + 1e-6, n);
+
+    // Assert（探索区間 [θ_lo + ε, 90°] の下端がここで確定する）。
+    // 下端の δ が δ_min より大きいことまで言えて初めて「区間の内部に最小がある」と言える
+    expect(Number.isFinite(actual)).toBe(true);
+    expect(actual).toBeGreaterThan(minimumDeviationDeg(APEX_ANGLE_DEG, n));
+    expect(lowerBoundDeg).toBeLessThan(minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n));
+  });
+
+  it.each(MINIMUM_DEVIATION_CASES)('%s: θ_lo は θ₁_min より小さい', (_name, n) => {
+    // Arrange & Act & Assert（最小点が探索区間の内部にあること）
+    expect(transmissionLowerBoundDeg(n)).toBeLessThan(
+      minimumDeviationIncidenceDeg(APEX_ANGLE_DEG, n)
+    );
+  });
 });
