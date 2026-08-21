@@ -78,6 +78,7 @@ export default class ControlPanel {
   private readonly exaggerationValue: HTMLElement;
   private readonly screenDistanceSlider: HTMLInputElement;
   private readonly screenDistanceValue: HTMLElement;
+  private readonly sectionToggle: HTMLButtonElement;
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
   private readonly rotationSubscribers: Array<(angleDeg: number) => void> = [];
@@ -93,6 +94,9 @@ export default class ControlPanel {
 
   /** 入射角スライダーが**人の手で**動かされたときに呼ぶ購読者。 */
   private readonly sourceAngleSubscribers: Array<() => void> = [];
+
+  /** 断面図トグルが押されたときに呼ぶ購読者。 */
+  private readonly sectionToggleSubscribers: Array<(visible: boolean) => void> = [];
 
   /** 一時表示を消すためのタイマー。掲出中でなければ undefined。 */
   private noticeTimer: number | undefined;
@@ -321,6 +325,40 @@ export default class ControlPanel {
     screenSection.append(distanceLabel, this.screenDistanceSlider, screenHint, focusButton);
     this.element.appendChild(screenSection);
 
+    // 表示セクション（SPEC.md「画面構成」の 表示）。計算に関わらない見せ方の切り替えを置く
+    const viewSection = document.createElement('section');
+    viewSection.className = 'control-panel__section';
+
+    const viewLegend = document.createElement('h2');
+    viewLegend.className = 'control-panel__legend';
+    viewLegend.textContent = '表示';
+    viewSection.appendChild(viewLegend);
+
+    // トグルボタン。押されている状態は aria-pressed が持ち、見た目はそれに従う
+    // （状態を色だけで伝えると読み上げに届かない）
+    this.sectionToggle = document.createElement('button');
+    this.sectionToggle.type = 'button';
+    this.sectionToggle.className = 'control-panel__button';
+    this.sectionToggle.textContent = '断面図';
+    this.sectionToggle.setAttribute('aria-pressed', 'false');
+    this.sectionToggle.addEventListener('click', () => {
+      const next = this.sectionToggle.getAttribute('aria-pressed') !== 'true';
+
+      this.sectionToggle.setAttribute('aria-pressed', String(next));
+
+      for (const subscriber of this.sectionToggleSubscribers) {
+        subscriber(next);
+      }
+    });
+
+    const viewHint = document.createElement('p');
+    viewHint.className = 'control-panel__hint';
+    viewHint.textContent =
+      '主断面を真横から見た図を左上に重ねます。プリズムを回しても図の向きは変わりません。';
+
+    viewSection.append(this.sectionToggle, viewHint);
+    this.element.appendChild(viewSection);
+
     // 姿勢セクション。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
     const poseSection = document.createElement('section');
     poseSection.className = 'control-panel__section';
@@ -432,6 +470,17 @@ export default class ControlPanel {
    */
   onSourceAngleInput(subscriber: () => void): void {
     this.sourceAngleSubscribers.push(subscriber);
+  }
+
+  /**
+   * 断面図トグルが押されたときの購読者を登録する。
+   *
+   * 押した後の状態（表示するなら true）を受け取る。**store には持たせない。**
+   * 断面図の出し入れは光路の計算に何も影響しないので、状態を store へ入れると
+   * 「値が変わった＝48 波長を追跡し直す」という store の意味づけと食い違う。
+   */
+  onToggleSection(subscriber: (visible: boolean) => void): void {
+    this.sectionToggleSubscribers.push(subscriber);
   }
 
   /**

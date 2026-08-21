@@ -156,6 +156,13 @@ body {
   border-color: var(--color-accent);
 }
 
+/* トグルの押下状態。意味は aria-pressed が持ち、色はそれに従うだけ */
+.control-panel__button[aria-pressed='true'] {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: rgba(91, 141, 255, 0.12);
+}
+
 /* 押せない理由は直下の警告が文章で出す。見た目は「触れない」ことだけを伝える */
 .control-panel__button:disabled,
 .control-panel__button:disabled:hover {
@@ -194,6 +201,24 @@ body {
 }
 
 .control-panel__warning[hidden] {
+  display: none;
+}
+
+/* 断面 2D ビューのインセット（TASKS 6-1）。3D の上に重ねるだけで操作は奪わない。 */
+.section-view {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 320px;
+  height: 320px;
+  background: rgba(5, 7, 13, 0.72);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 4px;
+  /* 図の上でドラッグしても OrbitControls に届く（情報バーと同じ方針） */
+  pointer-events: none;
+}
+
+.section-view[hidden] {
   display: none;
 }
 

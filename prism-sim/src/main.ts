@@ -3,7 +3,12 @@
 import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT, LINE_D_NM, MATERIALS } from './optics/constants';
-import { createTriangularPrism, intersectRayConvexSolid } from './optics/convexSolid';
+import {
+  createTriangularPrism,
+  createTriangularPrismVertices,
+  intersectRayConvexSolid,
+} from './optics/convexSolid';
+import { dispersionPlane, worldToDispersionUV } from './optics/dispersionPlane';
 import { refractiveIndex } from './optics/dispersion';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import {
@@ -29,6 +34,7 @@ import {
   projectPathsToScreen,
   type ExitAnchor,
 } from './scene/screenProjection';
+import SectionView from './scene/SectionView';
 import ScreenObject, {
   FALLBACK_ANCHOR,
   screenPlaneFromAnchor,
@@ -38,6 +44,7 @@ import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
 import type {
   ConvexSolid,
+  DispersionPlane,
   LightPath,
   MaterialName,
   PrismMaterial,
@@ -146,6 +153,16 @@ const RAD_PER_DEG = Math.PI / 180;
 
 /** 起動時の座標変換に使う作業用インスタンス。毎フレームの経路では使わない。 */
 const workVector = new Vector3();
+
+/**
+ * 断面図の基底を matrixWorld から取り出すための作業用インスタンス。
+ *
+ * 使い回すのは CLAUDE.md の「毎フレームでの `new` を禁止」に従うため。
+ * 呼ばれるのは dirty なフレームだけで、しかも断面図が表示されているときに限る。
+ */
+const sectionOrigin = new Vector3();
+const sectionAxisU = new Vector3();
+const sectionApexEdge = new Vector3();
 
 /**
  * 点を局所座標からワールドへ移す。
@@ -560,6 +577,37 @@ function main(): void {
 
   const band = new BandRenderer(wavelengths);
   sceneManager.scene.add(band.object);
+
+  // 断面 2D ビュー（TASKS 6-1）。既定は非表示で、隠れている間は update が即座に戻る
+  const sectionView = new SectionView(container);
+
+  /** プリズム断面の頂点（局所座標）。前面の 3 点。奥行き方向は uv に出ないので前面だけでよい */
+  const sectionLocalVertices = createTriangularPrismVertices(
+    PRISM_SIDE_LENGTH,
+    PRISM_DEPTH
+  ).slice(0, 3);
+
+  /**
+   * 現在の姿勢から分散平面を組む。
+   *
+   * 基底は **matrixWorld の列**から取る。列 0 がプリズム局所 x 軸、列 2 が頂角エッジの
+   * 向き（局所 z 軸）で、どちらもワールドでの向きになっている。ここをワールド固定の
+   * 基底にすると断面図の中でプリズムが回ってしまう（6-1 D 節が縛っている性質）。
+   *
+   * @returns 分散平面
+   */
+  const currentDispersionPlane = (): DispersionPlane => {
+    sectionOrigin.setFromMatrixPosition(localToWorld);
+    sectionAxisU.setFromMatrixColumn(localToWorld, 0).normalize();
+    sectionApexEdge.setFromMatrixColumn(localToWorld, 2).normalize();
+
+    return dispersionPlane(
+      vec3(sectionOrigin.x, sectionOrigin.y, sectionOrigin.z),
+      vec3(sectionAxisU.x, sectionAxisU.y, sectionAxisU.z),
+      vec3(sectionApexEdge.x, sectionApexEdge.y, sectionApexEdge.z)
+    );
+  };
+
   sceneManager.onResize((width, height) => {
     beams.setResolution(width, height);
     reflectionBeams.setResolution(width, height);
@@ -574,6 +622,7 @@ function main(): void {
 
   /** 直前に出力した termination の内訳。変化した時だけログを出すために持つ。 */
   let lastTerminationSummary = '';
+
 
   /** 直前にスクリーン姿勢へ反映した距離。変化した時だけ組み直す。 */
   let appliedScreenDistance = store.getState().screenDistance;
@@ -664,6 +713,15 @@ function main(): void {
     };
 
     overlay.update(info);
+
+    // 断面図（TASKS 6-1）。3D が求めた点をワールド座標のまま渡すだけで、物理は再計算しない。
+    // 非表示のときは update が先頭で戻るので、ここのコストはほぼゼロになる
+    if (sectionView.isVisible()) {
+      sectionView.update(
+        currentDispersionPlane(),
+        sectionLocalVertices.map((vertex) => toWorldPoint(vertex, localToWorld))
+      );
+    }
 
     // 材質・誇張・姿勢のいずれかで変わる。変化した瞬間だけ出す
     const summary =
@@ -778,6 +836,13 @@ function main(): void {
 
   // 人の操作はアニメーションより優先する。スライダーを掴んだ／プリズムを回した瞬間に取り消す。
   // どれも `input` / ギズモ由来なので、遷移自身が store を書いても発火しない
+  // 断面図のトグル。3D の描画には一切触らない（dirty を立てて図だけ描き直す）
+  panel.onToggleSection((visible) => {
+    sectionView.setVisible(visible);
+    markDirty();
+    console.log(`[操作] 断面図 = ${visible ? '表示' : '非表示'}`);
+  });
+
   panel.onSourceAngleInput(cancelTransition);
   panel.onRotationInput(cancelTransition);
   interaction.onPoseChange(cancelTransition);
@@ -904,6 +969,16 @@ function main(): void {
       sourceAngleDeg: (): number => store.getState().sourceAngleDeg,
       minimumDeviationTargetDeg,
       transitionActive: (): boolean => transition !== null,
+      // 6-1 段階3b の検証用。SVG の実際の頂点列と、断面座標をそのまま読む
+      sectionView: sectionView.element,
+      sectionVisible: (): boolean => sectionView.isVisible(),
+      sectionUv: (): readonly { u: number; v: number }[] => {
+        const plane = currentDispersionPlane();
+
+        return sectionLocalVertices.map((vertex) =>
+          worldToDispersionUV(plane, toWorldPoint(vertex, localToWorld))
+        );
+      },
       prism: prism.object,
       floor: floor.object,
       scene: sceneManager.scene,
