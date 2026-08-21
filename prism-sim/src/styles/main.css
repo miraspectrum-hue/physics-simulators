@@ -156,6 +156,14 @@ body {
   border-color: var(--color-accent);
 }
 
+/* 押せない理由は直下の警告が文章で出す。見た目は「触れない」ことだけを伝える */
+.control-panel__button:disabled,
+.control-panel__button:disabled:hover {
+  color: var(--color-muted);
+  border-color: var(--color-panel-border);
+  cursor: not-allowed;
+}
+
 .control-panel__select {
   width: 100%;
   margin-bottom: 6px;

@@ -38,9 +38,10 @@ import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
 import type { ConvexSolid, LightPath, PrismMaterial, Ray, Vec3 } from './types/optics';
 import ControlPanel from './ui/ControlPanel';
+import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
 import InfoOverlay, { type InfoValues } from './ui/InfoOverlay';
-import { createStore } from './ui/store';
+import { createStore, SOURCE_ANGLE_MAX_DEG, SOURCE_ANGLE_MIN_DEG } from './ui/store';
 
 import './styles/main.css';
 
@@ -80,6 +81,17 @@ const REPORT_VIOLET_NM = 410;
 
 /** 狙点までの助走距離。 */
 const APPROACH_DISTANCE = 3;
+
+/**
+ * 最小偏角に合わせられないときの案内（TASKS 6-2）。
+ *
+ * プリズムを回すと、同じ実測 θ₁ を得るのに必要なスライダー値が回転角のぶんだけずれる。
+ * ずれが大きいと目標値が可動域 ±89° を外れる。**黙ってクランプしない** ——
+ * クランプすると「押したのに最小偏角にならない」が理由も出ずに起きるため。
+ */
+const MIN_DEVIATION_OUT_OF_RANGE_NOTICE =
+  `この姿勢では最小偏角に届きません（必要な入射角がスライダーの可動域 ` +
+  `${SOURCE_ANGLE_MIN_DEG}〜${SOURCE_ANGLE_MAX_DEG}° を外れます）。プリズムを戻してください。`;
 
 /**
  * 入射面反射の表示ゲイン。
@@ -146,6 +158,19 @@ function toWorldDirection(direction: Vec3, localToWorld: Matrix4): Vec3 {
     .transformDirection(localToWorld);
 
   return vec3(moved.x, moved.y, moved.z);
+}
+
+/**
+ * 角度を (-180, 180] へ折り返す。
+ *
+ * 入射面法線のワールド角は `atan2` 由来なので、プリズムを ±180° 付近まで回すと
+ * 凍結した基準との差が 360° 跳ねうる。折り返しておけば「最短の回し量」として読める。
+ *
+ * @param angleDeg 折り返す角度 [deg]
+ * @returns (-180, 180] に収めた角度 [deg]
+ */
+function normalizeAngleDeg(angleDeg: number): number {
+  return ((((angleDeg + 180) % 360) + 360) % 360) - 180;
 }
 
 /**
@@ -420,10 +445,17 @@ function main(): void {
   // （追従させると、プリズムを動かしてもビームが外れなくなり 3-8 が成立しない）
   const aimPoint = toWorldPoint(LEFT_FACE_MIDPOINT, localToWorld);
   const entryPlane = solid[ENTRY_PLANE_INDEX];
-  const entryNormalAngleDeg =
+
+  /**
+   * 現在の入射面法線のワールド角 [deg]。プリズムを回すとこの値は動く。
+   * 下で凍結する `entryNormalAngleDeg` との差が、そのまま「回した量」になる。
+   */
+  const currentEntryNormalAngleDeg = (): number =>
     entryPlane === undefined
       ? 0
       : faceNormalAngleDeg(toWorldDirection(negate(entryPlane.normal), localToWorld));
+
+  const entryNormalAngleDeg = currentEntryNormalAngleDeg();
 
   const store = createStore();
   const panel = new ControlPanel(document.body, store);
@@ -658,7 +690,48 @@ function main(): void {
     console.log('[操作] スクリーンを光路に合わせた');
   });
 
+  // 「最小偏角に合わせる」（TASKS 6-2）。**プリズムの姿勢は動かさない** ——
+  // 動かすのは光源のスライダーだけで、姿勢の単一の真実（matrixWorld）は読むだけである。
+  // 姿勢を動かして合わせると、ユーザーが自分で決めた向きを勝手に捨てることになる
+  panel.onApplyMinimumDeviation(() => {
+    const minimum = minimumDeviationOf(store.getState().material);
+
+    if (minimum === null) {
+      // ボタンは disabled なので通常ここへは来ない。判定元が同じなので黙って戻る
+      return;
+    }
+
+    prism.object.updateMatrixWorld(true);
+
+    // スライダーは「凍結した基準法線から測った角」なので、実測 θ₁ を θ₁_min にするには
+    // プリズムを回したぶんだけ足す（案 A の帰結。光源はワールドに固定されている）
+    const turnedDeg = normalizeAngleDeg(currentEntryNormalAngleDeg() - entryNormalAngleDeg);
+    const targetAngleDeg = minimum.incidenceAngleDeg + turnedDeg;
+
+    if (targetAngleDeg < SOURCE_ANGLE_MIN_DEG || targetAngleDeg > SOURCE_ANGLE_MAX_DEG) {
+      // store.update に渡すとクランプされて黙って別の角に着地する。渡す前に弾く
+      panel.setSourceAngleNotice(MIN_DEVIATION_OUT_OF_RANGE_NOTICE);
+      console.log(
+        `[操作] 最小偏角の目標 ${targetAngleDeg.toFixed(6)}度 は可動域外` +
+          `（プリズムの回し量 ${turnedDeg.toFixed(6)}度）`
+      );
+
+      return;
+    }
+
+    // 届いたので、前回「届きません」を出していたなら下ろす
+    panel.setSourceAngleNotice(null);
+    store.update({ sourceAngleDeg: targetAngleDeg });
+    console.log(
+      `[操作] 最小偏角へ → θ₁_min = ${minimum.incidenceAngleDeg.toFixed(9)}度` +
+        ` / δ_min = ${minimum.deviationDeg.toFixed(9)}度` +
+        ` / スライダー = ${targetAngleDeg.toFixed(9)}度`
+    );
+  });
+
   panel.onReset(() => {
+    // 姿勢が初期へ戻るので「この姿勢では届きません」は事実でなくなる
+    panel.setSourceAngleNotice(null);
     store.reset();
     prism.object.position.set(0, 0, 0);
     prism.object.rotation.set(0, 0, PRISM_ROTATION_Z_DEG * RAD_PER_DEG);

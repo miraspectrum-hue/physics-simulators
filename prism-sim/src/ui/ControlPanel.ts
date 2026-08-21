@@ -1,6 +1,7 @@
-import { ALL_MATERIALS, APEX_ANGLE_DEG, MATERIALS } from '../optics/constants';
-import { canTransmitThroughPrism } from '../optics/prism';
-import type { MaterialName } from '../types/optics';
+import { ALL_MATERIALS } from '../optics/constants';
+import type { MaterialName, MinimumDeviation } from '../types/optics';
+
+import { minimumDeviationOf } from './materialOptics';
 import {
   EXAGGERATION_MAX,
   EXAGGERATION_MIN,
@@ -11,6 +12,9 @@ import {
   type AppState,
   type Store,
 } from './store';
+
+/** 値が定まらないときの表示。情報バー（`InfoOverlay`）と同じ記号を使う。 */
+const UNAVAILABLE = '—';
 
 /** 姿勢スライダーの下限・上限 [deg]。Euler の Z が取りうる範囲に合わせる。 */
 const ROTATION_MIN_DEG = -180;
@@ -25,6 +29,24 @@ const ROTATION_MAX_DEG = 180;
  */
 const NO_DISPERSION_WARNING =
   '臨界角が小さく、この頂角（60°）では直接透過せず七色が出ません（全反射のデモ）。';
+
+/**
+ * 「最小偏角に合わせる」を無効にした理由（TASKS 6-2）。
+ *
+ * 出る条件は `NO_DISPERSION_WARNING` とまったく同じ（`isNoDispersionMaterial` が唯一の判定元）
+ * だが、同じ画面に同じ全文を 2 度並べない。**なぜ透過しないのか**は材質セクションの全文が
+ * 説明しており、ここで要るのは**なぜこのボタンが押せないのか**だけである。
+ */
+const NO_MINIMUM_DEVIATION_REASON = 'この材質では直接透過しないため無効です。';
+
+/**
+ * 一時表示（`showSourceAngleNotice`）を掲げておく時間 [ms]。
+ *
+ * 押した瞬間にしか出さないので、**毎フレーム出し直して点滅させない**。時間で自然に消し、
+ * 押し直せば掲出し直す。状態が変わっても消さないのは、消えた理由が
+ * 「時間切れ」か「状況が変わった」かを読み手が区別できないため。
+ */
+const NOTICE_DURATION_MS = 6000;
 
 /**
  * 右側の操作パネル（SPEC.md「画面構成」）。
@@ -44,6 +66,10 @@ export default class ControlPanel {
 
   private readonly angleSlider: HTMLInputElement;
   private readonly angleValue: HTMLElement;
+  private readonly minimumValue: HTMLElement;
+  private readonly minimumButton: HTMLButtonElement;
+  private readonly minimumWarning: HTMLElement;
+  private readonly sourceAngleNotice: HTMLElement;
   private readonly rotationSlider: HTMLInputElement;
   private readonly rotationValue: HTMLElement;
   private readonly materialSelect: HTMLSelectElement;
@@ -61,6 +87,12 @@ export default class ControlPanel {
 
   /** 「光路に合わせる」が押されたときに呼ぶ購読者。 */
   private readonly focusScreenSubscribers: Array<() => void> = [];
+
+  /** 「最小偏角に合わせる」が押されたときに呼ぶ購読者。 */
+  private readonly applyMinimumSubscribers: Array<() => void> = [];
+
+  /** 一時表示を消すためのタイマー。掲出中でなければ undefined。 */
+  private noticeTimer: number | undefined;
 
   /**
    * @param parent パネルを差し込む親要素
@@ -112,7 +144,52 @@ export default class ControlPanel {
     angleHint.textContent =
       'スライダーは「既定姿勢での入射角」です。プリズムを回すと実測 θ₁（下の情報バー）と乖離します。';
 
-    section.append(label, this.angleSlider, angleHint);
+    // 最小偏角（TASKS 6-2）。目標を先に読ませ、その下のボタンで合わせる、という順に並べる。
+    // δ_min は 6 項目の情報バーには入れない。目標値は操作の直前に見えているのが自然で、
+    // 結果（実測 θ₁・偏角 δ）を情報バーで確かめる、という流れになる（案 b）
+    const minimumReadout = document.createElement('p');
+    minimumReadout.className = 'control-panel__readout';
+
+    const minimumLabel = document.createElement('span');
+    minimumLabel.textContent = '最小偏角 δ_min';
+
+    this.minimumValue = document.createElement('span');
+    this.minimumValue.className = 'control-panel__value';
+
+    minimumReadout.append(minimumLabel, this.minimumValue);
+
+    this.minimumButton = document.createElement('button');
+    this.minimumButton.type = 'button';
+    this.minimumButton.className = 'control-panel__button';
+    this.minimumButton.textContent = '最小偏角に合わせる';
+    this.minimumButton.addEventListener('click', () => {
+      for (const subscriber of this.applyMinimumSubscribers) {
+        subscriber();
+      }
+    });
+
+    // ボタンを無効にした理由。押せない場所のすぐ下に短く置く
+    this.minimumWarning = document.createElement('p');
+    this.minimumWarning.className = 'control-panel__warning';
+    this.minimumWarning.hidden = true;
+    this.minimumWarning.textContent = NO_MINIMUM_DEVIATION_REASON;
+
+    // 押した瞬間にだけ出る案内（スライダーの可動域を外れたとき）。
+    // aria-live で読み上げにも届かせる（4-7 の方針）
+    this.sourceAngleNotice = document.createElement('p');
+    this.sourceAngleNotice.className = 'control-panel__warning';
+    this.sourceAngleNotice.hidden = true;
+    this.sourceAngleNotice.setAttribute('aria-live', 'polite');
+
+    section.append(
+      label,
+      this.angleSlider,
+      angleHint,
+      minimumReadout,
+      this.minimumButton,
+      this.minimumWarning,
+      this.sourceAngleNotice
+    );
     this.element.appendChild(section);
 
     // 材質セクション（4-2）。選択肢は ALL_MATERIALS から生やすので追記漏れが起きない
@@ -326,6 +403,50 @@ export default class ControlPanel {
   }
 
   /**
+   * 「最小偏角に合わせる」が押されたときの購読者を登録する。
+   *
+   * パネルは押されたことだけを伝える。**スライダーへ書くのは配線側の責務**である。
+   * θ₁_min は入射面の法線から測った角なので、スライダー値へ直すには
+   * 現在のプリズム姿勢が要る。姿勢の単一の真実は `matrixWorld` にあり、パネルは
+   * three を知らない（`onRotationInput` と同じ分担）。
+   */
+  onApplyMinimumDeviation(subscriber: () => void): void {
+    this.applyMinimumSubscribers.push(subscriber);
+  }
+
+  /**
+   * 入射角まわりの案内を一時的に掲げる。null で即座に下ろす。
+   *
+   * 押下時にだけ呼ぶこと。`render()` は触らないので、状態が変わっても点滅しない。
+   *
+   * **成功した操作では必ず null を渡して下ろすこと。** 掲出は時間で消えるので、
+   * 「届かなかった → プリズムを戻した → 今度は届いた」のあと数秒のあいだ、
+   * 成功しているのに失敗の案内が残る。それは嘘を出していることになる。
+   *
+   * @param message 掲げる文言。null なら下ろす
+   */
+  setSourceAngleNotice(message: string | null): void {
+    if (this.noticeTimer !== undefined) {
+      window.clearTimeout(this.noticeTimer);
+      this.noticeTimer = undefined;
+    }
+
+    if (message === null) {
+      this.sourceAngleNotice.hidden = true;
+
+      return;
+    }
+
+    this.sourceAngleNotice.textContent = message;
+    this.sourceAngleNotice.hidden = false;
+
+    this.noticeTimer = window.setTimeout(() => {
+      this.sourceAngleNotice.hidden = true;
+      this.noticeTimer = undefined;
+    }, NOTICE_DURATION_MS);
+  }
+
+  /**
    * 姿勢スライダーの**表示だけ**を更新する（ギズモ操作の反映用）。
    *
    * `value` への代入は `input` イベントを発火しないので、これを呼んでも
@@ -358,8 +479,17 @@ export default class ControlPanel {
     if (this.materialSelect.value !== state.material) {
       this.materialSelect.value = state.material;
     }
-    // 頂角 60° で直接透過しない材質のときだけ注意書きを出す（TASKS 4-2b）
-    this.materialWarning.hidden = !isNoDispersionMaterial(state.material);
+
+    // 最小偏角は材質だけで決まる（頂角 60° は固定）。誇張倍率 m には依らない ——
+    // 誇張は d 線を軸に n を伸ばす写像なので、d 線の n はどの m でも catalogNd のまま
+    const minimum = minimumDeviationOf(state.material);
+
+    // 頂角 60° で直接透過しない材質のときだけ注意書きを出す（TASKS 4-2b）。
+    // 判定元は最小偏角と同一なので、「δ_min は出るのに警告も出る」状態が作れない
+    this.materialWarning.hidden = minimum !== null;
+    this.minimumWarning.hidden = minimum !== null;
+    this.minimumButton.disabled = minimum === null;
+    this.minimumValue.textContent = formatMinimumDeviation(minimum);
 
     const exaggerationText = String(state.exaggeration);
     if (this.exaggerationSlider.value !== exaggerationText) {
@@ -392,14 +522,21 @@ function toMaterialName(value: string): MaterialName {
 }
 
 /**
- * 頂角 60° のプリズムで直接透過が起きない材質かどうか。
+ * 最小偏角を表示用の文字列にする。
  *
- * 材質名で決め打ちにせず、条件 `A < 2·θc` を検証済みの `canTransmitThroughPrism` に
- * 委ねる。こうしておけば、将来 屈折率の高い材質を足したときも警告が自動で追従する。
+ * 目標として読む値なので、δ_min と、そこへ至る入射角 θ₁_min を併記する。
+ * 押した後は情報バーの「実測 θ₁」がこの θ₁ に一致するはずで、両者を突き合わせられる。
  *
- * @param material 材質名
- * @returns 直接透過しないなら true
+ * @param minimum 最小偏角の配置。存在しなければ null
+ * @returns 例 `38.65°（θ₁ = 49.32°）`。存在しなければ `—`
  */
-function isNoDispersionMaterial(material: MaterialName): boolean {
-  return !canTransmitThroughPrism(APEX_ANGLE_DEG, MATERIALS[material].catalogNd);
+function formatMinimumDeviation(minimum: MinimumDeviation | null): string {
+  if (minimum === null) {
+    return UNAVAILABLE;
+  }
+
+  return (
+    `${minimum.deviationDeg.toFixed(2)}°` +
+    `（θ₁ = ${minimum.incidenceAngleDeg.toFixed(2)}°）`
+  );
 }
