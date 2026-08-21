@@ -193,14 +193,7 @@ export function traceRay(
   const hit = intersectRayConvexSolid(incidentRay, solid);
 
   if (hit === null || hit.tExit <= 0) {
-    return {
-      wavelengthNm,
-      refractiveIndex,
-      segments: [
-        extendedSegment(incidentRay.origin, incidentRay.direction, false, INCIDENT_INTENSITY),
-      ],
-      termination: 'missed',
-    };
+    return missedPath(incidentRay, refractiveIndex, wavelengthNm);
   }
 
   const entryPoint = pointOnRay(incidentRay, hit.tEnter);
@@ -302,6 +295,146 @@ export function traceSpectrum(
       wavelengthNm
     )
   );
+}
+
+/**
+ * 入射面で反射した光（フレネル反射）を追跡し、折れ線の光路を返す（TASKS 6-5b）。
+ *
+ * **再帰しない。** `traceRay` を呼ばず、自分自身も呼ばない。分岐が 1 回きりであることを
+ * 「そう決めた」ではなく、**その呼び出しがコードのどこにも存在しないこと**で保証する。
+ * 反射光がこの先で別の面に当たっても追わない（TASKS 6-5「分岐は 1 回まで」）。
+ *
+ * 反射率は `traceRay` の入射面とまったく同じ `reflectance(N_AIR, refractiveIndex, θ_entry)`
+ * を使う。**反射率の源はこの 1 か所に限る**（透過側と反射側で別々に計算しない）。
+ * 両者を独立に呼んだ和が I₀ になることは 6-5b のオラクル #5 が縛る。
+ *
+ * 返す区間は 2 本で、どちらもプリズムの外を通る。
+ *   1. 入射区間（光源 → 入射点、`intensity` = 1）
+ *   2. 反射区間（入射点から `EXIT_EXTENSION_LENGTH` 延長、`intensity` = R_entry）
+ *
+ * `termination` は専用の `'reflected'` とする。**`'exited'` に相乗りさせない。**
+ * 入射面反射はプリズムを透過しておらず、進む向きも射出光と逆（光源側へ後退する）ため、
+ * 射出側に置いたスクリーンには当たらない。`screenProjection.projectPathsToScreen` は
+ * `'exited'` だけを投影対象にしており、反射光はそこへ乗らないのが正しい。
+ *
+ * 入射光線がプリズムの外部から入ることを前提とする点も `traceRay` と同じで、
+ * 立体がレイの後方にある場合（`tExit <= 0`）は交差しなかったものとして扱う。
+ *
+ * @param incidentRay 入射光線（局所空間。direction は単位ベクトル）
+ * @param solid プリズムを表す凸多面体（外向き法線つき平面の集合）
+ * @param refractiveIndex プリズム材質の屈折率（無次元）。1 以上の有限数
+ * @param wavelengthNm 追跡する波長 [nm]（結果に記録するだけで計算には使わない）
+ * @returns 反射光の光路。レイがプリズムに当たらなければ null
+ * @throws {RangeError} 引数が定義域外の場合（検証は各プリミティブに委譲する）
+ */
+export function traceEntryReflection(
+  incidentRay: Ray,
+  solid: ConvexSolid,
+  refractiveIndex: number,
+  wavelengthNm: number
+): LightPath | null {
+  const hit = intersectRayConvexSolid(incidentRay, solid);
+
+  if (hit === null || hit.tExit <= 0) {
+    return null;
+  }
+
+  const entryPoint = pointOnRay(incidentRay, hit.tEnter);
+
+  // 入射角・反射率とも traceRay の入射面とまったく同じ式・同じ引数で求める。
+  // ここを別の求め方にすると、透過と反射の和が入射強度からずれる（オラクル #5 が落ちる）
+  const entryIncidenceDeg = incidenceAngleDeg(incidentRay.direction, hit.enterPlane.normal);
+  const entryReflectance = reflectance(N_AIR, refractiveIndex, entryIncidenceDeg);
+  const reflectedDirection = reflectDirection(incidentRay.direction, hit.enterPlane.normal);
+
+  return {
+    wavelengthNm,
+    refractiveIndex,
+    segments: [
+      {
+        start: incidentRay.origin,
+        end: entryPoint,
+        insidePrism: false,
+        intensity: INCIDENT_INTENSITY,
+      },
+      // 反射光もこの先どこまでも伝わるので、射出光と同じ長さで打ち切る
+      extendedSegment(
+        entryPoint,
+        reflectedDirection,
+        false,
+        INCIDENT_INTENSITY * entryReflectance
+      ),
+    ],
+    termination: 'reflected',
+  };
+}
+
+/**
+ * 同じ入射光線の入射面反射を波長ごとに追跡し、光路の束を返す（TASKS 6-5b）。
+ *
+ * `traceSpectrum` と対になる薄いラッパーで、屈折率を引いて `traceEntryReflection` へ渡す
+ * だけの役割しか持たない。分散は反射率の波長差として現れる。
+ *
+ * **レイがプリズムを外れても本数は変わらない。** `traceSpectrum` とまったく同じ型・同じ形
+ * （当たらなかった波長は `missedPath`）で返すので、描画側に「0 本か 48 本か」の分岐が
+ * 生まれない。起こり得ない分岐を作らないことが、そこで起こり得たバグを消す。
+ *
+ * @param incidentRay 入射光線（局所空間。direction は単位ベクトル）
+ * @param solid プリズムを表す凸多面体（外向き法線つき平面の集合）
+ * @param material プリズムの材質（Cauchy 分散パラメータ）
+ * @param wavelengths 追跡する波長の並び [nm]
+ * @param exaggeration 分散誇張倍率 m。1 以上の有限数。既定 1（実物理）
+ * @returns 波長リストと同じ順序・同じ本数の光路。当たらなかった波長は missed の光路
+ * @throws {RangeError} 波長や引数が定義域外の場合
+ */
+export function traceEntryReflectionSpectrum(
+  incidentRay: Ray,
+  solid: ConvexSolid,
+  material: PrismMaterial,
+  wavelengths: readonly number[],
+  exaggeration = 1
+): readonly LightPath[] {
+  return wavelengths.map((wavelengthNm) => {
+    const index = exaggerateIndex(
+      refractiveIndex(material, wavelengthNm),
+      material.catalogNd,
+      exaggeration
+    );
+
+    return (
+      traceEntryReflection(incidentRay, solid, index, wavelengthNm) ??
+      missedPath(incidentRay, index, wavelengthNm)
+    );
+  });
+}
+
+/**
+ * プリズムに当たらなかった光路を作る。
+ *
+ * 入射光をそのまま `EXIT_EXTENSION_LENGTH` だけ延ばした 1 区間で表す。強度は減衰しない
+ * （界面を 1 つも通らないため）。
+ *
+ * `traceRay` と `traceEntryReflectionSpectrum` が**この 1 つの関数から**同じ形を作るので、
+ * 2 つのスペクトル関数が「外れたとき」に違う形を返す経路が存在しない。
+ *
+ * @param incidentRay 入射光線
+ * @param refractiveIndex 追跡に使った屈折率（結果に記録するだけ）
+ * @param wavelengthNm 追跡した波長 [nm]
+ * @returns termination が missed の光路
+ */
+function missedPath(
+  incidentRay: Ray,
+  refractiveIndex: number,
+  wavelengthNm: number
+): LightPath {
+  return {
+    wavelengthNm,
+    refractiveIndex,
+    segments: [
+      extendedSegment(incidentRay.origin, incidentRay.direction, false, INCIDENT_INTENSITY),
+    ],
+    termination: 'missed',
+  };
 }
 
 /**

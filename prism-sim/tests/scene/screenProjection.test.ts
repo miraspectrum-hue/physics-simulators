@@ -276,6 +276,21 @@ describe('A. projectPathsToScreen: スクリーンに載る波長を選び出す
     expect(hits[0]).toBeNull();
   });
 
+  it('termination が reflected の波長は null になる（入射面反射は投影しない）', () => {
+    // Arrange: この光路は幾何としてはスクリーンに当たる向きに進んでいる。
+    // それでも落ちるのは「透過して射出した光だけを映す」という採用条件のためであり、
+    // 向きの偶然ではなく termination で弾いていることをここで縛る（TASKS 6-5b）
+    const paths = [unexitedPath(550, 'reflected')];
+
+    // Act
+    const hits = projectPathsToScreen(paths, SCREEN);
+
+    // Assert
+    expect(hits[0]).toBeNull();
+    // 同じ形の光路でも exited なら載る＝差は termination だけであることの対照
+    expect(projectPathsToScreen([unexitedPath(550, 'exited')], SCREEN)[0]).not.toBeNull();
+  });
+
   it('スクリーンが射出方向の後方にある波長は null になる（t < 0）', () => {
     // Arrange（-x へ射出するのでスクリーン x = 10 は後方）
     const paths = [exitedPath(550, vec3(-1, 0, 0))];

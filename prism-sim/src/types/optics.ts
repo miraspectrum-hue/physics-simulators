@@ -180,11 +180,17 @@ export interface Segment {
 /**
  * 光路の終わり方。
  *
- * - `exited`: プリズムを透過して外部へ射出した（最終区間は一定長で打ち切る）
+ * - `exited`: プリズムを**透過して**外部へ射出した（最終区間は一定長で打ち切る）
  * - `missed`: プリズムと交差せず直進した
  * - `bounceLimit`: 内部反射が上限に達し、射出しないまま追跡を打ち切った
+ * - `reflected`: 入射面で反射して光源側へ戻った（プリズムに入っていない。TASKS 6-5b）
+ *
+ * **`reflected` を `exited` に相乗りさせない。** 入射面反射はプリズムを透過しておらず、
+ * 進む向きも射出光と逆（光源側へ後退する）。同じ値にすると「透過して射出した光」だけを
+ * 選びたい場所（`screenProjection.projectPathsToScreen` など）が反射光まで拾ってしまう。
+ * union に 1 つ増えるが、網羅 switch の漏れはコンパイラが全部拾う。
  */
-export type PathTermination = 'exited' | 'missed' | 'bounceLimit';
+export type PathTermination = 'exited' | 'missed' | 'bounceLimit' | 'reflected';
 
 /**
  * 1 波長ぶんの光路。

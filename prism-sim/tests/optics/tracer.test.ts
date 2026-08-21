@@ -4,6 +4,8 @@ import {
   incidenceAngleDeg,
   reflectDirection,
   refractDirection,
+  traceEntryReflection,
+  traceEntryReflectionSpectrum,
   traceRay,
   traceSpectrum,
 } from '../../src/optics/tracer';
@@ -1690,5 +1692,495 @@ describe('S-7. traceSpectrum の各光路が traceRay と同じ強度を持つ',
     expect(firstInnerIntensity(violet as LightPath)).toBeLessThan(
       firstInnerIntensity(red as LightPath)
     );
+  });
+});
+
+// ===========================================================================
+// T. traceEntryReflection / traceEntryReflectionSpectrum（TASKS 6-5b・段階1）
+// ===========================================================================
+//
+// 入射面で反射した光。主光路（traceRay）とは独立した 2 本目の経路で、分岐は 1 回だけ
+// （反射光の先はもう追わない）。
+//
+// 期待値の出どころ:
+//   - 垂直入射の R は 6-4 の F0 = ((n−1)/(n+1))² と**倍精度で厳密に一致する**ことを
+//     確認済みなので toBe で縛る。
+//   - 斜め入射の R は 6-5a の透過値（S-1〜S-5）と対になる値で、1 − 透過 に等しい。
+//     どちらかがずれれば T-2（エネルギー保存）が落ちる関係にしてある。
+//   - ブリュースター角は 6-4 の Rs = 0.155286959920509 から Rs/2 として導いた。
+//
+// 許容差の使い分け:
+//   REFLECTION_INTENSITY_TOLERANCE (1e-15) — 反射率は四則と三角関数だけなので下位 1 桁のみ
+//   REFLECTION_GEOMETRY_TOLERANCE  (1e-12) — 反射は屈折と違い asin/sin を往復しないため、
+//                                            既存の DIRECTION_TOLERANCE より 4 桁厳しくできる
+//   REFLECTION_ANGLE_TOLERANCE     (1e-12) — 斜め入射での入射角＝反射角の照合 [deg]
+//
+// NOTE: 垂直入射で「入射角 == 反射角」を角度で照合してはならない。cos が 1 に貼り付く
+//       ところで acos の桁落ちが効き、厳密な逆向きでも 1.2e-6 度ほどずれる。
+//       垂直入射は方向ベクトルそのもので縛る（T-6-2）。
+
+/** 反射強度の許容差。フレネルの式を倍精度で評価するだけなので下位 1 桁に収まる。 */
+const REFLECTION_INTENSITY_TOLERANCE = 1e-15;
+
+/** 反射の座標・方向の許容差。屈折を経ないので既存の DIRECTION_TOLERANCE より厳しい。 */
+const REFLECTION_GEOMETRY_TOLERANCE = 1e-12;
+
+/** 入射角＝反射角の照合に使う許容差 [deg]。 */
+const REFLECTION_ANGLE_TOLERANCE = 1e-12;
+
+/** 0〜89 度を 1 度刻みで並べた入射角。 */
+const REFLECTION_SWEEP_ANGLES_DEG: readonly number[] = Array.from(
+  { length: 90 },
+  (_unused, index) => index
+);
+
+/** 反射光路が返ることを確かめてから返す（null なら失敗させる）。 */
+function reflectionOnLeftFace(incidenceAngleDeg: number, n: number): LightPath {
+  const path = traceEntryReflection(
+    incidentRayOnLeftFace(incidenceAngleDeg),
+    PRISM,
+    n,
+    TEST_WAVELENGTH_NM
+  );
+
+  if (path === null) {
+    throw new Error(`入射角 ${incidenceAngleDeg} 度で反射光路が得られませんでした`);
+  }
+
+  return path;
+}
+
+/** 反射区間（2 本目）の強度。 */
+function reflectedIntensity(path: LightPath): number {
+  return segmentAt(path, 1).intensity;
+}
+
+// ---------------------------------------------------------------------------
+// T-1. #4 反射光の強度が R_entry と一致する
+// ---------------------------------------------------------------------------
+
+describe('T-1. traceEntryReflection: 反射光の強度が R_entry になる', () => {
+  /** [材質名, 屈折率, F0]。F0 = ((n−1)/(n+1))²。6-5a S-1 の 1 − F0 と対になる値。 */
+  const NORMAL_INCIDENCE_CASES: readonly [string, number, number][] = [
+    ['水', WATER.catalogNd, 0.020415160749659062],
+    ['BK7', BK7.catalogNd, 0.04216456259454582],
+    ['SF10', SF10.catalogNd, 0.07125558145339843],
+    ['ダイヤモンド', DIAMOND.catalogNd, 0.17201145168823703],
+  ];
+
+  it.each(NORMAL_INCIDENCE_CASES)(
+    '%s: 垂直入射の反射強度が F0 = ((n−1)/(n+1))² に厳密一致する',
+    (_name, n, f0) => {
+      // Arrange & Act
+      const path = reflectionOnLeftFace(0, n);
+
+      // Assert（reflectance(1, n, 0) が ((n−1)/(n+1))² と倍精度で一致するので厳密比較でよい）。
+      // 期待値が 6-4 の定義から出ていることを同じ観点の中で押さえる。切り離すと
+      // SUT を呼ばないテストになり、実装前から緑になってしまう
+      expect(reflectedIntensity(path)).toBe(f0);
+      expect(((n - 1) / (n + 1)) ** 2).toBe(f0);
+    }
+  );
+
+  /** [材質名, 屈折率, 入射角, R_entry]。対称通過の角とかすめ入射を含む。 */
+  const OBLIQUE_CASES: readonly [string, number, number, number][] = [
+    ['水 対称通過', WATER.catalogNd, 41.812877292, 0.025576661834411832],
+    ['BK7 対称通過', BK7.catalogNd, 49.323347736, 0.058878132547169434],
+    ['SF10 対称通過', SF10.catalogNd, 59.784649106, 0.12338009008027641],
+    ['ダイヤモンド 45度', DIAMOND.catalogNd, 45, 0.18115665815451867],
+    ['BK7 70度', BK7.catalogNd, 70, 0.17413422675024837],
+    ['BK7 かすめ入射 89度', BK7.catalogNd, 89, 0.904615089114513],
+  ];
+
+  it.each(OBLIQUE_CASES)(
+    '%s: 斜め入射の反射強度が確定値と一致する',
+    (_name, n, incidenceDeg, expected) => {
+      // Arrange & Act
+      const path = reflectionOnLeftFace(incidenceDeg, n);
+
+      // Assert
+      expect(Math.abs(reflectedIntensity(path) - expected)).toBeLessThanOrEqual(
+        REFLECTION_INTENSITY_TOLERANCE
+      );
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T-2. #5 エネルギー保存：2 つの独立した経路の和
+// ---------------------------------------------------------------------------
+//
+// 恒等式ではない。traceRay（透過側）と traceEntryReflection（反射側）を**別々に呼び**、
+// 両者が同じ θ_entry・同じ n・同じ reflectance を使っているかを和で縛る。
+// 片方が法線の取り方や角度の求め方を変えれば、和は I₀ から外れて落ちる。
+
+describe('T-2. 透過と反射の 2 経路の和が入射強度 I₀ になる', () => {
+  /** 入射強度 I₀。tracer が「入射時を 1 とする」と定義している値。 */
+  const INCIDENT_INTENSITY = 1;
+
+  it.each([
+    ['水', WATER.catalogNd],
+    ['BK7', BK7.catalogNd],
+    ['SF10', SF10.catalogNd],
+    ['ダイヤモンド', DIAMOND.catalogNd],
+  ] as readonly [string, number][])('%s: 全掃引で 透過 + 反射 = I₀', (_name, n) => {
+    // Arrange
+    const violations: string[] = [];
+
+    // Act
+    for (const deg of REFLECTION_SWEEP_ANGLES_DEG) {
+      const incident = incidentRayOnLeftFace(deg);
+      const transmitted = firstInnerIntensity(traceRay(incident, PRISM, n, TEST_WAVELENGTH_NM));
+      const reflected = reflectedIntensity(reflectionOnLeftFace(deg, n));
+      const sum = transmitted + reflected;
+
+      if (Math.abs(sum - INCIDENT_INTENSITY) > REFLECTION_INTENSITY_TOLERANCE) {
+        violations.push(`${deg}度: ${transmitted} + ${reflected} = ${sum}`);
+      }
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+
+  it('BK7 の対称通過で透過 0.9411218674528306 / 反射 0.058878132547169434 が確定値と一致する', () => {
+    // Arrange: 和が 1 になるだけでなく、内訳そのものが 6-5a の値と噛み合っていること
+    const incident = incidentRayOnLeftFace(49.323347736);
+
+    // Act
+    const transmitted = firstInnerIntensity(
+      traceRay(incident, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM)
+    );
+    const reflected = reflectedIntensity(reflectionOnLeftFace(49.323347736, BK7.catalogNd));
+
+    // Assert
+    expect(Math.abs(transmitted - 0.9411218674528306)).toBeLessThanOrEqual(
+      REFLECTION_INTENSITY_TOLERANCE
+    );
+    expect(Math.abs(reflected - 0.058878132547169434)).toBeLessThanOrEqual(
+      REFLECTION_INTENSITY_TOLERANCE
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-3. #6 反射強度は入射角に対して狭義単調増加
+// ---------------------------------------------------------------------------
+
+describe('T-3. 入射角が大きいほど反射が明るくなる', () => {
+  it('反射強度が入射角に対して狭義単調増加する', () => {
+    // Arrange
+    const violations: string[] = [];
+    let previous = Number.NEGATIVE_INFINITY;
+
+    // Act
+    for (const deg of REFLECTION_SWEEP_ANGLES_DEG) {
+      const current = reflectedIntensity(reflectionOnLeftFace(deg, BK7.catalogNd));
+
+      if (!(current > previous)) {
+        violations.push(`${deg}度: ${current} <= ${previous}`);
+      }
+      previous = current;
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+
+  it('掃引の両端が F0 と かすめ入射の値になる', () => {
+    // Arrange & Act
+    const atNormal = reflectedIntensity(reflectionOnLeftFace(0, BK7.catalogNd));
+    const atGrazing = reflectedIntensity(reflectionOnLeftFace(89, BK7.catalogNd));
+
+    // Assert（単調性だけでは「常に 0」でも通るので、両端を具体値で押さえる）
+    expect(atNormal).toBe(0.04216456259454582);
+    expect(Math.abs(atGrazing - 0.904615089114513)).toBeLessThanOrEqual(
+      REFLECTION_INTENSITY_TOLERANCE
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-4. #7 ブリュースター角では反射が s 偏光だけになる
+// ---------------------------------------------------------------------------
+
+describe('T-4. ブリュースター角の反射強度が Rs/2 になる', () => {
+  it('空気→BK7 の θB で反射強度が Rs/2 と一致する', () => {
+    // Arrange: 無偏光なので R = (Rs + Rp)/2 で、Rp = 0 だから R = Rs/2
+    const brewsterAngleDeg = Math.atan(BK7.catalogNd) * (180 / Math.PI);
+
+    // Act
+    const reflected = reflectedIntensity(reflectionOnLeftFace(brewsterAngleDeg, BK7.catalogNd));
+
+    // Assert（6-4 の Rs = 0.155286959920509 の半分。S-5 の透過 0.9223565200397454 と補になる）
+    expect(Math.abs(reflected - 0.0776434799602545)).toBeLessThanOrEqual(
+      REFLECTION_INTENSITY_TOLERANCE
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-5. #8 値域：反射強度が 0〜1 に収まる
+// ---------------------------------------------------------------------------
+
+describe('T-5. 反射強度が 0 以上 1 以下に収まる', () => {
+  it.each([
+    ['水', WATER.catalogNd],
+    ['BK7', BK7.catalogNd],
+    ['SF10', SF10.catalogNd],
+    ['ダイヤモンド', DIAMOND.catalogNd],
+  ] as readonly [string, number][])('%s: 掃引した全区間で 0 <= 強度 <= 1', (_name, n) => {
+    // Arrange
+    const violations: string[] = [];
+
+    // Act
+    for (const deg of REFLECTION_SWEEP_ANGLES_DEG) {
+      const path = reflectionOnLeftFace(deg, n);
+
+      for (const [index, segment] of path.segments.entries()) {
+        if (!(segment.intensity >= 0 && segment.intensity <= 1)) {
+          violations.push(`${deg}度 区間${index}: ${segment.intensity}`);
+        }
+      }
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-6. 幾何：反射の法則と区間の形
+// ---------------------------------------------------------------------------
+
+describe('T-6. traceEntryReflection: 反射の法則と区間の形', () => {
+  it('斜め入射で 入射角 == 反射角 が成り立つ（0〜89 度の掃引）', () => {
+    // Arrange: 垂直入射は acos の桁落ちで角度比較ができないため 1 度から回す
+    const entryNormal = LEFT_FACE_INWARD_NORMAL;
+    const violations: string[] = [];
+
+    // Act
+    for (const deg of REFLECTION_SWEEP_ANGLES_DEG.filter((value) => value >= 1)) {
+      const path = reflectionOnLeftFace(deg, BK7.catalogNd);
+      const reflectedDeg = incidenceAngleDeg(segmentDirection(segmentAt(path, 1)), entryNormal);
+
+      if (Math.abs(reflectedDeg - deg) > REFLECTION_ANGLE_TOLERANCE) {
+        violations.push(`${deg}度 → 反射角 ${reflectedDeg}度`);
+      }
+    }
+
+    // Assert
+    expect(violations).toEqual([]);
+  });
+
+  it('垂直入射では反射方向が入射方向の真逆になる', () => {
+    // Arrange & Act
+    const path = reflectionOnLeftFace(0, BK7.catalogNd);
+    const actual = segmentDirection(segmentAt(path, 1));
+
+    // Assert（内向き法線の逆向き。角度ではなくベクトルで縛る）
+    expectVec3ToBeCloseWithin(
+      actual,
+      vec3(-0.8660254037844385, 0.5, 0),
+      REFLECTION_GEOMETRY_TOLERANCE
+    );
+  });
+
+  it('BK7 対称通過の反射区間が確定した座標を持つ', () => {
+    // Arrange & Act
+    const reflected = segmentAt(reflectionOnLeftFace(49.323347736, BK7.catalogNd), 1);
+
+    // Assert（始点は入射点、終点は 40 単位先）
+    expectVec3ToBeCloseWithin(
+      reflected.start,
+      vec3(-0.5, 0.2886751345948131, 0),
+      REFLECTION_GEOMETRY_TOLERANCE
+    );
+    expectVec3ToBeCloseWithin(
+      reflected.end,
+      vec3(-7.910647612462151, 39.596210060660944, 0),
+      REFLECTION_GEOMETRY_TOLERANCE
+    );
+  });
+
+  it('区間は 2 本で、どちらもプリズムの外を通る', () => {
+    // Arrange & Act
+    const path = reflectionOnLeftFace(49.323347736, BK7.catalogNd);
+
+    // Assert（内部区間があれば「再帰していない」という前提が崩れている）
+    expect(path.segments.length).toBe(2);
+    expect(path.segments.map((segment) => segment.insidePrism)).toEqual([false, false]);
+  });
+
+  it('入射区間は減衰していない（強度 1）', () => {
+    // Arrange & Act
+    const path = reflectionOnLeftFace(49.323347736, BK7.catalogNd);
+
+    // Assert（入射時を 1 とする定義そのもの。減衰するのは反射区間だけ）
+    expect(segmentAt(path, 0).intensity).toBe(1);
+  });
+
+  it('入射区間の終点と反射区間の始点が一致する（折れ線として繋がる）', () => {
+    // Arrange & Act
+    const path = reflectionOnLeftFace(70, BK7.catalogNd);
+
+    // Assert
+    expect(segmentAt(path, 1).start).toEqual(segmentAt(path, 0).end);
+  });
+
+  it('反射区間の長さが EXIT_EXTENSION_LENGTH（40 単位）である', () => {
+    // Arrange & Act
+    const reflected = segmentAt(reflectionOnLeftFace(70, BK7.catalogNd), 1);
+    const actual = length(sub(reflected.end, reflected.start));
+
+    // Assert
+    expect(Math.abs(actual - EXIT_EXTENSION_LENGTH)).toBeLessThanOrEqual(
+      REFLECTION_GEOMETRY_TOLERANCE
+    );
+  });
+
+  it("termination が 'reflected' である（'exited' に相乗りしない）", () => {
+    // Arrange & Act
+    const path = reflectionOnLeftFace(70, BK7.catalogNd);
+
+    // Assert: 入射面反射はプリズムを透過しておらず、進む向きも射出光と逆（光源側へ後退）。
+    // 'exited' にすると projectPathsToScreen が反射光まで投影対象に拾ってしまう
+    expect(path.termination).toBe('reflected');
+    expect(path.termination).not.toBe('exited');
+  });
+
+  it('追跡に使った波長と屈折率を記録する', () => {
+    // Arrange & Act
+    const path = reflectionOnLeftFace(70, SF10.catalogNd);
+
+    // Assert
+    expect(path.wavelengthNm).toBe(TEST_WAVELENGTH_NM);
+    expect(path.refractiveIndex).toBe(SF10.catalogNd);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-7. プリズムに当たらなければ反射光は存在しない
+// ---------------------------------------------------------------------------
+
+describe('T-7. traceEntryReflection: 当たらないレイには null を返す', () => {
+  it('プリズムの上方を横切るレイでは null', () => {
+    // Arrange: L 節と同じ、交差しないレイ
+    const missingRay: Ray = ray(vec3(-5, 5, 0), vec3(1, 0, 0));
+
+    // Act & Assert
+    expect(traceEntryReflection(missingRay, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM)).toBeNull();
+  });
+
+  it('プリズムが後方にあるレイでは null（traceRay と同じ tExit <= 0 の規約）', () => {
+    // Arrange: 交差計算は当たったと言うが、t が負なのでレイの進む先には無い
+    const backwardRay: Ray = ray(vec3(0, 10, 0), vec3(0, 1, 0));
+
+    // Act & Assert
+    expect(traceEntryReflection(backwardRay, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-8. traceEntryReflectionSpectrum：波長ごとの反射
+// ---------------------------------------------------------------------------
+
+describe('T-8. traceEntryReflectionSpectrum: 波長ごとに反射率が変わる（分散）', () => {
+  /** 反射が明るく、波長差も出る角度。 */
+  const SPECTRUM_INCIDENCE_DEG = 70;
+
+  it('m=1 で赤と紫の反射強度が確定値と一致する', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(SPECTRUM_INCIDENCE_DEG);
+
+    // Act
+    const spectrum = traceEntryReflectionSpectrum(incident, PRISM, BK7, [660, 410]);
+
+    // Assert（屈折率が高い紫の方が反射率も高い）
+    expect(spectrum.length).toBe(2);
+    expect(
+      Math.abs(reflectedIntensity(spectrum[0] as LightPath) - 0.17366988832981714)
+    ).toBeLessThanOrEqual(REFLECTION_INTENSITY_TOLERANCE);
+    expect(
+      Math.abs(reflectedIntensity(spectrum[1] as LightPath) - 0.17642146298010525)
+    ).toBeLessThanOrEqual(REFLECTION_INTENSITY_TOLERANCE);
+  });
+
+  it('m=6 では赤と紫の反射強度の差が広がる', () => {
+    // Arrange: 誇張は屈折率に効くので、反射率の波長差にもそのまま乗る
+    const incident = incidentRayOnLeftFace(SPECTRUM_INCIDENCE_DEG);
+
+    // Act
+    const spectrum = traceEntryReflectionSpectrum(incident, PRISM, BK7, [660, 410], 6);
+
+    // Assert（m=1 の差 0.0027515746502881078 に対し m=6 は 0.015779000603096893）
+    expect(
+      Math.abs(reflectedIntensity(spectrum[0] as LightPath) - 0.17131359765893583)
+    ).toBeLessThanOrEqual(REFLECTION_INTENSITY_TOLERANCE);
+    expect(
+      Math.abs(reflectedIntensity(spectrum[1] as LightPath) - 0.18709259826203273)
+    ).toBeLessThanOrEqual(REFLECTION_INTENSITY_TOLERANCE);
+  });
+
+  it('各要素が同じ屈折率で traceEntryReflection を呼んだ結果と一致する', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(SPECTRUM_INCIDENCE_DEG);
+    const wavelengths = [660, 550, 410];
+
+    // Act
+    const spectrum = traceEntryReflectionSpectrum(incident, PRISM, BK7, wavelengths);
+    const mismatches: string[] = [];
+
+    spectrum.forEach((path, index) => {
+      const expected = traceEntryReflection(
+        incident,
+        PRISM,
+        path.refractiveIndex,
+        path.wavelengthNm
+      );
+
+      if (expected === null || reflectedIntensity(path) !== reflectedIntensity(expected)) {
+        mismatches.push(`λ=${wavelengths[index]}nm`);
+      }
+    });
+
+    // Assert
+    expect(mismatches).toEqual([]);
+  });
+
+  it('波長リストと同じ本数・同じ順序で返す', () => {
+    // Arrange
+    const incident = incidentRayOnLeftFace(SPECTRUM_INCIDENCE_DEG);
+    const wavelengths = sampleWavelengths(CONTINUOUS_SAMPLE_COUNT);
+
+    // Act
+    const spectrum = traceEntryReflectionSpectrum(incident, PRISM, BK7, wavelengths);
+
+    // Assert
+    expect(spectrum.length).toBe(CONTINUOUS_SAMPLE_COUNT);
+    expect(spectrum.map((path) => path.wavelengthNm)).toEqual([...wavelengths]);
+  });
+
+  it('当たらないレイでも固定長で返し、traceSpectrum と同じ missed 表現になる', () => {
+    // Arrange: 本数が 0 と 48 で揺れると描画側に分岐が要る。起こり得ない分岐を作らないため、
+    // 当たらないときも traceSpectrum とまったく同じ形（1 区間・長さ 40・強度 1・missed）で返す
+    const missingRay: Ray = ray(vec3(-5, 5, 0), vec3(1, 0, 0));
+    const wavelengths = sampleWavelengths(CONTINUOUS_SAMPLE_COUNT);
+
+    // Act
+    const spectrum = traceEntryReflectionSpectrum(missingRay, PRISM, BK7, wavelengths);
+
+    // Assert（2 つのスペクトル関数の形が揃っていること自体を縛る）
+    expect(spectrum.length).toBe(CONTINUOUS_SAMPLE_COUNT);
+    expect(spectrum).toEqual(traceSpectrum(missingRay, PRISM, BK7, wavelengths));
+  });
+
+  it('当たらないレイでも単発版は null を返す（本数を揃える必要が無いため）', () => {
+    // Arrange: 固定長にするのはスペクトル版だけ。単発版は「反射光は無い」を null で表す
+    const missingRay: Ray = ray(vec3(-5, 5, 0), vec3(1, 0, 0));
+
+    // Act & Assert
+    expect(traceEntryReflection(missingRay, PRISM, BK7.catalogNd, TEST_WAVELENGTH_NM)).toBeNull();
+    expect(traceEntryReflectionSpectrum(missingRay, PRISM, BK7, [660]).length).toBe(1);
   });
 });
