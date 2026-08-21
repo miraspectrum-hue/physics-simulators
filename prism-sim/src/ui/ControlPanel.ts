@@ -91,6 +91,9 @@ export default class ControlPanel {
   /** 「最小偏角に合わせる」が押されたときに呼ぶ購読者。 */
   private readonly applyMinimumSubscribers: Array<() => void> = [];
 
+  /** 入射角スライダーが**人の手で**動かされたときに呼ぶ購読者。 */
+  private readonly sourceAngleSubscribers: Array<() => void> = [];
+
   /** 一時表示を消すためのタイマー。掲出中でなければ undefined。 */
   private noticeTimer: number | undefined;
 
@@ -136,6 +139,12 @@ export default class ControlPanel {
     this.angleSlider.step = '0.1';
 
     this.angleSlider.addEventListener('input', () => {
+      // 先に知らせてから書く。進行中のアニメーションを取り消す購読者が、
+      // ユーザーの入れた値より後に走って上書きすることがないようにする
+      for (const subscriber of this.sourceAngleSubscribers) {
+        subscriber();
+      }
+
       store.update({ sourceAngleDeg: Number(this.angleSlider.value) });
     });
 
@@ -412,6 +421,17 @@ export default class ControlPanel {
    */
   onApplyMinimumDeviation(subscriber: () => void): void {
     this.applyMinimumSubscribers.push(subscriber);
+  }
+
+  /**
+   * 入射角スライダーが**人の手で**動かされたときの購読者を登録する。
+   *
+   * `render()` が値を書き戻すときには発火しない（`value` への代入は `input` を起こさない）。
+   * だから進行中のアニメーションがスライダーを動かしても、これを通じて
+   * 自分自身を取り消してしまうことがない。人の操作だけがここへ来る。
+   */
+  onSourceAngleInput(subscriber: () => void): void {
+    this.sourceAngleSubscribers.push(subscriber);
   }
 
   /**

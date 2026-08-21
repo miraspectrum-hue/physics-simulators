@@ -36,7 +36,15 @@ import ScreenObject, {
 } from './scene/ScreenObject';
 import { transformLightPath, transformRay } from './scene/rayTransform';
 import SceneManager from './scene/SceneManager';
-import type { ConvexSolid, LightPath, PrismMaterial, Ray, Vec3 } from './types/optics';
+import type {
+  ConvexSolid,
+  LightPath,
+  MaterialName,
+  PrismMaterial,
+  Ray,
+  Vec3,
+} from './types/optics';
+import { animateAngle } from './ui/animateAngle';
 import ControlPanel from './ui/ControlPanel';
 import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
@@ -81,6 +89,13 @@ const REPORT_VIOLET_NM = 410;
 
 /** 狙点までの助走距離。 */
 const APPROACH_DISTANCE = 3;
+
+/**
+ * 最小偏角へ寄せる遷移にかける時間 [ms]（SPEC.md「F-27 アニメーション遷移」）。
+ *
+ * 扇が畳まれていく過程が読める程度に長く、操作の待ちにならない程度に短く。
+ */
+const MIN_DEVIATION_TRANSITION_MS = 450;
 
 /**
  * 最小偏角に合わせられないときの案内（TASKS 6-2）。
@@ -158,6 +173,34 @@ function toWorldDirection(direction: Vec3, localToWorld: Matrix4): Vec3 {
     .transformDirection(localToWorld);
 
   return vec3(moved.x, moved.y, moved.z);
+}
+
+/**
+ * 進行中の入射角の遷移（TASKS 6-2 段階4）。
+ *
+ * `material` を控えるのは、遷移の目標が**その材質の** θ₁_min だからである。
+ * 途中で材質が変われば目標は無効になり、古い値へ着地させてはならない。
+ */
+interface AngleTransition {
+  /** 押した時点の入射角 [deg]。 */
+  readonly from: number;
+  /** 着地させる入射角 [deg]。段階3 の即時適用と同じ値。 */
+  readonly to: number;
+  /** 開始時刻 [ms]（`performance.now()`）。 */
+  readonly startMs: number;
+  /** 開始時点の材質。変わったら遷移を取り消す。 */
+  readonly material: MaterialName;
+}
+
+/**
+ * OS の「視差効果を減らす」設定を見る。
+ *
+ * 押すたびに見るので、設定を変えたあと再読み込みしなくても効く。
+ *
+ * @returns 動きを減らす設定なら true
+ */
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 /**
@@ -690,23 +733,94 @@ function main(): void {
     console.log('[操作] スクリーンを光路に合わせた');
   });
 
+  /** 進行中の遷移。無ければ null。 */
+  let transition: AngleTransition | null = null;
+
+  const cancelTransition = (): void => {
+    transition = null;
+  };
+
+  /**
+   * 遷移を 1 フレームぶん進める。レンダーループから毎フレーム呼ぶ。
+   *
+   * **アニメーションは化粧であり、着地する値を変えない。** 終端では `animateAngle` が
+   * 補間を経由せず目標をそのまま返すので、最後に store へ入る値は
+   * 段階3 の即時適用とビット同一になる。
+   *
+   * @param nowMs 現在時刻 [ms]（`performance.now()`）
+   */
+  const advanceTransition = (nowMs: number): void => {
+    if (transition === null) {
+      return;
+    }
+
+    // 材質が変われば θ₁_min そのものが別の値になる。古い目標へは決して着地させない。
+    // ここで弾くので、store へは 1 フレームも古い値が入らない
+    if (store.getState().material !== transition.material) {
+      cancelTransition();
+
+      return;
+    }
+
+    const sample = animateAngle(
+      transition.from,
+      transition.to,
+      MIN_DEVIATION_TRANSITION_MS,
+      nowMs - transition.startMs
+    );
+
+    if (sample.done) {
+      cancelTransition();
+    }
+
+    store.update({ sourceAngleDeg: sample.value });
+  };
+
+  // 人の操作はアニメーションより優先する。スライダーを掴んだ／プリズムを回した瞬間に取り消す。
+  // どれも `input` / ギズモ由来なので、遷移自身が store を書いても発火しない
+  panel.onSourceAngleInput(cancelTransition);
+  panel.onRotationInput(cancelTransition);
+  interaction.onPoseChange(cancelTransition);
+
   // 「最小偏角に合わせる」（TASKS 6-2）。**プリズムの姿勢は動かさない** ——
   // 動かすのは光源のスライダーだけで、姿勢の単一の真実（matrixWorld）は読むだけである。
   // 姿勢を動かして合わせると、ユーザーが自分で決めた向きを勝手に捨てることになる
-  panel.onApplyMinimumDeviation(() => {
+  /**
+   * 現在の材質と姿勢で、実測 θ₁ を θ₁_min にするスライダー値を求める。
+   *
+   * **着地する値を決めるのはここだけ。** 即時適用もアニメーションもこの 1 つの値へ向かう
+   * ので、化粧を足しても着地は動かない（段階4 の検証①がこれを跨いで確かめる）。
+   *
+   * スライダーは「凍結した基準法線から測った角」なので、実測 θ₁ を θ₁_min にするには
+   * プリズムを回したぶんだけ足す（案 A の帰結。光源はワールドに固定されている）。
+   *
+   * @returns スライダーへ入れる角 [deg]。透過しない材質なら null（可動域の判定はしない）
+   */
+  const minimumDeviationTargetDeg = (): number | null => {
     const minimum = minimumDeviationOf(store.getState().material);
 
     if (minimum === null) {
-      // ボタンは disabled なので通常ここへは来ない。判定元が同じなので黙って戻る
-      return;
+      return null;
     }
 
     prism.object.updateMatrixWorld(true);
 
-    // スライダーは「凍結した基準法線から測った角」なので、実測 θ₁ を θ₁_min にするには
-    // プリズムを回したぶんだけ足す（案 A の帰結。光源はワールドに固定されている）
-    const turnedDeg = normalizeAngleDeg(currentEntryNormalAngleDeg() - entryNormalAngleDeg);
-    const targetAngleDeg = minimum.incidenceAngleDeg + turnedDeg;
+    return (
+      minimum.incidenceAngleDeg +
+      normalizeAngleDeg(currentEntryNormalAngleDeg() - entryNormalAngleDeg)
+    );
+  };
+
+  panel.onApplyMinimumDeviation(() => {
+    const minimum = minimumDeviationOf(store.getState().material);
+    const targetAngleDeg = minimumDeviationTargetDeg();
+
+    if (minimum === null || targetAngleDeg === null) {
+      // ボタンは disabled なので通常ここへは来ない。判定元が同じなので黙って戻る
+      return;
+    }
+
+    const turnedDeg = targetAngleDeg - minimum.incidenceAngleDeg;
 
     if (targetAngleDeg < SOURCE_ANGLE_MIN_DEG || targetAngleDeg > SOURCE_ANGLE_MAX_DEG) {
       // store.update に渡すとクランプされて黙って別の角に着地する。渡す前に弾く
@@ -721,7 +835,21 @@ function main(): void {
 
     // 届いたので、前回「届きません」を出していたなら下ろす
     panel.setSourceAngleNotice(null);
-    store.update({ sourceAngleDeg: targetAngleDeg });
+
+    if (prefersReducedMotion()) {
+      // 動きを減らす設定では化粧を省き、段階3 の即時適用そのものに落とす
+      cancelTransition();
+      store.update({ sourceAngleDeg: targetAngleDeg });
+    } else {
+      // 押し直しは前の遷移を捨てて今の値から引き直す（重ねがけしない）
+      transition = {
+        from: store.getState().sourceAngleDeg,
+        to: targetAngleDeg,
+        startMs: performance.now(),
+        material: store.getState().material,
+      };
+    }
+
     console.log(
       `[操作] 最小偏角へ → θ₁_min = ${minimum.incidenceAngleDeg.toFixed(9)}度` +
         ` / δ_min = ${minimum.deviationDeg.toFixed(9)}度` +
@@ -732,6 +860,7 @@ function main(): void {
   panel.onReset(() => {
     // 姿勢が初期へ戻るので「この姿勢では届きません」は事実でなくなる
     panel.setSourceAngleNotice(null);
+    cancelTransition();
     store.reset();
     prism.object.position.set(0, 0, 0);
     prism.object.rotation.set(0, 0, PRISM_ROTATION_Z_DEG * RAD_PER_DEG);
@@ -771,6 +900,10 @@ function main(): void {
       wavelengths,
       // オラクル①-a 用。描画バッファとは独立に traceSpectrum を回して強度を取り直せる
       tracePaths: (): readonly LightPath[] => traceWorldPaths(store.getState()),
+      // 6-2 段階4 の検証用。着地の値と、遷移が生きているかを外から読む
+      sourceAngleDeg: (): number => store.getState().sourceAngleDeg,
+      minimumDeviationTargetDeg,
+      transitionActive: (): boolean => transition !== null,
       prism: prism.object,
       floor: floor.object,
       scene: sceneManager.scene,
@@ -786,6 +919,9 @@ function main(): void {
 
   sceneManager.start((deltaSeconds) => {
     interaction.update(deltaSeconds);
+    // 遷移は refreshBeams の前に進める。同じフレームのうちに store が更新され、
+    // その値で光路が引き直される（スライダーを掴んで動かしたときと同じ経路）
+    advanceTransition(performance.now());
     refreshBeams();
   });
 }
