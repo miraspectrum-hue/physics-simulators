@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  expandBounds,
   fitViewport,
+  uvBoundsOf,
   uvToSvg,
   type PixelSize,
   type UvBounds,
@@ -294,6 +296,87 @@ describe('6-1 段階3a F: 定義域', () => {
     ).toThrow(RangeError);
     expect(() =>
       fitViewport({ minU: -2, maxU: 2, minV: -1, maxV: Number.POSITIVE_INFINITY }, SIZE, MARGIN)
+    ).toThrow(RangeError);
+  });
+});
+
+describe('6-1 段階3c H0: 点の集まりを囲む範囲', () => {
+  it('複数点の min / max をそのまま返す', () => {
+    // Arrange: プリズム断面の 3 頂点に相当する並び（順序は不同でよい）
+    const points = [
+      { u: 0, v: 1.1547005383792517 },
+      { u: -1, v: -0.5773502691896258 },
+      { u: 1, v: -0.5773502691896258 },
+    ];
+
+    // Act
+    const bounds = uvBoundsOf(points);
+
+    // Assert
+    expect(bounds.minU).toBeCloseTo(-1, DECIMALS);
+    expect(bounds.maxU).toBeCloseTo(1, DECIMALS);
+    expect(bounds.minV).toBeCloseTo(-0.5773502691896258, DECIMALS);
+    expect(bounds.maxV).toBeCloseTo(1.1547005383792517, DECIMALS);
+  });
+
+  it('退化した並び（1 点）でも潰れた範囲をそのまま返す', () => {
+    // Arrange: 弾くのはここの仕事ではない。渡された先の fitViewport が判断する
+    // Act
+    const bounds = uvBoundsOf([{ u: 2, v: -3 }]);
+
+    // Assert
+    expect(bounds).toEqual({ minU: 2, maxU: 2, minV: -3, maxV: -3 });
+  });
+
+  it('点が無ければ RangeError', () => {
+    // Arrange & Act & Assert: 空から min / max を作ると ±Infinity になり、黙って壊れる
+    expect(() => uvBoundsOf([])).toThrow(RangeError);
+  });
+
+  it('非有限な成分があれば RangeError', () => {
+    // Arrange & Act & Assert
+    expect(() => uvBoundsOf([{ u: 0, v: 0 }, { u: Number.NaN, v: 1 }])).toThrow(RangeError);
+  });
+});
+
+describe('6-1 段階3c H: 範囲の拡大（ズームアウト）', () => {
+  it('中心を保ったまま幅・高さが係数倍になる', () => {
+    // Arrange: 断面図はプリズム三角形だけにフィットした定数ビューポートを使い、
+    // 光線のスタブを収める余白をこの拡大で確保する（光線で拡縮させないため）
+    // Act
+    const expanded = expandBounds(OFFSET_BOUNDS, 2.5);
+
+    // Assert: 中心 (3, −1) は動かず、幅・高さ 4 は 10 になる
+    expect((expanded.minU + expanded.maxU) / 2).toBeCloseTo(3, DECIMALS);
+    expect((expanded.minV + expanded.maxV) / 2).toBeCloseTo(-1, DECIMALS);
+    expect(expanded.maxU - expanded.minU).toBeCloseTo(10, DECIMALS);
+    expect(expanded.maxV - expanded.minV).toBeCloseTo(10, DECIMALS);
+    expect(expanded.minU).toBeCloseTo(-2, DECIMALS);
+    expect(expanded.maxU).toBeCloseTo(8, DECIMALS);
+  });
+
+  it('係数 1 は恒等（元の範囲をそのまま返す）', () => {
+    // Arrange & Act
+    const expanded = expandBounds(WIDE_BOUNDS, 1);
+
+    // Assert
+    expect(expanded.minU).toBeCloseTo(WIDE_BOUNDS.minU, DECIMALS);
+    expect(expanded.maxU).toBeCloseTo(WIDE_BOUNDS.maxU, DECIMALS);
+    expect(expanded.minV).toBeCloseTo(WIDE_BOUNDS.minV, DECIMALS);
+    expect(expanded.maxV).toBeCloseTo(WIDE_BOUNDS.maxV, DECIMALS);
+  });
+
+  it('係数が正の有限数でなければ RangeError', () => {
+    // Arrange & Act & Assert: 0 や負では範囲が潰れるか裏返る
+    expect(() => expandBounds(WIDE_BOUNDS, 0)).toThrow(RangeError);
+    expect(() => expandBounds(WIDE_BOUNDS, -2)).toThrow(RangeError);
+    expect(() => expandBounds(WIDE_BOUNDS, Number.NaN)).toThrow(RangeError);
+  });
+
+  it('uvBounds に非有限成分があれば RangeError', () => {
+    // Arrange & Act & Assert: fitViewport と同じ理由（比較が NaN を素通りさせる）
+    expect(() =>
+      expandBounds({ minU: Number.NaN, maxU: 2, minV: -1, maxV: 1 }, 2)
     ).toThrow(RangeError);
   });
 });

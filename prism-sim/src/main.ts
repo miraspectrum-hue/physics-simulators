@@ -35,6 +35,7 @@ import {
   type ExitAnchor,
 } from './scene/screenProjection';
 import SectionView from './scene/SectionView';
+import { uvBoundsOf } from './scene/dispersionViewport';
 import ScreenObject, {
   FALLBACK_ANCHOR,
   screenPlaneFromAnchor,
@@ -578,9 +579,6 @@ function main(): void {
   const band = new BandRenderer(wavelengths);
   sceneManager.scene.add(band.object);
 
-  // 断面 2D ビュー（TASKS 6-1）。既定は非表示で、隠れている間は update が即座に戻る
-  const sectionView = new SectionView(container);
-
   /** プリズム断面の頂点（局所座標）。前面の 3 点。奥行き方向は uv に出ないので前面だけでよい */
   const sectionLocalVertices = createTriangularPrismVertices(
     PRISM_SIDE_LENGTH,
@@ -608,6 +606,22 @@ function main(): void {
     );
   };
 
+  /** プリズム断面の頂点（ワールド座標）。姿勢が変わるたびに取り直す。 */
+  const sectionWorldVertices = (): readonly Vec3[] =>
+    sectionLocalVertices.map((vertex) => toWorldPoint(vertex, localToWorld));
+
+  // 断面 2D ビュー（TASKS 6-1）。既定は非表示で、隠れている間は update が即座に戻る。
+  // **ビューポートはここで一度だけ決まる。** プリズム断面は姿勢に依らず一定なので、
+  // 起動時の範囲を凍結してよく、以後は光線がどれだけ動いても図が拡縮しない
+  const sectionView = new SectionView(
+    container,
+    wavelengths,
+    uvBoundsOf(
+      sectionWorldVertices().map((vertex) =>
+        worldToDispersionUV(currentDispersionPlane(), vertex)
+      )
+    )
+  );
   sceneManager.onResize((width, height) => {
     beams.setResolution(width, height);
     reflectionBeams.setResolution(width, height);
@@ -623,6 +637,12 @@ function main(): void {
   /** 直前に出力した termination の内訳。変化した時だけログを出すために持つ。 */
   let lastTerminationSummary = '';
 
+  /**
+   * 直近に 3D ビームへ渡した光路。**検証用**（6-1 オラクル①）。
+   *
+   * 断面図へ渡すのと同じ参照であることを外から `===` で確かめられるようにする。
+   */
+  let lastBeamPaths: readonly LightPath[] = [];
 
   /** 直前にスクリーン姿勢へ反映した距離。変化した時だけ組み直す。 */
   let appliedScreenDistance = store.getState().screenDistance;
@@ -663,8 +683,12 @@ function main(): void {
     // 射影の計算に EXIT_EXTENSION_LENGTH は関与しない
     const hits = projectPathsToScreen(worldPaths, screen.plane);
 
-    // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない
-    beams.update(clipPathsToScreen(worldPaths, hits));
+    // 更新はバッファの書き換えのみ。ジオメトリも属性も作り直さない。
+    // **この配列が 3D ビームと断面図の唯一の真実**で、両者へ同じ参照を渡す（6-1 オラクル①）
+    const sharedPaths = clipPathsToScreen(worldPaths, hits);
+
+    lastBeamPaths = sharedPaths;
+    beams.update(sharedPaths);
     band.update(hits, screen.plane);
 
     // 反射光はスクリーンとは逆（光源側）へ後退するので、投影経路には乗せない
@@ -716,12 +740,7 @@ function main(): void {
 
     // 断面図（TASKS 6-1）。3D が求めた点をワールド座標のまま渡すだけで、物理は再計算しない。
     // 非表示のときは update が先頭で戻るので、ここのコストはほぼゼロになる
-    if (sectionView.isVisible()) {
-      sectionView.update(
-        currentDispersionPlane(),
-        sectionLocalVertices.map((vertex) => toWorldPoint(vertex, localToWorld))
-      );
-    }
+    sectionView.update(currentDispersionPlane(), sectionWorldVertices(), sharedPaths);
 
     // 材質・誇張・姿勢のいずれかで変わる。変化した瞬間だけ出す
     const summary =
@@ -972,6 +991,9 @@ function main(): void {
       // 6-1 段階3b の検証用。SVG の実際の頂点列と、断面座標をそのまま読む
       sectionView: sectionView.element,
       sectionVisible: (): boolean => sectionView.isVisible(),
+      sectionConsumedPaths: (): readonly LightPath[] => sectionView.consumedPaths(),
+      sectionTransform: () => sectionView.viewportTransform(),
+      beamsDrawnPaths: (): readonly LightPath[] => lastBeamPaths,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();
 

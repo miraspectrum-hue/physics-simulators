@@ -169,6 +169,66 @@ export function fitViewport(
 }
 
 /**
+ * 断面座標の集まりを囲む軸並行の矩形を求める（TASKS 6-1 段階3c）。
+ *
+ * 退化した範囲（全点が一直線・一点）も**そのまま返す**。それが正しいかどうかは
+ * 使い道が決めることで、`fitViewport()` に渡せば弾かれる。ここは事実を返すに徹する。
+ *
+ * @param points 断面座標の並び。1 点以上
+ * @returns 囲む矩形
+ * @throws {RangeError} 点が無い、または非有限な成分がある場合
+ */
+export function uvBoundsOf(points: readonly PlaneUV[]): UvBounds {
+  if (points.length === 0) {
+    throw new RangeError('範囲を求めるには 1 点以上必要です');
+  }
+
+  const us = points.map((point) => point.u);
+  const vs = points.map((point) => point.v);
+
+  assertAllFinite([...us, ...vs], '断面座標');
+
+  return {
+    minU: Math.min(...us),
+    maxU: Math.max(...us),
+    minV: Math.min(...vs),
+    maxV: Math.max(...vs),
+  };
+}
+
+/**
+ * uv の範囲を中心のまわりに拡大・縮小する（TASKS 6-1 段階3c）。
+ *
+ * 断面図はプリズム三角形だけにフィットした**定数のビューポート**を使う。光線を含めて
+ * 毎回フィットし直すと、光線が動くたびに図が拡縮して落ち着かない。代わりにここで
+ * 一度だけ広げておき、はみ出す光線は viewBox に切らせる。
+ *
+ * @param bounds 元の範囲
+ * @param factor 拡大係数。正の有限数（1 で恒等、2 で幅・高さが 2 倍）
+ * @returns 中心が同じで幅・高さが `factor` 倍になった範囲
+ * @throws {RangeError} 非有限な成分がある、または係数が正の有限数でない場合
+ */
+export function expandBounds(bounds: UvBounds, factor: number): UvBounds {
+  assertAllFinite([bounds.minU, bounds.maxU, bounds.minV, bounds.maxV], 'uv の範囲');
+
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new RangeError(`拡大係数は正の有限数である必要があります（受け取った値: ${factor}）`);
+  }
+
+  const centerU = (bounds.minU + bounds.maxU) / 2;
+  const centerV = (bounds.minV + bounds.maxV) / 2;
+  const halfU = ((bounds.maxU - bounds.minU) / 2) * factor;
+  const halfV = ((bounds.maxV - bounds.minV) / 2) * factor;
+
+  return {
+    minU: centerU - halfU,
+    maxU: centerU + halfU,
+    minV: centerV - halfV,
+    maxV: centerV + halfV,
+  };
+}
+
+/**
  * 断面座標 uv を SVG の座標へ写す。
  *
  * x = offsetX + scale·u、y = offsetY − scale·v。
