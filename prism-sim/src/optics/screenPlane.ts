@@ -11,7 +11,7 @@
  */
 
 import { cross, dot, length, sub } from './vec3';
-import type { PlaneUV, ScreenPlane, Vec3 } from '../types/optics';
+import type { OrientedPlaneBasis, PlaneUV, ScreenPlane, Vec3 } from '../types/optics';
 
 /**
  * 単位ベクトル判定の許容差。
@@ -107,20 +107,25 @@ export function screenPlane(
 }
 
 /**
- * ワールド座標の点を、スクリーン面内の 2 次元座標へ射影する。
+ * ワールド座標の点を、向きのある平面の面内 2 次元座標へ射影する。
  *
  * u = (point − origin)·axisU、v = (point − origin)·axisV。
  * `axisU` / `axisV` は法線と直交するので、**法線方向のずれは uv に現れない**
  * （面への正射影になる）。
  *
+ * 引数が `ScreenPlane` ではなく `OrientedPlaneBasis` なのは、この射影に要るのが
+ * 原点と正規直交基底だけで、`halfExtent` を一切見ないためである。型を必要最小限まで
+ * 広げておけば、分散平面（`dispersionPlane.worldToDispersionUV`）も同じ内積射影を
+ * そのまま使える（単一の真実）。**振る舞いは変わらない** — 型だけの変更である。
+ *
  * 縁からのはみ出し（`|u| > halfExtent` など）は判定しない。有限スクリーンの
  * 切り落としは描画層の責務であり、ここは uv を返すことに徹する。
  *
- * @param screen スクリーン面
+ * @param screen 向きのある平面（スクリーン面もそのまま渡せる）
  * @param point ワールド座標の点
  * @returns 面内 2 次元座標
  */
-export function worldToPlaneUV(screen: ScreenPlane, point: Vec3): PlaneUV {
+export function worldToPlaneUV(screen: OrientedPlaneBasis, point: Vec3): PlaneUV {
   const offset = sub(point, screen.origin);
 
   return { u: dot(offset, screen.axisU), v: dot(offset, screen.axisV) };

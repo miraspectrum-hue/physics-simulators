@@ -45,6 +45,46 @@ export interface Plane {
 }
 
 /**
+ * 原点と正規直交基底を持つ「向きのある平面」。
+ *
+ * `ScreenPlane`（TASKS 6-3）と `DispersionPlane`（TASKS 6-1）に共通する部分で、
+ * **面内 2 次元座標への射影に必要な情報はこれで過不足なく尽きている**。
+ * だから射影の算術（`screenPlane.worldToPlaneUV`）はこの型だけを受け取り、
+ * 用途ごとに同じ内積射影を書き直さない（単一の真実）。
+ *
+ * **`axisU` / `axisV` / `normal` は正規直交であることを前提とする。**
+ * 崩れると uv が面への正射影でなくなるため、生成は必ず各用途のファクトリ
+ * （`screenPlane()` / `dispersionPlane()`）を通すこと。どちらも `axisV` を
+ * `normal × axisU` から導出するので、直交性が構造的に保証される。
+ */
+export interface OrientedPlaneBasis {
+  /** 面の原点（ワールド座標）。uv の原点でもある */
+  readonly origin: Vec3;
+  /** 面の単位法線 */
+  readonly normal: Vec3;
+  /** 面内の第 1 軸（単位ベクトル）。uv の u 方向 */
+  readonly axisU: Vec3;
+  /** 面内の第 2 軸（単位ベクトル）。uv の v 方向 */
+  readonly axisV: Vec3;
+}
+
+/**
+ * プリズムの分散平面（主断面）＝ 断面 2D ビューが描く面（TASKS 6-1）。
+ *
+ * 法線は**頂角エッジの向き**である。プリズムの回転は頂角エッジに平行な軸のみに
+ * 拘束されており（`InteractionCtl.applyAxisConstraint`）、光源の向きも主断面内の
+ * 1 自由度に限られている（`lightSource.createIncidentRay` が z 成分を 0 に固定）。
+ * その結果すべての光路がこの平面に載るので、断面図は光路の情報を失わない。
+ *
+ * **基底はプリズムの姿勢から取る。** ワールド固定の基底にすると、プリズムを回した
+ * ときに断面図の中でプリズムが回ってしまい「プリズムを正面から見た図」でなくなる。
+ * `halfExtent` を持たないのは、断面図の見える範囲が描画側（インセットの大きさと
+ * 倍率）の都合であって、平面そのものの性質ではないためである。
+ */
+// メンバーは足さない。基底で過不足なく、名前を分けるのは「何の平面か」を型で語らせるため
+export interface DispersionPlane extends OrientedPlaneBasis {}
+
+/**
  * 有限で向きを持つ矩形のスクリーン面（TASKS 6-3）。
  *
  * **`Plane` とは別型にする。** `Plane` は `n·x = d` の**無限平面**で、凸多面体の半空間を
@@ -59,15 +99,7 @@ export interface Plane {
  * 崩れると uv が面への正射影でなくなるため、生成は必ず `screenPlane()` を通すこと
  * （`axisV` は `normal × axisU` から導出され、直交性が構造的に保証される）。
  */
-export interface ScreenPlane {
-  /** 面の中心（ワールド座標）。uv の原点でもある */
-  readonly origin: Vec3;
-  /** 面の単位法線 */
-  readonly normal: Vec3;
-  /** 面内の第 1 軸（単位ベクトル）。uv の u 方向 */
-  readonly axisU: Vec3;
-  /** 面内の第 2 軸（単位ベクトル）。uv の v 方向 */
-  readonly axisV: Vec3;
+export interface ScreenPlane extends OrientedPlaneBasis {
   /** 中心から縁までの距離。矩形の半幅 */
   readonly halfExtent: number;
 }
