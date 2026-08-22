@@ -1,0 +1,415 @@
+import type { MaterialName } from '../types/optics';
+
+import type { AppState } from './store';
+import {
+  clampState,
+  DEFAULT_EXAGGERATION,
+  DEFAULT_MATERIAL,
+  DEFAULT_SCREEN_DISTANCE,
+  DEFAULT_SOURCE_ANGLE_DEG,
+} from './store';
+
+/**
+ * 共有可能な状態と URL 断片の相互変換（TASKS 6-6 段階1・2）。
+ *
+ * DOM にも Three にも store の実体にも触らない純粋関数だけを置く（`store.ts` と同じ立場で
+ * Vitest の対象になる）。**4 つの住処から値を集めること／配ることは段階3 の責務**で、
+ * ここが知っているのは「集まった 1 つの `ShareableState` を文字列にする／から戻す」だけである。
+ *
+ * この分離が要る理由は、プリズムの姿勢の単一の真実が `Object3D.matrix` にあり、
+ * 断面図のトグルが `aria-pressed` にあり、スクリーンのアンカーが配線側のクロージャに
+ * ある、という現状を**動かさない**ためである（CLAUDE.md「プリズム姿勢をオイラー角で
+ * 自前に二重保持することの禁止」。所有権を store へ移すと `TransformControls` が
+ * ドラッグ中に直書きする quaternion と競合し、3-5b で潰したエコー問題が再発する）。
+ * 集約はシリアライズの境界で行い、`encodeUrl` / `decodeUrl` は `ShareableState` しか見ない。
+ *
+ * **`decodeUrl` は決して例外を投げない。** 未知キーは無視、欠損は既定、解釈不能も既定、
+ * 範囲外は `store` の `clampState` に通す。この寛容さが、Phase 4/5 で項目を足すときの
+ * 手戻りを防ぐ（古いビルドが新しい URL を読んでも壊れず、新しいビルドが古い URL を
+ * 読めば足りない項目に既定が入る＝**加算的**に育つ）。
+ */
+
+/** URL 断片のスキーマ版。**加算（キーの追加）では上げない。** */
+export const SHARE_SCHEMA_VERSION = 1;
+
+/**
+ * プリズムの既定の Z 回転 [deg]。
+ *
+ * NOTE: 段階3 で `main.ts` の `PRISM_ROTATION_Z_DEG` をここへ寄せる（今は同じ値が
+ *       2 か所にある。段階1 は純粋層だけを触る約束なので、その付け替えは次の段階で行う）。
+ */
+export const DEFAULT_PRISM_ROTATION_DEG = 20;
+
+/** プリズムの既定の位置。移動ギズモは XY 面内だけなので z は持たない。 */
+export const DEFAULT_PRISM_X = 0;
+export const DEFAULT_PRISM_Y = 0;
+
+/** 断面図の既定の表示状態。 */
+export const DEFAULT_SECTION_VISIBLE = false;
+
+/**
+ * スクリーンの凍結アンカー。
+ *
+ * 全光路が主断面（z = 0）に載るので、`ExitAnchor` の 6 成分は
+ * **x・y・方向角の 3 数値**で過不足なく表せる。
+ */
+export interface ShareableAnchor {
+  /** 射出点の平均の x（ワールド） */
+  readonly x: number;
+  /** 射出点の平均の y（ワールド） */
+  readonly y: number;
+  /** 射出方向のワールド角 [deg]。+x 軸から反時計回り */
+  readonly directionDeg: number;
+}
+
+/**
+ * URL で復元する状態の全体。
+ *
+ * 4 つの住処（store / `Object3D` / 配線側のクロージャ / `aria-pressed`）から集めた値を
+ * 1 つに束ねたもの。**符号化・復号はこの型だけを見る。**
+ */
+export interface ShareableState {
+  /** store が持つ 4 項目。 */
+  readonly app: AppState;
+  /** プリズムの Z 軸回転 [deg]。`Object3D.rotation.z` から読む */
+  readonly prismRotationDeg: number;
+  /** プリズムの位置 x（ワールド） */
+  readonly prismX: number;
+  /** プリズムの位置 y（ワールド） */
+  readonly prismY: number;
+  /**
+   * スクリーンの凍結アンカー。
+   *
+   * **null は「URL が指定していない」を意味する**（既定値ではない）。アンカーは
+   * 起動時に光路から導出される値なので、定数の既定を持たない。復元側は null を
+   * 「起動時に導出したものをそのまま使う」と解釈する。
+   */
+  readonly screenAnchor: ShareableAnchor | null;
+  /** 断面図を表示しているか */
+  readonly sectionVisible: boolean;
+}
+
+/**
+ * 材質名 → URL 上のコード。
+ *
+ * `MaterialName` に日本語が含まれるため、そのまま載せると percent-encoding で読めなくなる。
+ * `Record<MaterialName, string>` と型付けることで、材質を足したらここへの登録を
+ * コンパイラが強制する（`MATERIALS` と同じ手。TASKS 2-8）。
+ */
+export const MATERIAL_CODES: Record<MaterialName, string> = {
+  BK7: 'bk7',
+  SF10: 'sf10',
+  水: 'water',
+  ダイヤモンド: 'diamond',
+};
+
+/** 何も指定しなかったときの状態。`encodeUrl` はこれと同じ項目を省く。 */
+export const DEFAULT_SHAREABLE_STATE: ShareableState = {
+  app: {
+    sourceAngleDeg: DEFAULT_SOURCE_ANGLE_DEG,
+    exaggeration: DEFAULT_EXAGGERATION,
+    material: DEFAULT_MATERIAL,
+    screenDistance: DEFAULT_SCREEN_DISTANCE,
+  },
+  prismRotationDeg: DEFAULT_PRISM_ROTATION_DEG,
+  prismX: DEFAULT_PRISM_X,
+  prismY: DEFAULT_PRISM_Y,
+  screenAnchor: null,
+  sectionVisible: DEFAULT_SECTION_VISIBLE,
+};
+
+/**
+ * 小数の桁数。**入力の粒度に合わせる。**
+ *
+ * スライダーの刻みより細かく載せても意味が無い。入射角だけ 6 桁なのは、
+ * 「最小偏角に合わせる」の高精度な着地を絵として保つためである。
+ */
+const DECIMALS = {
+  sourceAngleDeg: 6,
+  exaggeration: 0,
+  screenDistance: 1,
+  prismRotationDeg: 3,
+  prismPosition: 3,
+  anchor: 3,
+} as const;
+
+/** アンカーの成分数（x, y, 方向角）。 */
+const ANCHOR_PART_COUNT = 3;
+
+/**
+ * 指定の桁へ丸める。
+ *
+ * @param value 丸める値
+ * @param decimals 小数桁
+ * @returns 丸めた値
+ */
+function roundTo(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * 数値を断片の値にする。末尾の 0 は `String` が落とす。
+ *
+ * `+ 0` を挟むのは -0 を "0" と書くため。
+ *
+ * @param value 載せる値
+ * @param decimals 小数桁
+ * @returns 例 `49.323348`、`30`
+ */
+function formatNumber(value: number, decimals: number): string {
+  return String(roundTo(value, decimals) + 0);
+}
+
+/**
+ * 既定と違うときだけ数値を積む。
+ *
+ * 比較は**丸めた後の値**で行う。丸めて同じになる値を載せても、復元したときに
+ * 区別が付かないためである。非有限は載せない（URL に NaN を持ち込まない）。
+ *
+ * @param parts 積み先
+ * @param key キー
+ * @param value 載せる値
+ * @param defaultValue 既定値
+ * @param decimals 小数桁
+ */
+function putNumber(
+  parts: string[],
+  key: string,
+  value: number,
+  defaultValue: number,
+  decimals: number
+): void {
+  if (!Number.isFinite(value) || roundTo(value, decimals) === roundTo(defaultValue, decimals)) {
+    return;
+  }
+
+  parts.push(key + '=' + formatNumber(value, decimals));
+}
+
+/**
+ * 断片をキーと値の表に開く。**投げない。**
+ *
+ * `URLSearchParams` の解析は寛容で、壊れた percent-encoding もそのまま文字として扱う
+ * （`new URLSearchParams('%%%')` は例外にならない）。それでも念のため包む。
+ *
+ * @param fragment URL 断片。先頭の `#` はあってもなくてもよい
+ * @returns 解析結果。解析できなければ空
+ */
+function readParams(fragment: string): URLSearchParams {
+  const body = fragment.startsWith('#') ? fragment.slice(1) : fragment;
+
+  try {
+    return new URLSearchParams(body);
+  } catch {
+    return new URLSearchParams();
+  }
+}
+
+/**
+ * 数値を読む。欠損・空・解釈不能はすべて既定値。
+ *
+ * `Number('')` は 0 になるので、空文字は数として読む前に弾く。
+ * `NaN` / `Infinity` は有限性の検査で落ちる。
+ *
+ * @param params 表
+ * @param key キー
+ * @param defaultValue 既定値
+ * @returns 読めた値、または既定値
+ */
+function readNumber(params: URLSearchParams, key: string, defaultValue: number): number {
+  const raw = params.get(key);
+
+  if (raw === null || raw.trim() === '') {
+    return defaultValue;
+  }
+
+  const value = Number(raw);
+
+  return Number.isFinite(value) ? value : defaultValue;
+}
+
+/**
+ * 真偽値を読む。`1` と `0` だけを認め、他はすべて既定値。
+ *
+ * @param params 表
+ * @param key キー
+ * @param defaultValue 既定値
+ * @returns 読めた値、または既定値
+ */
+function readBoolean(params: URLSearchParams, key: string, defaultValue: boolean): boolean {
+  const raw = params.get(key);
+
+  if (raw === '1') {
+    return true;
+  }
+
+  if (raw === '0') {
+    return false;
+  }
+
+  return defaultValue;
+}
+
+/**
+ * 材質コードを読む。未知のコードは既定の BK7。
+ *
+ * 逆引きは `MATERIAL_CODES` を走査して作る。逆向きの表を別に持つと、材質を足したときに
+ * 片方だけ更新される余地が生まれる。
+ *
+ * @param params 表
+ * @returns 材質名
+ */
+function readMaterial(params: URLSearchParams): MaterialName {
+  const raw = params.get('mat');
+  const entries = Object.entries(MATERIAL_CODES) as Array<[MaterialName, string]>;
+  const found = entries.find(([, code]) => code === raw);
+
+  return found?.[0] ?? DEFAULT_MATERIAL;
+}
+
+/**
+ * アンカーを読む。指定が無い・成分数が違う・数として読めない場合は null。
+ *
+ * null は「URL が指定していない」であって既定値ではない。復元側は
+ * 「起動時に光路から導出したものをそのまま使う」と解釈する。
+ *
+ * @param params 表
+ * @returns アンカー、または null
+ */
+function readAnchor(params: URLSearchParams): ShareableAnchor | null {
+  const raw = params.get('sa');
+
+  if (raw === null) {
+    return null;
+  }
+
+  const parts = raw.split(',');
+
+  if (parts.length !== ANCHOR_PART_COUNT) {
+    return null;
+  }
+
+  const [x, y, directionDeg] = parts.map(Number);
+
+  if (
+    x === undefined ||
+    y === undefined ||
+    directionDeg === undefined ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(directionDeg)
+  ) {
+    return null;
+  }
+
+  return { x, y, directionDeg };
+}
+
+/**
+ * 状態を URL 断片へ符号化する。
+ *
+ * 返すのは先頭の `#` を**含まない**断片（例 `v=1&a=30&mat=sf10`）。
+ * 既定と同じ項目は省くので、既定状態では `v=1` だけになる。
+ *
+ * 数値の桁は入力の粒度に合わせる。スライダーの刻みより細かく載せても意味が無く、
+ * 逆に入射角だけは「最小偏角に合わせる」の高精度な着地を絵として保つために 6 桁要る
+ * （6 桁でも 2.5e-10 度ずれるが、極小は二次で平坦なので δ の差は 1e-13 度未満になる）。
+ *
+ * @param state 符号化する状態
+ * @returns URL 断片（`#` を含まない）
+ */
+export function encodeUrl(state: ShareableState): string {
+  const defaults = DEFAULT_SHAREABLE_STATE;
+  // `URLSearchParams.toString()` は `,` を %2C に変える。アンカーが読みにくくなるだけで
+  // 得が無いので自分で組み立てる。載る値は URL 安全な文字だけ（数字・`.`・`-`・`,`・
+  // 小文字英字）で、材質コードの網羅は Record<MaterialName, string> が強制する
+  const parts: string[] = ['v=' + String(SHARE_SCHEMA_VERSION)];
+
+  putNumber(
+    parts,
+    'a',
+    state.app.sourceAngleDeg,
+    defaults.app.sourceAngleDeg,
+    DECIMALS.sourceAngleDeg
+  );
+  putNumber(parts, 'm', state.app.exaggeration, defaults.app.exaggeration, DECIMALS.exaggeration);
+
+  if (state.app.material !== defaults.app.material) {
+    parts.push('mat=' + MATERIAL_CODES[state.app.material]);
+  }
+
+  putNumber(
+    parts,
+    'sd',
+    state.app.screenDistance,
+    defaults.app.screenDistance,
+    DECIMALS.screenDistance
+  );
+  putNumber(
+    parts,
+    'rz',
+    state.prismRotationDeg,
+    defaults.prismRotationDeg,
+    DECIMALS.prismRotationDeg
+  );
+  putNumber(parts, 'px', state.prismX, defaults.prismX, DECIMALS.prismPosition);
+  putNumber(parts, 'py', state.prismY, defaults.prismY, DECIMALS.prismPosition);
+
+  const anchor = state.screenAnchor;
+
+  if (anchor !== null) {
+    const format = (value: number): string => formatNumber(value, DECIMALS.anchor);
+
+    parts.push(
+      'sa=' + format(anchor.x) + ',' + format(anchor.y) + ',' + format(anchor.directionDeg)
+    );
+  }
+
+  if (state.sectionVisible !== defaults.sectionVisible) {
+    parts.push('sec=' + (state.sectionVisible ? '1' : '0'));
+  }
+
+  return parts.join('&');
+}
+
+/**
+ * URL 断片を状態へ復号する。
+ *
+ * **決して例外を投げない。** 規則は 5 つ。
+ *   1. 未知キーは無視する（将来の版が付けたキーを古い版が読んでも壊れない）
+ *   2. 欠損したキーは既定値
+ *   3. 解釈できない値も既定値
+ *   4. 値域を外れた値は `store` の `clampState` に通す（値域の判定元を二重化しない）
+ *   5. 未知の材質コードは既定の BK7
+ *
+ * `v` が無い場合も未知の値の場合も、現行のスキーマとして読む。**加算的な変更では
+ * `v` を上げない**ので、`v` を見て分岐するのは既存キーの意味が変わったときだけになる。
+ *
+ * @param fragment URL 断片。先頭の `#` はあってもなくてもよい
+ * @returns 復号した状態。読めない項目には既定値が入る
+ */
+export function decodeUrl(fragment: string): ShareableState {
+  const params = readParams(fragment);
+  const defaults = DEFAULT_SHAREABLE_STATE;
+
+  // 値域の正解は clampState にしかない。ここで範囲を書き直さない
+  const app = clampState({
+    sourceAngleDeg: readNumber(params, 'a', defaults.app.sourceAngleDeg),
+    exaggeration: readNumber(params, 'm', defaults.app.exaggeration),
+    material: readMaterial(params),
+    screenDistance: readNumber(params, 'sd', defaults.app.screenDistance),
+  });
+
+  // 姿勢とアンカーには確立した値域が無い（回転はギズモで連続、位置は無制限）。
+  // 有限性だけを見て、外れたら既定へ落とす
+  return {
+    app,
+    prismRotationDeg: readNumber(params, 'rz', defaults.prismRotationDeg),
+    prismX: readNumber(params, 'px', defaults.prismX),
+    prismY: readNumber(params, 'py', defaults.prismY),
+    screenAnchor: readAnchor(params),
+    sectionVisible: readBoolean(params, 'sec', defaults.sectionVisible),
+  };
+}

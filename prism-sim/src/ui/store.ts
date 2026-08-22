@@ -128,13 +128,16 @@ function initialState(): AppState {
 /**
  * 状態を値域へ収める。
  *
- * UI の min/max 属性だけに頼らないのは、キーボード入力や将来の URL 復元（F-30）で
+ * UI の min/max 属性だけに頼らないのは、キーボード入力や URL 復元（F-30 / TASKS 6-6）で
  * 範囲外が入りうるためである。
+ *
+ * **URL 復元（`shareUrl.decodeUrl`）もこれを通す。** 値域の正解をここ 1 か所に置き、
+ * 復号側で範囲を書き直さないための公開である（可視性だけの変更で振る舞いは変わらない）。
  *
  * @param state 収める前の状態
  * @returns 各フィールドを値域へ丸めた状態
  */
-function clampState(state: AppState): AppState {
+export function clampState(state: AppState): AppState {
   return {
     sourceAngleDeg: clamp(state.sourceAngleDeg, SOURCE_ANGLE_MIN_DEG, SOURCE_ANGLE_MAX_DEG),
     exaggeration: clamp(state.exaggeration, EXAGGERATION_MIN, EXAGGERATION_MAX),
