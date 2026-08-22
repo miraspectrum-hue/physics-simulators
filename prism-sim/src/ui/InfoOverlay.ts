@@ -148,10 +148,14 @@ export default class InfoOverlay {
 /**
  * 角度を表示用の文字列にする。
  *
+ * **断面図のラベルもこれを通す**（TASKS 6-1 段階4b）。同じ量を 2 か所に出すのに
+ * 丸め方が違うと、情報バーが 49.32° で図が 49.3° といった食い違いが起きる。
+ * 書式の単一の真実をここに置く。
+ *
  * @param angleDeg 角度 [deg]。定まらなければ null
  * @returns 例 `49.32°`。定まらなければ `—`
  */
-function formatAngle(angleDeg: number | null): string {
+export function formatAngle(angleDeg: number | null): string {
   if (angleDeg === null || !Number.isFinite(angleDeg)) {
     return UNAVAILABLE;
   }

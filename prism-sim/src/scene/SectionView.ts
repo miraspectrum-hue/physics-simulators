@@ -9,6 +9,7 @@ import {
   type UvBounds,
   type ViewportTransform,
 } from './dispersionViewport';
+import { arcPolyline, normalizeUv, signedAngleDeg } from './sectionArc';
 
 /**
  * 断面 2D ビュー（TASKS 6-1）。主断面を真横から見た図を左上のインセットに描く。
@@ -69,6 +70,80 @@ const INCIDENT_STROKE = '#ffffff';
 /** 光路のうち入射区間の添字。ここから先が波長ごとに分かれる。 */
 const INCIDENT_SEGMENT_INDEX = 0;
 
+/** 角度弧を刻む数。320px の図では 24 で十分に滑らか。 */
+const ARC_SEGMENTS = 24;
+
+/** θ₁ の弧の半径 [px]。 */
+const THETA_ARC_RADIUS_PX = 30;
+
+/**
+ * δ の弧の半径 [px]。
+ *
+ * 赤と紫で大きく変える。2 本の射出点は数 px しか離れていないので、半径が近いと
+ * 弧もラベルも重なって読めなくなる。**離すのは見やすさのためだけで、弧が符号化して
+ * いる角そのものは半径に依らない**（掃引角はどちらも自分の δ に一致する）。
+ */
+const RED_ARC_RADIUS_PX = 30;
+const VIOLET_ARC_RADIUS_PX = 70;
+
+/** 法線・入射方向の破線を伸ばす長さ [px]。 */
+const NORMAL_LENGTH_PX = 46;
+
+/** ラベルを弧の外側へ逃がす量 [px]。 */
+const LABEL_OFFSET_PX = 21;
+
+/** θ₁ のラベルを置く位置（掃引の比率）。開けた側なので中点でよい。 */
+const THETA_LABEL_FRACTION = 0.5;
+
+/**
+ * δ のラベルを置く位置（掃引の比率）。
+ *
+ * **赤と紫で角度方向にも離す。** 半径だけ変えても、2 本の射出点がほぼ同じ場所にある
+ * ため、同じ向きに並んだ文字どうしが重なって読めなくなる。赤は弧の先（扇に近い側）、
+ * 紫は破線の根元側へ置くと、径方向と角度方向の両方で離れる。
+ */
+const RED_LABEL_FRACTION = 0.72;
+const VIOLET_LABEL_FRACTION = 0.12;
+
+/** 注記の色。光線と混ざらない中間色。 */
+const ANNOTATION_STROKE = '#8fa0bb';
+
+/** 破線のパターン。 */
+const DASH_PATTERN = '4 3';
+
+/**
+ * 断面図に添える注記（TASKS 6-1 段階4b）。
+ *
+ * **数値は SectionView が計算しない。** ラベルの文字列は配線側が情報バーとまったく
+ * 同じ関数（`InfoOverlay.formatAngle`）で作って渡す。図が 49.3° で情報バーが 49.32°、
+ * といった食い違いが起きる余地を残さないためである。
+ *
+ * 幾何（弧をどちら向きにどれだけ掃くか）は逆に **`paths` の折れ線だけ**から決まる。
+ * SectionView はスネル則も屈折率も臨界角も引かない。
+ */
+export interface SectionAnnotation {
+  /** 入口面の外向き法線（ワールド）。ビームが外れていれば null */
+  readonly entryNormal: Vec3 | null;
+  /** 出射面の外向き法線（ワールド）。射出しなければ null */
+  readonly exitNormal: Vec3 | null;
+  /** θ₁ のラベル。情報バーの「実測 θ₁」と同じ書式・同じ値 */
+  readonly incidenceLabel: string | null;
+  /** 赤側の参照光路（描画と同じ誇張）とそのラベル。射出しなければ null */
+  readonly red: SectionDeviation | null;
+  /** 紫側の参照光路とそのラベル */
+  readonly violet: SectionDeviation | null;
+}
+
+/** 偏角の弧 1 本ぶん。 */
+export interface SectionDeviation {
+  /** 弧の向きを決める光路（ワールド座標）。 */
+  readonly path: LightPath;
+  /** ラベル。情報バーと同じ書式 */
+  readonly label: string;
+  /** 線の色 */
+  readonly color: string;
+}
+
 export default class SectionView {
   /** インセットのルート要素。 */
   readonly element: SVGSVGElement;
@@ -82,6 +157,18 @@ export default class SectionView {
 
   /** 構築時に凍結したビューポート。以後 `fitViewport` は呼ばない。 */
   private readonly transform: ViewportTransform;
+
+  /** 注記の要素。作るのは構築時だけで、以後は属性を書き換える。 */
+  private readonly entryNormalLine: SVGPolylineElement;
+  private readonly exitNormalLine: SVGPolylineElement;
+  private readonly theta1Arc: SVGPolylineElement;
+  private readonly theta1Label: SVGTextElement;
+  private readonly redLeg: SVGPolylineElement;
+  private readonly redArc: SVGPolylineElement;
+  private readonly redLabel: SVGTextElement;
+  private readonly violetLeg: SVGPolylineElement;
+  private readonly violetArc: SVGPolylineElement;
+  private readonly violetLabel: SVGTextElement;
 
   private visible = false;
 
@@ -138,14 +225,69 @@ export default class SectionView {
       return line;
     });
 
-    // 入射光は波長で分かれないので最後に 1 本だけ、いちばん上へ
+    // 入射光は波長で分かれないので 1 本だけ、光線群の上へ
     this.incidentLine = document.createElementNS(SVG_NS, 'polyline');
     this.incidentLine.setAttribute('fill', 'none');
     this.incidentLine.setAttribute('stroke', INCIDENT_STROKE);
     this.incidentLine.setAttribute('stroke-width', '1.5');
     this.element.appendChild(this.incidentLine);
 
+    // 注記はいちばん上。破線の法線 → 弧 → ラベル の順に重ねる
+    this.entryNormalLine = this.appendLine(ANNOTATION_STROKE, '1', DASH_PATTERN);
+    this.exitNormalLine = this.appendLine(ANNOTATION_STROKE, '1', DASH_PATTERN);
+    this.redLeg = this.appendLine(ANNOTATION_STROKE, '1', DASH_PATTERN);
+    this.violetLeg = this.appendLine(ANNOTATION_STROKE, '1', DASH_PATTERN);
+    this.theta1Arc = this.appendLine(ANNOTATION_STROKE, '1.2');
+    this.redArc = this.appendLine(ANNOTATION_STROKE, '1.2');
+    this.violetArc = this.appendLine(ANNOTATION_STROKE, '1.2');
+    this.theta1Label = this.appendLabel(ANNOTATION_STROKE);
+    this.redLabel = this.appendLabel(ANNOTATION_STROKE);
+    this.violetLabel = this.appendLabel(ANNOTATION_STROKE);
+
     parent.appendChild(this.element);
+  }
+
+  /**
+   * 折れ線を 1 本作って図に足す。
+   *
+   * @param stroke 線の色
+   * @param width 線の太さ [px]
+   * @param dash 破線のパターン。実線なら省略
+   * @returns 作った要素
+   */
+  private appendLine(stroke: string, width: string, dash?: string): SVGPolylineElement {
+    const line = document.createElementNS(SVG_NS, 'polyline');
+
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', stroke);
+    line.setAttribute('stroke-width', width);
+    line.setAttribute('stroke-linejoin', 'round');
+
+    if (dash !== undefined) {
+      line.setAttribute('stroke-dasharray', dash);
+    }
+
+    this.element.appendChild(line);
+
+    return line;
+  }
+
+  /**
+   * ラベルを 1 つ作って図に足す。
+   *
+   * @param fill 文字の色
+   * @returns 作った要素
+   */
+  private appendLabel(fill: string): SVGTextElement {
+    const label = document.createElementNS(SVG_NS, 'text');
+
+    label.setAttribute('fill', fill);
+    label.setAttribute('font-size', '10');
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('dominant-baseline', 'middle');
+    this.element.appendChild(label);
+
+    return label;
   }
 
   /**
@@ -188,7 +330,8 @@ export default class SectionView {
   update(
     plane: DispersionPlane,
     prismWorldVertices: readonly Vec3[],
-    paths: readonly LightPath[]
+    paths: readonly LightPath[],
+    annotation: SectionAnnotation
   ): void {
     this.consumed = paths;
 
@@ -206,6 +349,7 @@ export default class SectionView {
     }
 
     this.drawRays(plane, paths);
+    this.drawAnnotation(plane, paths, annotation);
   }
 
   /** 要素を親から外す。 */
@@ -265,6 +409,236 @@ export default class SectionView {
   }
 
   /**
+   * 角度弧・ラベル・法線を描く。
+   *
+   * **幾何は光路の折れ線と面法線だけから決まる。** 角度を測り直す（asin する）ことは
+   * しないし、ラベルの数値も自分では作らない。ここがやるのは「述べられている角を
+   * 弧として符号化する」ことである。
+   *
+   * @param plane 分散平面
+   * @param paths 光路（ワールド座標）
+   * @param annotation 注記の材料
+   */
+  private drawAnnotation(
+    plane: DispersionPlane,
+    paths: readonly LightPath[],
+    annotation: SectionAnnotation
+  ): void {
+    const toUv = (point: Vec3): PlaneUV => worldToDispersionUV(plane, point);
+    // 向きは「原点 + 向き」を写して原点を引く。worldToDispersionUV は原点を引くので、
+    // 原点にその向きを足した点を渡せば、返る uv がそのまま向きになる
+    const dirToUv = (direction: Vec3): PlaneUV =>
+      toUv({
+        x: plane.origin.x + direction.x,
+        y: plane.origin.y + direction.y,
+        z: plane.origin.z + direction.z,
+      });
+
+    const incidentSegment = paths[0]?.segments[INCIDENT_SEGMENT_INDEX];
+
+    // --- θ₁：入口点で「光源側へ戻る向き」と「面の外向き法線」のあいだ ---
+    if (incidentSegment === undefined || annotation.entryNormal === null) {
+      this.clearAnnotationGroup(this.entryNormalLine, this.theta1Arc, this.theta1Label);
+    } else {
+      const entry = toUv(incidentSegment.end);
+      const back = normalizeUv(subUv(toUv(incidentSegment.start), entry));
+      const normal = normalizeUv(dirToUv(annotation.entryNormal));
+
+      this.drawDashedRay(this.entryNormalLine, entry, normal, NORMAL_LENGTH_PX);
+      this.drawArc(
+        this.theta1Arc,
+        this.theta1Label,
+        entry,
+        back,
+        normal,
+        THETA_ARC_RADIUS_PX,
+        annotation.incidenceLabel === null ? null : `θ₁ ${annotation.incidenceLabel}`,
+        THETA_LABEL_FRACTION
+      );
+    }
+
+    // --- δ：射出点で「入射の向き」と「射出の向き」のあいだ ---
+    const incidentDir =
+      incidentSegment === undefined
+        ? null
+        : normalizeUv(subUv(toUv(incidentSegment.end), toUv(incidentSegment.start)));
+
+    this.drawDeviation(
+      { leg: this.redLeg, arc: this.redArc, label: this.redLabel },
+      toUv,
+      incidentDir,
+      annotation.red,
+      RED_ARC_RADIUS_PX,
+      RED_LABEL_FRACTION
+    );
+    this.drawDeviation(
+      { leg: this.violetLeg, arc: this.violetArc, label: this.violetLabel },
+      toUv,
+      incidentDir,
+      annotation.violet,
+      VIOLET_ARC_RADIUS_PX,
+      VIOLET_LABEL_FRACTION
+    );
+
+    // --- 射出面の法線 ---
+    const exitPath = annotation.red ?? annotation.violet;
+    const exitSegment = exitPath?.path.segments[exitPath.path.segments.length - 1];
+
+    if (exitSegment === undefined || annotation.exitNormal === null) {
+      this.exitNormalLine.setAttribute('points', '');
+    } else {
+      this.drawDashedRay(
+        this.exitNormalLine,
+        toUv(exitSegment.start),
+        normalizeUv(dirToUv(annotation.exitNormal)),
+        NORMAL_LENGTH_PX
+      );
+    }
+  }
+
+  /**
+   * 偏角の弧を 1 本描く。
+   *
+   * 射出点に「入射と同じ向き」の破線を伸ばし、そこから射出方向までを弧で結ぶ。
+   * 2 本の弧（赤・紫）の隙間がそのまま分離幅＝分散になる。
+   *
+   * @param target 書き込む要素の組
+   * @param toUv ワールド点 → 断面座標
+   * @param incidentDir 入射の向き（断面座標）。定まらなければ null
+   * @param deviation 弧の材料。射出しなければ null
+   * @param radiusPx 弧の半径 [px]
+   */
+  private drawDeviation(
+    target: { leg: SVGPolylineElement; arc: SVGPolylineElement; label: SVGTextElement },
+    toUv: (point: Vec3) => PlaneUV,
+    incidentDir: PlaneUV | null,
+    deviation: SectionDeviation | null,
+    radiusPx: number,
+    labelFraction: number
+  ): void {
+    if (incidentDir === null || deviation === null) {
+      this.clearAnnotationGroup(target.leg, target.arc, target.label);
+
+      return;
+    }
+
+    const segments = deviation.path.segments;
+    const exitSegment = segments[segments.length - 1];
+
+    if (exitSegment === undefined) {
+      this.clearAnnotationGroup(target.leg, target.arc, target.label);
+
+      return;
+    }
+
+    const exitPoint = toUv(exitSegment.start);
+    const exitDir = normalizeUv(subUv(toUv(exitSegment.end), exitPoint));
+
+    target.leg.setAttribute('stroke', deviation.color);
+    target.arc.setAttribute('stroke', deviation.color);
+    target.label.setAttribute('fill', deviation.color);
+
+    this.drawDashedRay(target.leg, exitPoint, incidentDir, radiusPx * 1.35);
+    this.drawArc(
+      target.arc,
+      target.label,
+      exitPoint,
+      incidentDir,
+      exitDir,
+      radiusPx,
+      deviation.label,
+      labelFraction
+    );
+  }
+
+  /**
+   * 弧とそのラベルを描く。
+   *
+   * @param arc 弧を書き込む要素
+   * @param label ラベルを書き込む要素
+   * @param center 弧の中心（断面座標）
+   * @param fromDir 掃引の始まりの向き（単位）
+   * @param toDir 掃引の終わりの向き（単位）
+   * @param radiusPx 半径 [px]
+   * @param text ラベルの文字列。null なら出さない
+   */
+  private drawArc(
+    arc: SVGPolylineElement,
+    label: SVGTextElement,
+    center: PlaneUV,
+    fromDir: PlaneUV,
+    toDir: PlaneUV,
+    radiusPx: number,
+    text: string | null,
+    labelFraction: number
+  ): void {
+    // 弧は uv 空間で組むので、ピクセルの半径を uv の長さへ直す
+    const radiusUv = radiusPx / this.transform.scale;
+
+    arc.setAttribute(
+      'points',
+      this.toPoints(arcPolyline(center, radiusUv, fromDir, toDir, ARC_SEGMENTS))
+    );
+
+    if (text === null) {
+      label.textContent = '';
+
+      return;
+    }
+
+    // ラベルは弧の外側へ。どれだけ掃いた向きに置くかは呼び出し側が決める。
+    // δ は扇のすぐ内側に弧が来るので、中点（0.5）に置くと文字が光線の上に乗る。
+    // 破線側（小さい比率）へ寄せると、扇を避けたまま弧のそばに置ける
+    const towardDeg = signedAngleDeg(fromDir, toDir) * labelFraction;
+    const mid = rotateUv(fromDir, towardDeg);
+    const labelUv = radiusUv + LABEL_OFFSET_PX / this.transform.scale;
+    const point = uvToSvg(
+      { u: center.u + labelUv * mid.u, v: center.v + labelUv * mid.v },
+      this.transform
+    );
+
+    label.textContent = text;
+    label.setAttribute('x', point.x.toFixed(2));
+    label.setAttribute('y', point.y.toFixed(2));
+  }
+
+  /**
+   * 点から向きへ伸びる破線を描く。
+   *
+   * @param line 書き込む要素
+   * @param from 始点（断面座標）
+   * @param direction 伸ばす向き（単位）
+   * @param lengthPx 長さ [px]
+   */
+  private drawDashedRay(
+    line: SVGPolylineElement,
+    from: PlaneUV,
+    direction: PlaneUV,
+    lengthPx: number
+  ): void {
+    const lengthUv = lengthPx / this.transform.scale;
+
+    line.setAttribute(
+      'points',
+      this.toPoints([
+        from,
+        { u: from.u + lengthUv * direction.u, v: from.v + lengthUv * direction.v },
+      ])
+    );
+  }
+
+  /** 注記の 1 組を消す（描けない状態で前回の絵を残さない）。 */
+  private clearAnnotationGroup(
+    line: SVGPolylineElement,
+    arc: SVGPolylineElement,
+    label: SVGTextElement
+  ): void {
+    line.setAttribute('points', '');
+    arc.setAttribute('points', '');
+    label.textContent = '';
+  }
+
+  /**
    * 断面座標の並びを SVG の `points` 属性の文字列にする。
    *
    * @param uv 断面座標の並び
@@ -279,6 +653,23 @@ export default class SectionView {
       })
       .join(' ');
   }
+}
+
+/** 断面座標の差。向きを作るのに使う。 */
+function subUv(a: PlaneUV, b: PlaneUV): PlaneUV {
+  return { u: a.u - b.u, v: a.v - b.v };
+}
+
+/** 断面座標の向きを反時計回りに回す。ラベルの置き場所を弧の中ほどに取るために使う。 */
+function rotateUv(direction: PlaneUV, angleDeg: number): PlaneUV {
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+
+  return {
+    u: direction.u * cos - direction.v * sin,
+    v: direction.u * sin + direction.v * cos,
+  };
 }
 
 /**

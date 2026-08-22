@@ -34,7 +34,7 @@ import {
   projectPathsToScreen,
   type ExitAnchor,
 } from './scene/screenProjection';
-import SectionView from './scene/SectionView';
+import SectionView, { type SectionAnnotation } from './scene/SectionView';
 import { uvBoundsOf } from './scene/dispersionViewport';
 import ScreenObject, {
   FALLBACK_ANCHOR,
@@ -46,6 +46,7 @@ import SceneManager from './scene/SceneManager';
 import type {
   ConvexSolid,
   DispersionPlane,
+  Plane,
   LightPath,
   MaterialName,
   PrismMaterial,
@@ -56,7 +57,7 @@ import { animateAngle } from './ui/animateAngle';
 import ControlPanel from './ui/ControlPanel';
 import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
-import InfoOverlay, { type InfoValues } from './ui/InfoOverlay';
+import InfoOverlay, { formatAngle, type InfoValues } from './ui/InfoOverlay';
 import { createStore, SOURCE_ANGLE_MAX_DEG, SOURCE_ANGLE_MIN_DEG } from './ui/store';
 
 import './styles/main.css';
@@ -232,6 +233,47 @@ function prefersReducedMotion(): boolean {
  */
 function normalizeAngleDeg(angleDeg: number): number {
   return ((((angleDeg + 180) % 360) + 360) % 360) - 180;
+}
+
+/** 点が面の上に載っているとみなす許容差。追跡が返す交点なので丸めしか乗らない。 */
+const ON_PLANE_TOLERANCE = 1e-9;
+
+/**
+ * 点が載っている面の外向き法線を平面集合から探す（TASKS 6-1 段階4b）。
+ *
+ * 断面図の「面の法線を破線で描く」ためだけに使う**純粋に幾何の**手続きで、
+ * 屈折率にも臨界角にも触れない。追跡が返した交点をそのまま渡す。
+ *
+ * @param point 面の上にあるはずの点（局所座標）
+ * @param solid プリズムの平面集合
+ * @returns 外向き法線（局所座標）。どの面にも載っていなければ null
+ */
+function faceNormalAt(point: Vec3, solid: ConvexSolid): Vec3 | null {
+  const found = solid.find(
+    (face: Plane) => Math.abs(dot(face.normal, point) - face.distance) < ON_PLANE_TOLERANCE
+  );
+
+  return found?.normal ?? null;
+}
+
+/**
+ * 入口面の外向き法線を求める。
+ *
+ * `measuredIncidenceDeg` と同じ `intersectRayConvexSolid` から取る。情報バーの θ₁ と
+ * 断面図の θ₁ の弧が、同じ面を基準にしていることがこれで保証される。
+ *
+ * @param localRay 局所空間の入射レイ
+ * @param solid プリズムの平面集合
+ * @returns 外向き法線（局所座標）。ビームが外れていれば null
+ */
+function entryFaceNormal(localRay: Ray, solid: ConvexSolid): Vec3 | null {
+  const hit = intersectRayConvexSolid(localRay, solid);
+
+  if (hit === null || hit.tExit <= 0) {
+    return null;
+  }
+
+  return hit.enterPlane.normal;
 }
 
 /**
@@ -740,7 +782,63 @@ function main(): void {
 
     // 断面図（TASKS 6-1）。3D が求めた点をワールド座標のまま渡すだけで、物理は再計算しない。
     // 非表示のときは update が先頭で戻るので、ここのコストはほぼゼロになる
-    sectionView.update(currentDispersionPlane(), sectionWorldVertices(), sharedPaths);
+    // 断面図の注記（TASKS 6-1 段階4b）。
+    // **弧の幾何は光路と面法線から、ラベルの数値は情報バーと同じ源から。**
+    // δ の弧は 660/410nm の参照光路に載せる。誇張中はその誇張後の光路なので、
+    // 弧が示す角とラベルの数値は必ず一致し、m=1 では情報バーの 赤/紫 δ と厳密に一致する
+    const exitPointOf = (path: LightPath | undefined): Vec3 | null => {
+      const last = path?.segments[path.segments.length - 1];
+
+      return path?.termination === 'exited' && last !== undefined ? last.start : null;
+    };
+    const localExitPoint = exitPointOf(drawnPaths[0]) ?? exitPointOf(drawnPaths[1]);
+    const localEntryNormal = entryFaceNormal(localRay, solid);
+    const localExitNormal =
+      localExitPoint === null ? null : faceNormalAt(localExitPoint, solid);
+
+    // 誇張中の断りは情報バーの分離幅とまったく同じ条件（m ≠ 1）で、同じ `×m` の表記で添える。
+    // 弧が示すのは**実際に描かれている**角なので、m > 1 では値も誇張後になる。
+    // その事実を隠さないための断りであって、値そのものは弧と厳密に一致したままである
+    const exaggerationNote = state.exaggeration === 1 ? '' : ` ×${state.exaggeration}`;
+
+    const deviationOf = (
+      index: number,
+      deviationDeg: number | null,
+      wavelengthNm: number,
+      caption: string
+    ): SectionAnnotation['red'] => {
+      const localPath = drawnPaths[index];
+
+      if (localPath === undefined || localPath.termination !== 'exited' || deviationDeg === null) {
+        return null;
+      }
+
+      const rgb = wavelengthToRgb(wavelengthNm);
+      const channel = (value: number): number => Math.round(value * 255);
+
+      return {
+        path: transformLightPath(localPath, localToWorld),
+        label: `${caption} ${formatAngle(deviationDeg)}${exaggerationNote}`,
+        color: `rgb(${channel(rgb.r)}, ${channel(rgb.g)}, ${channel(rgb.b)})`,
+      };
+    };
+
+    const annotation: SectionAnnotation = {
+      entryNormal:
+        localEntryNormal === null ? null : toWorldDirection(localEntryNormal, localToWorld),
+      exitNormal:
+        localExitNormal === null ? null : toWorldDirection(localExitNormal, localToWorld),
+      incidenceLabel: measured === null ? null : formatAngle(measured),
+      red: deviationOf(0, drawnRed, REPORT_RED_NM, 'δ赤'),
+      violet: deviationOf(1, drawnViolet, REPORT_VIOLET_NM, 'δ紫'),
+    };
+
+    sectionView.update(
+      currentDispersionPlane(),
+      sectionWorldVertices(),
+      sharedPaths,
+      annotation
+    );
 
     // 材質・誇張・姿勢のいずれかで変わる。変化した瞬間だけ出す
     const summary =
