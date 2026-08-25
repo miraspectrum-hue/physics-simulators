@@ -1,3 +1,8 @@
+import {
+  DEFAULT_PRISM_ROTATION_DEG,
+  DEFAULT_PRISM_X,
+  DEFAULT_PRISM_Y,
+} from '../scene/prismPose';
 import type { MaterialName } from '../types/optics';
 
 import type { AppState } from './store';
@@ -31,18 +36,6 @@ import {
 
 /** URL 断片のスキーマ版。**加算（キーの追加）では上げない。** */
 export const SHARE_SCHEMA_VERSION = 1;
-
-/**
- * プリズムの既定の Z 回転 [deg]。
- *
- * NOTE: 段階3 で `main.ts` の `PRISM_ROTATION_Z_DEG` をここへ寄せる（今は同じ値が
- *       2 か所にある。段階1 は純粋層だけを触る約束なので、その付け替えは次の段階で行う）。
- */
-export const DEFAULT_PRISM_ROTATION_DEG = 20;
-
-/** プリズムの既定の位置。移動ギズモは XY 面内だけなので z は持たない。 */
-export const DEFAULT_PRISM_X = 0;
-export const DEFAULT_PRISM_Y = 0;
 
 /** 断面図の既定の表示状態。 */
 export const DEFAULT_SECTION_VISIBLE = false;
@@ -119,18 +112,27 @@ export const DEFAULT_SHAREABLE_STATE: ShareableState = {
 };
 
 /**
- * 小数の桁数。**入力の粒度に合わせる。**
+ * 小数の桁数。**「絵が動かないこと」を基準に決める。**
  *
- * スライダーの刻みより細かく載せても意味が無い。入射角だけ 6 桁なのは、
- * 「最小偏角に合わせる」の高精度な着地を絵として保つためである。
+ * 当初は「入力の粒度に合わせる」（スライダーの刻みより細かく載せない）としていたが、
+ * これは誤った基準だった。**アンカーはスライダー入力ではなく光路から計算された値**で、
+ * 合わせるべき入力粒度が存在しない。3 桁にしたところ、アンカーの誤差 3.2e-4 に
+ * スクリーン距離 9.5 が掛かり、48 本のビームのクリップ位置が動いて、往復前後で
+ * 虹の縁の画素が 8,786 成分ずれた（実測）。
+ *
+ * そこで**世界の幾何に効く量はすべて 6 桁**に揃える。この桁で往復の画素差は 0 になる。
+ * `screenDistance` も含める。UI のスライダーは 0.5 刻みなので 1 桁でも往復するが、
+ * URL から 0.5 の倍数でない値（`sd=9.53` など）を受け取ると 1 桁では 0.03 落ち、
+ * 実測で 580 成分ずれた。**表現できない値を黙って動かさない**方を採る。
+ * `exaggeration` だけは整数のままでよい（倍率であって座標ではない）。
  */
 const DECIMALS = {
   sourceAngleDeg: 6,
   exaggeration: 0,
-  screenDistance: 1,
-  prismRotationDeg: 3,
-  prismPosition: 3,
-  anchor: 3,
+  screenDistance: 6,
+  prismRotationDeg: 6,
+  prismPosition: 6,
+  anchor: 6,
 } as const;
 
 /** アンカーの成分数（x, y, 方向角）。 */

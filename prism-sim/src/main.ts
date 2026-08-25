@@ -29,6 +29,11 @@ import {
 } from './scene/lightSource';
 import PrismObject, { PRISM_DEPTH, PRISM_SIDE_LENGTH } from './scene/PrismObject';
 import {
+  DEFAULT_PRISM_ROTATION_DEG,
+  DEFAULT_PRISM_X,
+  DEFAULT_PRISM_Y,
+} from './scene/prismPose';
+import {
   clipPathsToScreen,
   meanExitAnchor,
   projectPathsToScreen,
@@ -59,6 +64,7 @@ import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
 import InfoOverlay, { formatAngle, type InfoValues } from './ui/InfoOverlay';
 import { createStore, SOURCE_ANGLE_MAX_DEG, SOURCE_ANGLE_MIN_DEG } from './ui/store';
+import { type ShareableState } from './ui/shareUrl';
 
 import './styles/main.css';
 
@@ -75,14 +81,6 @@ import './styles/main.css';
 
 /** 左側面の中点（局所座標）。tracer のテストが入射点として使う実績値。 */
 const LEFT_FACE_MIDPOINT: Vec3 = vec3(-0.5, 0.288675134594813, 0);
-
-/**
- * 意図した既定姿勢：プリズムの Z 軸まわりの回転角 [deg]。
- *
- * リセット（3-7）の戻り先であり、光源の狙点と入射角の較正もこの姿勢を基準に凍結する。
- * 以後プリズムを回してもこの値は動かない（姿勢の現在値は matrixWorld が持つ）。
- */
-const PRISM_ROTATION_Z_DEG = 20;
 
 /** 入射面（左側面）の平面集合における添字。 */
 const ENTRY_PLANE_INDEX = 0;
@@ -523,7 +521,7 @@ function main(): void {
   const sceneManager = new SceneManager(container);
 
   const prism = new PrismObject();
-  prism.object.rotation.z = PRISM_ROTATION_Z_DEG * RAD_PER_DEG;
+  prism.object.rotation.z = DEFAULT_PRISM_ROTATION_DEG * RAD_PER_DEG;
   prism.object.updateMatrixWorld(true);
   sceneManager.scene.add(prism.object);
 
@@ -616,6 +614,23 @@ function main(): void {
    */
   const applyScreenPose = (distance: number): void => {
     screen.setPlane(screenPlaneFromAnchor(screenAnchor, distance, SCREEN_HALF_EXTENT));
+  };
+
+  /**
+   * 凍結アンカーを差し替えて板を置き直す（TASKS 6-6 段階3）。
+   *
+   * **「光路に合わせる」と同じ適用口を通す。** 共有 URL から復元するときも
+   * ここを通るので、「押したとき」と「復元したとき」で経路が分かれない。
+   * アンカーは導出値ではなく**凍結された状態**なので、復元時に再導出してはならない
+   * （再導出すると、共有者がボタンを押していないのに受け取り側では光路にぴったり
+   * 合う、という別の絵になる）。
+   *
+   * @param anchor 置き直すアンカー
+   */
+  const setScreenAnchor = (anchor: ExitAnchor): void => {
+    screenAnchor = anchor;
+    applyScreenPose(store.getState().screenDistance);
+    markDirty();
   };
 
   const band = new BandRenderer(wavelengths);
@@ -1044,15 +1059,98 @@ function main(): void {
     panel.setSourceAngleNotice(null);
     cancelTransition();
     store.reset();
-    prism.object.position.set(0, 0, 0);
-    prism.object.rotation.set(0, 0, PRISM_ROTATION_Z_DEG * RAD_PER_DEG);
+    prism.object.position.set(DEFAULT_PRISM_X, DEFAULT_PRISM_Y, 0);
+    prism.object.rotation.set(0, 0, DEFAULT_PRISM_ROTATION_DEG * RAD_PER_DEG);
     prism.object.updateMatrixWorld(true);
     panel.setRotationDeg(currentRotationDeg());
     markDirty();
     console.log(`[操作] リセット → 姿勢 ${currentRotationDeg().toFixed(1)}度`);
   });
 
+  /**
+   * 4 つの住処から共有できる状態を 1 つに集める（TASKS 6-6 段階3）。
+   *
+   * **所有権は動かさない。** 姿勢の単一の真実は `Object3D.matrix` のまま、断面図の
+   * 状態は `aria-pressed` のまま、アンカーはこのクロージャのままである。集約は
+   * シリアライズの境界でだけ行う（store を源にすると `TransformControls` が
+   * ドラッグ中に直書きする quaternion と競合し、3-5b のエコー問題が再発する）。
+   *
+   * @returns 集めた状態
+   */
+  const collectShareableState = (): ShareableState => {
+    prism.object.updateMatrixWorld(true);
+
+    return {
+      app: store.getState(),
+      prismRotationDeg: currentRotationDeg(),
+      prismX: prism.object.position.x,
+      prismY: prism.object.position.y,
+      // 全光路が主断面に載るので、アンカーは x・y・方向角の 3 数値で尽きる
+      screenAnchor: {
+        x: screenAnchor.origin.x,
+        y: screenAnchor.origin.y,
+        directionDeg:
+          Math.atan2(screenAnchor.direction.y, screenAnchor.direction.x) * DEG_PER_RAD,
+      },
+      sectionVisible: panel.isSectionPressed(),
+    };
+  };
+
+  /**
+   * 集めた状態をアプリへ配り直す（TASKS 6-6 段階3）。
+   *
+   * **必ず既存のユーザー操作経路を通す。** 状態を直接突かず、`store.update` /
+   * `applyRotationDeg` / `setScreenAnchor` / 表示専用 setter を呼ぶ。こうしておけば
+   * クランプも通知も dirty も、人が操作したときとまったく同じ順に走る。
+   *
+   * **呼ぶのは初回の凍結と `refreshBeams()` が済んだ後でなければならない。**
+   * `aimPoint` と `entryNormalAngleDeg` は既定姿勢（`DEFAULT_PRISM_ROTATION_DEG`）から
+   * 起動時に一度だけ凍結される。共有者も同じ角度で凍結してから動かしたので、
+   * 受け取り側も凍結を済ませてから動かすのが唯一の忠実な再現になる。凍結前に
+   * 姿勢を復元すると較正の基準が変わり、同じ回転角でも実測 θ₁ がずれる。
+   *
+   * @param state 配り直す状態
+   */
+  const applyShareableState = (state: ShareableState): void => {
+    // 進行中のアニメーションは復元と競合する。人が操作したときと同じ扱いで捨てる
+    cancelTransition();
+    panel.setSourceAngleNotice(null);
+
+    // 1〜4: store。クランプも通知も既存のまま
+    store.update(state.app);
+
+    // 5, 6: 姿勢。スライダーを動かしたときと同じ経路を通し、表示だけ別に合わせる
+    //       （`setRotationDeg` は input を発火しないのでエコーにならない）
+    applyRotationDeg(state.prismRotationDeg);
+    panel.setRotationDeg(currentRotationDeg());
+    prism.object.position.set(state.prismX, state.prismY, 0);
+    prism.object.updateMatrixWorld(true);
+    markDirty();
+
+    // 7: 凍結アンカー。**再導出しない。** null は「URL が指定していない」なので、
+    //    起動時に導出したものをそのまま残す
+    const anchor = state.screenAnchor;
+
+    if (anchor !== null) {
+      const directionRad = anchor.directionDeg * RAD_PER_DEG;
+
+      setScreenAnchor({
+        origin: vec3(anchor.x, anchor.y, 0),
+        direction: vec3(Math.cos(directionRad), Math.sin(directionRad), 0),
+      });
+    }
+
+    // 8: 断面図。表示専用 setter で属性を合わせ、実体の表示も合わせる
+    panel.setSectionPressed(state.sectionVisible);
+    sectionView.setVisible(state.sectionVisible);
+    markDirty();
+  };
+
   panel.setRotationDeg(currentRotationDeg());
+
+  // ★ここまでが初期化。`aimPoint` / `entryNormalAngleDeg` は既定姿勢で凍結済みで、
+  //   最初の光路もこの後の refreshBeams() で引かれる。
+  //   **共有 URL の復元（段階4 で location.hash から読む）はこの行より後に置くこと。**
   refreshBeams();
 
   // 起動時の検証。既定姿勢では実測 θ₁ とスライダー値が一致するはず（較正の正しさ）
@@ -1092,6 +1190,9 @@ function main(): void {
       sectionConsumedPaths: (): readonly LightPath[] => sectionView.consumedPaths(),
       sectionTransform: () => sectionView.viewportTransform(),
       beamsDrawnPaths: (): readonly LightPath[] => lastBeamPaths,
+      // 6-6 段階3 の検証用。実配線（hash 読み・replaceState）は段階4
+      collectShareableState,
+      applyShareableState,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();
 

@@ -516,6 +516,24 @@ export default class ControlPanel {
   }
 
   /**
+   * 断面図トグルの**表示だけ**を更新する（共有 URL からの復元用。TASKS 6-6 段階3）。
+   *
+   * `setRotationDeg` とまったく同じ非発火の流儀。属性を直接書くので `click` は起きず、
+   * `onToggleSection` の購読者は動かない。復元側が自分の通知で自分を呼び戻す
+   * エコーが原理的に生じない。
+   *
+   * @param visible 押された状態にするなら true
+   */
+  setSectionPressed(visible: boolean): void {
+    this.sectionToggle.setAttribute('aria-pressed', String(visible));
+  }
+
+  /** 断面図トグルが押された状態かどうか。共有 URL へ書き出すために読む。 */
+  isSectionPressed(): boolean {
+    return this.sectionToggle.getAttribute('aria-pressed') === 'true';
+  }
+
+  /**
    * 姿勢スライダーの**表示だけ**を更新する（ギズモ操作の反映用）。
    *
    * `value` への代入は `input` イベントを発火しないので、これを呼んでも
