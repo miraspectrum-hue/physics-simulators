@@ -64,7 +64,7 @@ import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
 import InfoOverlay, { formatAngle, type InfoValues } from './ui/InfoOverlay';
 import { createStore, SOURCE_ANGLE_MAX_DEG, SOURCE_ANGLE_MIN_DEG } from './ui/store';
-import { type ShareableState } from './ui/shareUrl';
+import { decodeUrl, encodeUrl, type ShareableState } from './ui/shareUrl';
 
 import './styles/main.css';
 
@@ -114,6 +114,15 @@ const MIN_DEVIATION_TRANSITION_MS = 450;
 const MIN_DEVIATION_OUT_OF_RANGE_NOTICE =
   `この姿勢では最小偏角に届きません（必要な入射角がスライダーの可動域 ` +
   `${SOURCE_ANGLE_MIN_DEG}〜${SOURCE_ANGLE_MAX_DEG}° を外れます）。プリズムを戻してください。`;
+
+/**
+ * URL を書き換えるまでの静穏時間 [ms]（TASKS 6-6 段階4）。
+ *
+ * **URL は「落ち着いた状態」だけを映す。** スライダーのドラッグも最小偏角の遷移
+ * （450ms・約 27 フレーム）も、状態が変わるたびに `replaceState` を撃つと
+ * 1 操作で数十回書くことになる。最後の変化から静穏時間が経ってから 1 回だけ書く。
+ */
+const URL_UPDATE_DEBOUNCE_MS = 300;
 
 /**
  * 入射面反射の表示ゲイン。
@@ -695,6 +704,14 @@ function main(): void {
   let lastTerminationSummary = '';
 
   /**
+   * 光路を引き直したあとに呼ぶフック（TASKS 6-6 段階4 の URL 追従）。
+   *
+   * `refreshBeams` は dirty なフレームでしか走らないので、ここへ挿すだけで
+   * 「状態が変わったとき」をひとつ残らず拾える。配線が済むまでは何もしない。
+   */
+  let onBeamsRefreshed: () => void = () => {};
+
+  /**
    * 直近に 3D ビームへ渡した光路。**検証用**（6-1 オラクル①）。
    *
    * 断面図へ渡すのと同じ参照であることを外から `===` で確かめられるようにする。
@@ -867,6 +884,8 @@ function main(): void {
           ` / 実測 θ₁ = ${measured === null ? '—' : `${measured.toFixed(6)}度`}`
       );
     }
+
+    onBeamsRefreshed();
   };
 
   store.subscribe(markDirty);
@@ -1146,12 +1165,89 @@ function main(): void {
     markDirty();
   };
 
+  /** URL を書き換えるのを待っているタイマー。待機中でなければ undefined。 */
+  let urlUpdateTimer: number | undefined;
+
+  /** `replaceState` を撃った回数。**検証用**（1 操作で何回書いたかを外から数える）。 */
+  let urlWriteCount = 0;
+
+  /**
+   * いま集めた状態を URL へ映す。
+   *
+   * `pushState` ではなく `replaceState` を使う。スライダーを 1 目盛り動かすたびに
+   * 履歴が積もると、戻るボタンが「前のページ」ではなく「1 つ前のスライダー位置」へ
+   * 戻るようになり、履歴が使い物にならなくなる。
+   */
+  const writeUrlNow = (): void => {
+    if (urlUpdateTimer !== undefined) {
+      window.clearTimeout(urlUpdateTimer);
+      urlUpdateTimer = undefined;
+    }
+
+    const next = `${location.pathname}${location.search}#${encodeUrl(collectShareableState())}`;
+
+    if (next === `${location.pathname}${location.search}${location.hash}`) {
+      return;
+    }
+
+    history.replaceState(null, '', next);
+    urlWriteCount += 1;
+  };
+
+  /** 状態が落ち着いてから URL を 1 回だけ書く。 */
+  const scheduleUrlUpdate = (): void => {
+    if (urlUpdateTimer !== undefined) {
+      window.clearTimeout(urlUpdateTimer);
+    }
+
+    urlUpdateTimer = window.setTimeout(() => {
+      urlUpdateTimer = undefined;
+      writeUrlNow();
+    }, URL_UPDATE_DEBOUNCE_MS);
+  };
+
+  // 状態が変わったフレームでだけ予約する。dirty の源（store・姿勢・トグル・アンカー）が
+  // すべて refreshBeams を通るので、ここ 1 か所で全部の変化を拾える
+  onBeamsRefreshed = scheduleUrlUpdate;
+
+  panel.onCopyShareUrl(() => {
+    // **「今見ているものを、そのままコピー」を保証する。** `location.href` をそのまま読むと、
+    // 静穏時間が明ける前に押されたときアドレスバーはまだ古く、300ms 前の絵を配ってしまう。
+    // ここで保留を flush（`writeUrlNow` が clearTimeout してから collect し直す）ことで、
+    // 次行の `location.href` は必ず押下時点の状態になる
+    writeUrlNow();
+
+    navigator.clipboard.writeText(location.href).then(
+      () => {
+        panel.setShareStatus('URL をコピーしました。');
+      },
+      () => {
+        panel.setShareStatus('コピーできませんでした。アドレスバーから手動でコピーしてください。');
+      }
+    );
+  });
+
   panel.setRotationDeg(currentRotationDeg());
 
   // ★ここまでが初期化。`aimPoint` / `entryNormalAngleDeg` は既定姿勢で凍結済みで、
   //   最初の光路もこの後の refreshBeams() で引かれる。
-  //   **共有 URL の復元（段階4 で location.hash から読む）はこの行より後に置くこと。**
+  //   **共有 URL の復元はこの行より後**でなければならない（凍結の基準が共有者とずれる）。
   refreshBeams();
+
+  // 共有 URL からの復元（TASKS 6-6 段階4）。壊れた断片でも decodeUrl は投げないので、
+  // 何が入っていてもここで起動が止まることはない
+  applyShareableState(decodeUrl(location.hash));
+
+  // 復元後の状態を URL へ映す。以後は状態が変わるたびに静穏時間つきで追従する
+  scheduleUrlUpdate();
+
+  // 同じタブで hash だけ差し替えられたときも復元する。
+  // **同一ドキュメント内の hash 変更はリロードを起こさない**ので、これが無いと
+  // 「アドレスバーに共有 URL を貼って Enter」が何も起こさないように見える。
+  // 自分の `replaceState` は hashchange を発火しないので、書き戻しの輪にはならない
+  window.addEventListener('hashchange', () => {
+    applyShareableState(decodeUrl(location.hash));
+  });
 
   // 起動時の検証。既定姿勢では実測 θ₁ とスライダー値が一致するはず（較正の正しさ）
   reportCalibration(store.getState().sourceAngleDeg, aimPoint, entryNormalAngleDeg, worldToLocal, solid);
@@ -1193,6 +1289,9 @@ function main(): void {
       // 6-6 段階3 の検証用。実配線（hash 読み・replaceState）は段階4
       collectShareableState,
       applyShareableState,
+      // 6-6 段階4 の検証用。1 操作で replaceState を何回撃ったかを数える
+      urlWriteCount: (): number => urlWriteCount,
+      writeUrlNow,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();
 

@@ -48,6 +48,9 @@ const NO_MINIMUM_DEVIATION_REASON = 'この材質では直接透過しないた�
  */
 const NOTICE_DURATION_MS = 6000;
 
+/** 共有セクションの平常時の案内。コピーの結果を出したあとはここへ戻る。 */
+const SHARE_STATUS_IDLE = 'アドレスバーの URL には今の状態が入っています。';
+
 /**
  * 右側の操作パネル（SPEC.md「画面構成」）。
  *
@@ -79,6 +82,7 @@ export default class ControlPanel {
   private readonly screenDistanceSlider: HTMLInputElement;
   private readonly screenDistanceValue: HTMLElement;
   private readonly sectionToggle: HTMLButtonElement;
+  private readonly shareStatus: HTMLElement;
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
   private readonly rotationSubscribers: Array<(angleDeg: number) => void> = [];
@@ -97,6 +101,12 @@ export default class ControlPanel {
 
   /** 断面図トグルが押されたときに呼ぶ購読者。 */
   private readonly sectionToggleSubscribers: Array<(visible: boolean) => void> = [];
+
+  /** 「URL をコピー」が押されたときに呼ぶ購読者。 */
+  private readonly copyShareUrlSubscribers: Array<() => void> = [];
+
+  /** 共有の結果表示を消すためのタイマー。掲出中でなければ undefined。 */
+  private shareStatusTimer: number | undefined;
 
   /** 一時表示を消すためのタイマー。掲出中でなければ undefined。 */
   private noticeTimer: number | undefined;
@@ -417,6 +427,35 @@ export default class ControlPanel {
 
     this.element.appendChild(poseSection);
 
+    // 共有セクション（TASKS 6-6 段階4）。今の状態を映した URL をクリップボードへ渡す
+    const shareSection = document.createElement('section');
+    shareSection.className = 'control-panel__section';
+
+    const shareLegend = document.createElement('h2');
+    shareLegend.className = 'control-panel__legend';
+    shareLegend.textContent = '共有';
+    shareSection.appendChild(shareLegend);
+
+    const shareButton = document.createElement('button');
+    shareButton.type = 'button';
+    shareButton.className = 'control-panel__button';
+    shareButton.textContent = 'URL をコピー';
+    shareButton.addEventListener('click', () => {
+      for (const subscriber of this.copyShareUrlSubscribers) {
+        subscriber();
+      }
+    });
+
+    // 結果は**ボタンのラベルを書き換えずに**別行へ出す。ラベルが入れ替わると
+    // 読み上げの利用者にはボタンそのものが変わったように聞こえる
+    this.shareStatus = document.createElement('p');
+    this.shareStatus.className = 'control-panel__hint';
+    this.shareStatus.setAttribute('aria-live', 'polite');
+    this.shareStatus.textContent = SHARE_STATUS_IDLE;
+
+    shareSection.append(shareButton, this.shareStatus);
+    this.element.appendChild(shareSection);
+
     parent.appendChild(this.element);
 
     store.subscribe((state) => {
@@ -512,6 +551,36 @@ export default class ControlPanel {
     this.noticeTimer = window.setTimeout(() => {
       this.sourceAngleNotice.hidden = true;
       this.noticeTimer = undefined;
+    }, NOTICE_DURATION_MS);
+  }
+
+  /**
+   * 「URL をコピー」が押されたときの購読者を登録する。
+   *
+   * クリップボードへ書くのは配線側の責務。パネルは `location` を知らない。
+   */
+  onCopyShareUrl(subscriber: () => void): void {
+    this.copyShareUrlSubscribers.push(subscriber);
+  }
+
+  /**
+   * 共有の結果を一時的に表示する。
+   *
+   * 押下時にだけ呼ぶこと。時間が経てば案内文へ戻る（`setSourceAngleNotice` と同じ流儀で、
+   * 毎フレーム出し直して点滅させない）。
+   *
+   * @param message 表示する文言
+   */
+  setShareStatus(message: string): void {
+    this.shareStatus.textContent = message;
+
+    if (this.shareStatusTimer !== undefined) {
+      window.clearTimeout(this.shareStatusTimer);
+    }
+
+    this.shareStatusTimer = window.setTimeout(() => {
+      this.shareStatus.textContent = SHARE_STATUS_IDLE;
+      this.shareStatusTimer = undefined;
     }, NOTICE_DURATION_MS);
   }
 
