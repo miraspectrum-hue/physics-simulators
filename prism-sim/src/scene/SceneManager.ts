@@ -81,6 +81,15 @@ export default class SceneManager {
   private lastFrameTimeMs: number | null = null;
 
   /**
+   * `composer.render()` を撃った回数。**検証用**。
+   *
+   * `renderer.info.render.frame` は使えない。あれは `WebGLRenderer.render()` の回数で、
+   * Bloom が内部で何度も全画面矩形を描くため、`composer.render()` 1 回につき
+   * 十数回増える（実測 15）。ここで数えたいのは合成 1 回ぶんである。
+   */
+  private renderCallCount = 0;
+
+  /**
    * @param container canvas を追加する要素。この要素の大きさに追従する
    */
   constructor(container: HTMLElement) {
@@ -158,7 +167,45 @@ export default class SceneManager {
 
       onFrame?.(deltaSeconds);
       this.composer.render(deltaSeconds);
+      this.renderCallCount += 1;
     });
+  }
+
+  /**
+   * 3D キャンバスを PNG の data URL として書き出す（TASKS 6-6 段階5, PNG-1）。
+   *
+   * **`composer.render()` と `toDataURL()` を同一の同期タスクで続けて呼ぶこと**が
+   * この関数の要である。`WebGLRenderer` は `preserveDrawingBuffer: true` を
+   * 立てていない。この指定はフレームごとに描画バッファの複製を保持させるので、
+   * 「たまに押される保存ボタン」のために常時そのコストを払うのは割に合わない。
+   *
+   * 代わりに仕様の側を使う。描画バッファが破棄されるのは**ブラウザが canvas を
+   * 合成した後**であり、合成は現在のタスクが終わってから起きる。したがって
+   * 同じタスクの中で描き直して直後に読めば、必ず中身が入っている。
+   * 逆に言えば、この 2 行の間に `await` や `setTimeout` を挟んだ瞬間に
+   * 空の画像が返る。**呼び出し側もクリックハンドラから同期で呼ぶこと。**
+   *
+   * 書き出すのは 3D キャンバスだけで、断面図の SVG インセットは DOM の重畳なので
+   * 写らない（PNG-1 の仕様。合成は PNG-2 の仕事）。
+   *
+   * 解像度は現在のバッキングストア（CSS 上の大きさ × `devicePixelRatio`、
+   * `MAX_PIXEL_RATIO` で頭打ち）そのままになる。
+   *
+   * @returns `data:image/png;base64,...` 形式の文字列
+   */
+  captureDataUrl(): string {
+    this.composer.render(0);
+    this.renderCallCount += 1;
+
+    return this.renderer.domElement.toDataURL('image/png');
+  }
+
+  /**
+   * これまでに `composer.render()` を撃った回数。**検証用**
+   * （書き出しが余分に撃つ回数を外から数える）。
+   */
+  get renderCount(): number {
+    return this.renderCallCount;
   }
 
   /** 描画ループを停止する。 */

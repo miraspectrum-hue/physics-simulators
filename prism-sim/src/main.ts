@@ -64,6 +64,7 @@ import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
 import InfoOverlay, { formatAngle, type InfoValues } from './ui/InfoOverlay';
 import { createStore, SOURCE_ANGLE_MAX_DEG, SOURCE_ANGLE_MIN_DEG } from './ui/store';
+import { captureFileName } from './ui/captureFileName';
 import { decodeUrl, encodeUrl, type ShareableState } from './ui/shareUrl';
 
 import './styles/main.css';
@@ -1227,6 +1228,27 @@ function main(): void {
     );
   });
 
+  panel.onSavePng(() => {
+    // **ここから toDataURL までの間に await を挟まない**（同一同期タスクで撃つ。
+    // 描画バッファはブラウザが canvas を合成した時点で破棄される）
+    const dataUrl = sceneManager.captureDataUrl();
+    const state = store.getState();
+    const fileName = captureFileName({
+      material: state.material,
+      sourceAngleDeg: state.sourceAngleDeg,
+    });
+
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = fileName;
+    // Firefox は文書に繋がっていない要素の click を無視する。付けて押して外す
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    panel.setShareStatus(`${fileName} を保存しました。`);
+  });
+
   panel.setRotationDeg(currentRotationDeg());
 
   // ★ここまでが初期化。`aimPoint` / `entryNormalAngleDeg` は既定姿勢で凍結済みで、
@@ -1292,6 +1314,10 @@ function main(): void {
       // 6-6 段階4 の検証用。1 操作で replaceState を何回撃ったかを数える
       urlWriteCount: (): number => urlWriteCount,
       writeUrlNow,
+      // 6-6 段階5 の検証用。同一同期タスクでの書き出しと、撃った描画回数
+      capturePng: (): string => sceneManager.captureDataUrl(),
+      renderCount: (): number => sceneManager.renderCount,
+      canvas: sceneManager.domElement,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();
 

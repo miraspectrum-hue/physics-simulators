@@ -105,6 +105,9 @@ export default class ControlPanel {
   /** 「URL をコピー」が押されたときに呼ぶ購読者。 */
   private readonly copyShareUrlSubscribers: Array<() => void> = [];
 
+  /** 「PNG を保存」が押されたときの購読者。 */
+  private readonly savePngSubscribers: Array<() => void> = [];
+
   /** 共有の結果表示を消すためのタイマー。掲出中でなければ undefined。 */
   private shareStatusTimer: number | undefined;
 
@@ -453,7 +456,19 @@ export default class ControlPanel {
     this.shareStatus.setAttribute('aria-live', 'polite');
     this.shareStatus.textContent = SHARE_STATUS_IDLE;
 
-    shareSection.append(shareButton, this.shareStatus);
+    // 保存ボタン（TASKS 6-6 段階5, PNG-1）。書き出しは配線側が
+    // 「同一同期タスクで描画 → 読み出し」で行う（SceneManager.captureDataUrl 参照）
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'control-panel__button';
+    saveButton.textContent = 'PNG を保存';
+    saveButton.addEventListener('click', () => {
+      for (const subscriber of this.savePngSubscribers) {
+        subscriber();
+      }
+    });
+
+    shareSection.append(shareButton, saveButton, this.shareStatus);
     this.element.appendChild(shareSection);
 
     parent.appendChild(this.element);
@@ -561,6 +576,17 @@ export default class ControlPanel {
    */
   onCopyShareUrl(subscriber: () => void): void {
     this.copyShareUrlSubscribers.push(subscriber);
+  }
+
+  /**
+   * 「PNG を保存」が押されたときの購読者を登録する。
+   *
+   * **購読者はクリックの同期タスクの中で呼ばれる。** 書き出しは描画バッファが
+   * 合成される前に読む必要があるので、ここに `await` を挟んではならない
+   * （`SceneManager.captureDataUrl` の説明を参照）。
+   */
+  onSavePng(subscriber: () => void): void {
+    this.savePngSubscribers.push(subscriber);
   }
 
   /**
