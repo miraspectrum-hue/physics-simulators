@@ -1317,6 +1317,7 @@ function main(): void {
       // 6-6 段階5 の検証用。同一同期タスクでの書き出しと、撃った描画回数
       capturePng: (): string => sceneManager.captureDataUrl(),
       renderCount: (): number => sceneManager.renderCount,
+      resizeCount: (): number => sceneManager.resizeCount,
       canvas: sceneManager.domElement,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();

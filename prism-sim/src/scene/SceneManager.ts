@@ -12,6 +12,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
+import { computeBackingSize } from './backingSize';
+
 /** 既定のカメラ画角 [deg]。 */
 const FIELD_OF_VIEW_DEG = 45;
 
@@ -21,9 +23,6 @@ const FAR_PLANE = 200;
 
 /** 既定のカメラ位置。プリズム（一辺 2）と入射光の始点が収まる距離。 */
 const DEFAULT_CAMERA_Z = 6.5;
-
-/** デバイスピクセル比の上限。高 DPI 環境での過剰な描画負荷を抑える。 */
-const MAX_PIXEL_RATIO = 2;
 
 /**
  * 背景のラジアルグラデーション（TASKS 2-6）。中心がわずかに明るい暗青。
@@ -72,7 +71,37 @@ export default class SceneManager {
   private readonly backgroundTexture: CanvasTexture;
   private readonly composer: EffectComposer;
   private readonly bloomPass: UnrealBloomPass;
-  private readonly resizeListener: () => void;
+
+  /**
+   * 描画面の大きさの単一の源（アスペクト是正）。
+   *
+   * **監視するのは canvas ではなく容器（`#app`）である。** canvas は
+   * `width: 100%` で容器に従うだけなので、容器の大きさは canvas のバッキングに
+   * 依存しない。canvas を監視すると、バッキングを変える → canvas の箱が変わる →
+   * また通知が来る、というフィードバックループになる。
+   */
+  private readonly resizeObserver: ResizeObserver;
+
+  /** 適用待ちの箱 [CSS px]。待機中でなければ null。 */
+  private pendingBox: { width: number; height: number } | null = null;
+
+  /** 適用を予約した `requestAnimationFrame` の番号。待機中でなければ null。 */
+  private pendingFrame: number | null = null;
+
+  /** 直近に適用した箱 [CSS px]。冪等ガードの比較元。 */
+  private appliedBox: { width: number; height: number } | null = null;
+
+  /** 箱を実際に適用した回数。**検証用**（冪等ガードが効いているかを外から数える）。 */
+  private resizeApplyCount = 0;
+
+  /**
+   * `ResizeObserver` から箱を一度でも受け取ったか。
+   *
+   * **受け取るまでは 1 フレームも描かない。** 構築時の下敷きのまま描くと、
+   * 潰れた絵が実際に画面へ出る（是正前の実測で 2 フレーム）。描かない間に見えるのは
+   * body の背景で、これはアプリが起動する前と同じ絵なので、ちらつきにならない。
+   */
+  private boxObserved = false;
 
   /** 描画面の大きさが変わったときに呼ぶ購読者。`LineMaterial.resolution` の更新に使う。 */
   private readonly resizeSubscribers: Array<(width: number, height: number) => void> = [];
@@ -99,9 +128,11 @@ export default class SceneManager {
     this.backgroundTexture = createBackgroundTexture();
     this.scene.background = this.backgroundTexture;
 
+    // 下敷きの値。正しいアスペクトは下の applyBox（と ResizeObserver）が入れる
     this.camera = new PerspectiveCamera(
       FIELD_OF_VIEW_DEG,
-      this.aspectRatio(),
+      computeBackingSize(container.clientWidth, container.clientHeight, window.devicePixelRatio)
+        .aspect,
       NEAR_PLANE,
       FAR_PLANE
     );
@@ -125,13 +156,37 @@ export default class SceneManager {
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(new OutputPass());
 
-    this.applySize();
+    // 初回の一撃。この時点の箱はまだ操作パネルを含まない可能性があるが、
+    // 直後に走る ResizeObserver の初回通知が正しい箱で上書きする。
+    // **正しさを持っているのは観測の側で、ここは 0 除算を避けるための下敷きである。**
+    this.applyBox(this.container.clientWidth, this.container.clientHeight);
     this.container.appendChild(this.renderer.domElement);
 
-    this.resizeListener = (): void => {
-      this.applySize();
-    };
-    window.addEventListener('resize', this.resizeListener);
+    // window の resize では足りない。今回の不整合は window が変わらないまま
+    // 容器だけが縮んだ（操作パネルが後から入った）ために起きた
+    this.resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+
+      if (entry === undefined) {
+        return;
+      }
+
+      const { width, height } = entry.contentRect;
+
+      // 適用は RAF に整列させる。通知の中で寸法を書くと、同じフレームで
+      // レイアウトを読み直すことになり layout thrash を招く
+      this.pendingBox = { width, height };
+      this.boxObserved = true;
+
+      if (this.pendingFrame === null) {
+        this.pendingFrame = requestAnimationFrame(() => {
+          this.pendingFrame = null;
+          this.flushPendingBox();
+        });
+      }
+    });
+
+    this.resizeObserver.observe(this.container);
   }
 
   /**
@@ -148,7 +203,13 @@ export default class SceneManager {
    */
   onResize(subscriber: (width: number, height: number) => void): void {
     this.resizeSubscribers.push(subscriber);
-    subscriber(this.container.clientWidth, this.container.clientHeight);
+
+    // 容器をここで測り直さない。**箱の値は applyBox が持つ 1 つだけ**にしておく
+    const box = this.appliedBox;
+
+    if (box !== null) {
+      subscriber(box.width, box.height);
+    }
   }
 
   /**
@@ -161,9 +222,18 @@ export default class SceneManager {
    */
   start(onFrame?: (deltaSeconds: number) => void): void {
     this.renderer.setAnimationLoop((time) => {
+      // **描く直前に**、観測された箱を反映する。ResizeObserver の通知は
+      // そのフレームの rAF より後に届くので、ここで拾わないと 1 フレーム遅れる
+      this.flushPendingBox();
+
       // 初回は前フレームが無いので 0 とする
       const deltaSeconds = this.lastFrameTimeMs === null ? 0 : (time - this.lastFrameTimeMs) / 1000;
       this.lastFrameTimeMs = time;
+
+      // 箱をまだ観測していないうちは描かない（上の boxObserved を参照）
+      if (!this.boxObserved) {
+        return;
+      }
 
       onFrame?.(deltaSeconds);
       this.composer.render(deltaSeconds);
@@ -201,6 +271,13 @@ export default class SceneManager {
   }
 
   /**
+   * これまでに箱を適用した回数。**検証用**（同じ箱の通知で増えないこと）。
+   */
+  get resizeCount(): number {
+    return this.resizeApplyCount;
+  }
+
+  /**
    * これまでに `composer.render()` を撃った回数。**検証用**
    * （書き出しが余分に撃つ回数を外から数える）。
    */
@@ -216,39 +293,83 @@ export default class SceneManager {
   /** リスナと GPU リソースを解放する。 */
   dispose(): void {
     this.stop();
-    window.removeEventListener('resize', this.resizeListener);
+    this.resizeObserver.disconnect();
+
+    if (this.pendingFrame !== null) {
+      cancelAnimationFrame(this.pendingFrame);
+      this.pendingFrame = null;
+    }
+
     this.composer.dispose();
     this.backgroundTexture.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
 
-  /** コンテナの縦横比。0 除算を避けるため高さ 0 のときは 1 とする。 */
-  private aspectRatio(): number {
-    const { clientWidth, clientHeight } = this.container;
+  /**
+   * 待機中の箱があれば、いま反映する。
+   *
+   * 予約してある RAF は取り消す（同じ箱を二度適用しても冪等ガードが弾くが、
+   * 取り消しておく方が意図が読める）。
+   */
+  private flushPendingBox(): void {
+    const box = this.pendingBox;
 
-    return clientHeight === 0 ? 1 : clientWidth / clientHeight;
+    if (box === null) {
+      return;
+    }
+
+    this.pendingBox = null;
+
+    if (this.pendingFrame !== null) {
+      cancelAnimationFrame(this.pendingFrame);
+      this.pendingFrame = null;
+    }
+
+    this.applyBox(box.width, box.height);
   }
 
-  /** コンテナの大きさをレンダラとカメラへ反映する。 */
-  private applySize(): void {
-    const { clientWidth, clientHeight } = this.container;
+  /**
+   * 観測された箱をレンダラ・カメラ・全パスへ反映する。
+   *
+   * **バッキングは常にこの箱から導かれる**（`computeBackingSize`）。
+   * 箱以外から寸法を作る経路を残さないのが、この関数を 1 本にしている理由である。
+   *
+   * @param boxWidth 容器の幅 [CSS px]
+   * @param boxHeight 容器の高さ [CSS px]
+   */
+  private applyBox(boxWidth: number, boxHeight: number): void {
+    // 冪等ガード。同じ箱で呼ばれたら何もしない（RAF ごとの無駄な再確保を避ける）
+    if (
+      this.appliedBox !== null &&
+      this.appliedBox.width === boxWidth &&
+      this.appliedBox.height === boxHeight
+    ) {
+      return;
+    }
 
-    const pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+    this.appliedBox = { width: boxWidth, height: boxHeight };
+    this.resizeApplyCount += 1;
+
+    const backing = computeBackingSize(boxWidth, boxHeight, window.devicePixelRatio);
+    // three の setSize は CSS 寸法 × pixelRatio を floor する。同じ結果になるよう
+    // pixelRatio を復元して渡す（バッキングの正解は computeBackingSize が持つ）
+    const pixelRatio = backing.width / boxWidth;
 
     this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(clientWidth, clientHeight, false);
+    this.renderer.setSize(boxWidth, boxHeight, false);
 
-    // composer のレンダーターゲットは renderer と別管理なので、同じ大きさへ揃える
+    // composer のレンダーターゲットは renderer と別管理なので、同じ大きさへ揃える。
+    // **ここを忘れると書き出しと画面の画素が食い違う**
     this.composer.setPixelRatio(pixelRatio);
-    this.composer.setSize(clientWidth, clientHeight);
-    this.bloomPass.setSize(clientWidth, clientHeight);
+    this.composer.setSize(boxWidth, boxHeight);
+    this.bloomPass.setSize(boxWidth, boxHeight);
 
-    this.camera.aspect = this.aspectRatio();
+    this.camera.aspect = backing.aspect;
     this.camera.updateProjectionMatrix();
 
     for (const subscriber of this.resizeSubscribers) {
-      subscriber(clientWidth, clientHeight);
+      subscriber(boxWidth, boxHeight);
     }
   }
 }
