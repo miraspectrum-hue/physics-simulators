@@ -20,6 +20,7 @@ import {
 } from './optics/tracer';
 import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
 import BandRenderer from './scene/BandRenderer';
+import { composeCapturePng } from './scene/captureComposite';
 import BeamRenderer from './scene/BeamRenderer';
 import FloorObject from './scene/FloorObject';
 import InteractionCtl from './scene/InteractionCtl';
@@ -1227,25 +1228,55 @@ function main(): void {
     );
   });
 
-  panel.onSavePng(() => {
-    // **ここから toDataURL までの間に await を挟まない**（同一同期タスクで撃つ。
-    // 描画バッファはブラウザが canvas を合成した時点で破棄される）
-    const dataUrl = sceneManager.captureDataUrl();
+  /**
+   * 画面に見えているとおりの PNG を作る（TASKS 6-6 段階5, PNG-1 + PNG-2）。
+   *
+   * **先頭の `captureDataUrl()` までに await を挟まない。** async 関数の本体は
+   * 最初の await までクリックと同じ同期タスクで走るので、3D はそこで撮り切れる。
+   * 描画バッファはブラウザが canvas を合成した時点で破棄されるため、
+   * 順序を入れ替えると空の画像になる。
+   *
+   * 撮り終えた文字列はもう描画バッファに依存しないので、そこから先の
+   * SVG のラスタ化は非同期でよい。断面図が消えていれば合成自体を行わず、
+   * 撮った文字列がそのまま出る（PNG-1 とビット同一）。
+   *
+   * @returns 書き出す data URL とファイル名
+   */
+  const buildCapturePng = async (): Promise<{ dataUrl: string; fileName: string }> => {
+    const snapshotDataUrl = sceneManager.captureDataUrl();
     const state = store.getState();
     const fileName = captureFileName({
       material: state.material,
       sourceAngleDeg: state.sourceAngleDeg,
     });
 
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = fileName;
-    // Firefox は文書に繋がっていない要素の click を無視する。付けて押して外す
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const dataUrl = await composeCapturePng({
+      snapshotDataUrl,
+      canvas: sceneManager.domElement,
+      // ライブの要素を渡すが、合成側が複製してから触る（画面の図は変わらない）
+      inset: sectionView.isVisible() ? sectionView.element : null,
+    });
 
-    panel.setShareStatus(`${fileName} を保存しました。`);
+    return { dataUrl, fileName };
+  };
+
+  panel.onSavePng(() => {
+    void buildCapturePng().then(
+      ({ dataUrl, fileName }) => {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        // Firefox は文書に繋がっていない要素の click を無視する。付けて押して外す
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        panel.setShareStatus(`${fileName} を保存しました。`);
+      },
+      () => {
+        panel.setShareStatus('画像を書き出せませんでした。');
+      }
+    );
   });
 
   panel.setRotationDeg(currentRotationDeg());
@@ -1315,6 +1346,9 @@ function main(): void {
       writeUrlNow,
       // 6-6 段階5 の検証用。同一同期タスクでの書き出しと、撃った描画回数
       capturePng: (): string => sceneManager.captureDataUrl(),
+      // PNG-2 の検証用。保存ボタンが通るのとまったく同じ経路（合成込み）
+      capturePngComposed: (): Promise<string> =>
+        buildCapturePng().then(({ dataUrl }) => dataUrl),
       renderCount: (): number => sceneManager.renderCount,
       resizeCount: (): number => sceneManager.resizeCount,
       canvas: sceneManager.domElement,
