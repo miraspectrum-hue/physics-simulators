@@ -1,5 +1,5 @@
 import { ALL_MATERIALS } from '../optics/constants';
-import type { MaterialName, MinimumDeviation } from '../types/optics';
+import type { MaterialName, MinimumDeviation, SpectrumMode } from '../types/optics';
 
 import { minimumDeviationOf } from './materialOptics';
 import {
@@ -50,6 +50,23 @@ const NOTICE_DURATION_MS = 6000;
 
 /** 共有セクションの平常時の案内。コピーの結果を出したあとはここへ戻る。 */
 const SHARE_STATUS_IDLE = 'アドレスバーの URL には今の状態が入っています。';
+
+/**
+ * スペクトル表示モードの選択肢（TASKS 4-3）。
+ *
+ * 並びは SPEC.md の画面構成モックどおり「連続 → 7 色」。`Array<{ mode: SpectrumMode }>`
+ * ではなく `SpectrumMode` を明示した組にしてあるので、モードを足したときに
+ * ここへの追記を忘れると選べない選択肢が生まれる（型では捕まらないため、
+ * 網羅は `SPECTRUM_MODE_CODES` 側の `Record` が受け持つ）。
+ */
+const SPECTRUM_MODE_OPTIONS: ReadonlyArray<{
+  readonly mode: SpectrumMode;
+  readonly label: string;
+  readonly id: string;
+}> = [
+  { mode: 'continuous', label: '連続 48 波長', id: 'spectrum-continuous' },
+  { mode: 'sevenColor', label: '7 色', id: 'spectrum-seven' },
+];
 
 /**
  * 右側の操作パネル（SPEC.md「画面構成」）。
@@ -109,6 +126,15 @@ export default class ControlPanel {
   private readonly savePngSubscribers: Array<() => void> = [];
 
   /** 共有の結果表示を消すためのタイマー。掲出中でなければ undefined。 */
+  /**
+   * スペクトル表示モードのラジオ。`value` は `SpectrumMode` の文字列。
+   *
+   * ネイティブの `input[type=radio]` を同じ `name` で束ねる。矢印キーでの移動も
+   * ロービング tabindex も読み上げの「2 個中 1 個」も**ブラウザが持っている**ので、
+   * `role="radio"` を手で組んで再実装しない（自前の実装はキーボード操作を落としやすい）。
+   */
+  private readonly spectrumRadios: readonly HTMLInputElement[];
+
   private shareStatusTimer: number | undefined;
 
   /** 一時表示を消すためのタイマー。掲出中でなければ undefined。 */
@@ -338,7 +364,14 @@ export default class ControlPanel {
     screenSection.append(distanceLabel, this.screenDistanceSlider, screenHint, focusButton);
     this.element.appendChild(screenSection);
 
-    // 表示セクション（SPEC.md「画面構成」の 表示）。計算に関わらない見せ方の切り替えを置く
+    // 表示セクション（SPEC.md「画面構成」の 表示）。ユーザーから見て「見せ方の選択」に
+    // あたるものを置く。
+    //
+    // **ただし内部での性質は一様ではない。** 断面図トグルは本当に描画だけの切り替えで、
+    // 光路の計算に一切影響しないので store を通さず `aria-pressed` が状態を持てる。
+    // 対してスペクトル表示モードは `traceSpectrum` に渡す波長列そのものを変える＝
+    // **計算の入力**なので、store の第 5 項目として持ち、`subscribe` → `markDirty` →
+    // 再追跡の一方向に乗せている（TASKS 4-3 の裁定③）。
     const viewSection = document.createElement('section');
     viewSection.className = 'control-panel__section';
 
@@ -346,6 +379,50 @@ export default class ControlPanel {
     viewLegend.className = 'control-panel__legend';
     viewLegend.textContent = '表示';
     viewSection.appendChild(viewLegend);
+
+    // スペクトル表示モード（TASKS 4-3）。パネルで唯一のラジオなので、
+    // `fieldset` + `legend` で群を明示したうえで `role="radiogroup"` も添える
+    const spectrumGroup = document.createElement('fieldset');
+    spectrumGroup.className = 'control-panel__radiogroup';
+    spectrumGroup.setAttribute('role', 'radiogroup');
+
+    const spectrumLegend = document.createElement('legend');
+    spectrumLegend.className = 'control-panel__radiolegend';
+    spectrumLegend.textContent = 'スペクトル';
+    spectrumGroup.appendChild(spectrumLegend);
+
+    this.spectrumRadios = SPECTRUM_MODE_OPTIONS.map(({ mode, label, id }) => {
+      const option = document.createElement('label');
+      option.className = 'control-panel__radio';
+      option.htmlFor = id;
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.id = id;
+      input.name = 'spectrum-mode';
+      input.value = mode;
+      input.className = 'control-panel__radioinput';
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          store.update({ spectrumMode: mode });
+        }
+      });
+
+      const text = document.createElement('span');
+      text.textContent = label;
+
+      option.append(input, text);
+      spectrumGroup.appendChild(option);
+
+      return input;
+    });
+
+    const spectrumHint = document.createElement('p');
+    spectrumHint.className = 'control-panel__hint';
+    spectrumHint.textContent =
+      '7 色は代表 7 波長だけを追跡します。見せ方の選択ですが、光路は選んだ波長で計算し直します。';
+
+    viewSection.append(spectrumGroup, spectrumHint);
 
     // トグルボタン。押されている状態は aria-pressed が持ち、見た目はそれに従う
     // （状態を色だけで伝えると読み上げに届かない）
@@ -679,6 +756,16 @@ export default class ControlPanel {
     }
     this.exaggerationValue.textContent =
       state.exaggeration === 1 ? '×1（実物理）' : `×${exaggerationText}`;
+
+    // 共有 URL の復元・hashchange もここを通る（store.update → subscribe → render）。
+    // `checked` への代入は change を発火しないので、自分の通知で自分を呼び戻さない
+    for (const radio of this.spectrumRadios) {
+      const selected = radio.value === state.spectrumMode;
+
+      if (radio.checked !== selected) {
+        radio.checked = selected;
+      }
+    }
 
     const distanceText = state.screenDistance.toFixed(1);
     if (this.screenDistanceSlider.value !== distanceText) {

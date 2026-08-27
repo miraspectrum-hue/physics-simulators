@@ -171,6 +171,52 @@ body {
   cursor: not-allowed;
 }
 
+/*
+ * スペクトル表示モードのラジオ（TASKS 4-3）。パネル唯一のラジオ。
+ *
+ * 意味論と操作（矢印キー・ロービング tabindex・読み上げ）はネイティブの
+ * input[type=radio] のままにし、CSS は見た目だけを断面図トグルへ揃える。
+ * ラジオの丸を消して押しボタン風にすると「1 つだけ選ぶ」ことが見た目から
+ * 消えるので、丸は残したままアクセントで塗る。
+ */
+.control-panel__radiogroup {
+  margin: 0 0 10px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--color-panel-border);
+  border-radius: 4px;
+}
+
+.control-panel__radiolegend {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.control-panel__radio {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.control-panel__radioinput {
+  margin: 0;
+  /* 丸の色。ダークテーマの既定は灰色に沈むのでアクセントに合わせる */
+  accent-color: var(--color-accent);
+}
+
+/* 選ばれている行だけ文字色をアクセントへ。断面図トグルの押下状態と同じ扱い */
+.control-panel__radio:has(.control-panel__radioinput:checked) {
+  color: var(--color-accent);
+}
+
+.control-panel__radioinput:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .control-panel__select {
   width: 100%;
   margin-bottom: 6px;
