@@ -44,26 +44,15 @@ export default class BeamRenderer {
   /** シーンに追加するノード。 */
   readonly object: LineSegments2;
 
-  private readonly geometry: LineSegmentsGeometry;
+  /**
+   * マテリアルは**貼り替えても持ち回る**。`setResolution` が書き込む先がここなので、
+   * 作り直すと `SceneManager.onResize` の購読が古いマテリアルを指したまま残り、
+   * リサイズで線幅が崩れる（4-3 の罠 (a)）。
+   */
   private readonly material: LineMaterial;
 
-  /** 追跡する波長の本数。`update` に渡す光路の本数と一致していなければならない。 */
-  private readonly pathCount: number;
-
-  /** 位置バッファの実体。`setPositions` が Float32Array をそのまま包むので、これが GPU 側の中身になる。 */
-  private readonly positions: Float32Array;
-
-  /** 位置属性が載るインターリーブバッファ。更新の合図はここへ立てる。 */
-  private readonly positionBuffer: InterleavedBufferAttribute['data'];
-
-  /** 波長ごとの基準色（作業色空間）。強度を掛ける前の値で、構築後は変わらない。 */
-  private readonly baseColors: Float32Array;
-
-  /** 頂点色バッファの実体。毎フレーム「基準色 × 強度」で書き換える。 */
-  private readonly colors: Float32Array;
-
-  /** 頂点色属性が載るインターリーブバッファ。 */
-  private readonly colorBuffer: InterleavedBufferAttribute['data'];
+  /** 波長の本数に依存する持ち物。モードを切り替えるとまとめて貼り替わる。 */
+  private slots: BeamSlots;
 
   /** 表示用の強度写像。既定は恒等＝実物理そのまま。 */
   private readonly shapeIntensity: IntensityShaping | undefined;
@@ -73,21 +62,8 @@ export default class BeamRenderer {
    * @param shapeIntensity 表示用の強度写像（非物理の演出）。省略すると実物理の強度で描く
    */
   constructor(wavelengths: readonly number[], shapeIntensity?: IntensityShaping) {
-    this.pathCount = wavelengths.length;
     this.shapeIntensity = shapeIntensity;
-
-    const bufferLength = beamBufferLength(this.pathCount);
-    this.positions = new Float32Array(bufferLength);
-    this.baseColors = createBaseColors(wavelengths);
-    this.colors = new Float32Array(bufferLength);
-
-    this.geometry = new LineSegmentsGeometry();
-    // 属性の確立。位置も色も初期値ゼロで枠だけ作り、中身は最初の update() が書く
-    this.geometry.setPositions(this.positions);
-    this.geometry.setColors(this.colors);
-
-    this.positionBuffer = extractInterleavedBuffer(this.geometry, 'instanceStart');
-    this.colorBuffer = extractInterleavedBuffer(this.geometry, 'instanceColorStart');
+    this.slots = createSlots(wavelengths);
 
     this.material = new LineMaterial({
       vertexColors: true,
@@ -97,7 +73,7 @@ export default class BeamRenderer {
       depthWrite: false,
     });
 
-    this.object = new LineSegments2(this.geometry, this.material);
+    this.object = new LineSegments2(this.slots.geometry, this.material);
     // ガラスより後に加算する。前に描くとガラスの通常ブレンドに減光される
     this.object.renderOrder = RENDER_ORDER.beam;
     // 自前でバッファを書き換えるとバウンディングが古いままになるため、カリングを切る
@@ -111,16 +87,44 @@ export default class BeamRenderer {
    * @throws {RangeError} 本数が構築時の波長数と一致しない場合
    */
   update(paths: readonly LightPath[]): void {
-    if (paths.length !== this.pathCount) {
+    const slots = this.slots;
+
+    if (paths.length !== slots.pathCount) {
       throw new RangeError(
-        `光路の本数が一致しません（期待 ${this.pathCount} / 実際 ${paths.length}）`
+        `光路の本数が一致しません（期待 ${slots.pathCount} / 実際 ${paths.length}）`
       );
     }
 
-    packSegmentPositions(paths, this.positions);
-    packSegmentColors(paths, this.baseColors, this.colors, this.shapeIntensity);
-    this.positionBuffer.needsUpdate = true;
-    this.colorBuffer.needsUpdate = true;
+    packSegmentPositions(paths, slots.positions);
+    packSegmentColors(paths, slots.baseColors, slots.colors, this.shapeIntensity);
+    slots.positionBuffer.needsUpdate = true;
+    slots.colorBuffer.needsUpdate = true;
+  }
+
+  /**
+   * 波長の並びを差し替える（TASKS 4-3）。
+   *
+   * **作り直すのは本数に依存するジオメトリだけである。** `object`・`material`・
+   * シーンへの所属・`renderOrder`・`frustumCulled` はそのまま持ち回るので、
+   * 呼び出し側は再追加も再購読も要らない。全部作り直す方式だと
+   * `SceneManager.onResize` の購読口が無く、リサイズで線幅が崩れる。
+   *
+   * 7 色は連続 48 の部分集合ではないので、基準色も含めて計算し直す。
+   * 旧ジオメトリはここで `dispose()` する（貼り替えのたびに GPU バッファが残らない）。
+   *
+   * @param wavelengths 新しい波長の並び [nm]
+   */
+  setWavelengths(wavelengths: readonly number[]): void {
+    const previous = this.slots;
+
+    this.slots = createSlots(wavelengths);
+    this.object.geometry = this.slots.geometry;
+    previous.geometry.dispose();
+  }
+
+  /** 現在の波長の本数。**検証用**（貼り替えが効いたかを外から数える）。 */
+  get pathCount(): number {
+    return this.slots.pathCount;
   }
 
   /**
@@ -138,9 +142,58 @@ export default class BeamRenderer {
 
   /** ジオメトリとマテリアルを解放する。 */
   dispose(): void {
-    this.geometry.dispose();
+    this.slots.geometry.dispose();
     this.material.dispose();
   }
+}
+
+/**
+ * 波長の本数に依存する持ち物。**まとめて差し替わる**ので 1 つの塊にしてある
+ * （どれか 1 つだけ貼り替えると本数が食い違い、`update` の検査をすり抜けて壊れる）。
+ */
+interface BeamSlots {
+  /** 追跡する波長の本数。`update` に渡す光路の本数と一致していなければならない。 */
+  readonly pathCount: number;
+  /** 位置バッファの実体。`setPositions` が Float32Array をそのまま包むので、これが GPU 側の中身になる。 */
+  readonly positions: Float32Array;
+  /** 位置属性が載るインターリーブバッファ。更新の合図はここへ立てる。 */
+  readonly positionBuffer: InterleavedBufferAttribute['data'];
+  /** 波長ごとの基準色（作業色空間）。強度を掛ける前の値。 */
+  readonly baseColors: Float32Array;
+  /** 頂点色バッファの実体。毎フレーム「基準色 × 強度」で書き換える。 */
+  readonly colors: Float32Array;
+  /** 頂点色属性が載るインターリーブバッファ。 */
+  readonly colorBuffer: InterleavedBufferAttribute['data'];
+  /** 上のバッファを載せたジオメトリ。 */
+  readonly geometry: LineSegmentsGeometry;
+}
+
+/**
+ * 波長の並びから、本数に依存する持ち物一式を作る。
+ *
+ * @param wavelengths 波長の並び [nm]
+ * @returns 貼り替え単位の持ち物
+ */
+function createSlots(wavelengths: readonly number[]): BeamSlots {
+  const pathCount = wavelengths.length;
+  const bufferLength = beamBufferLength(pathCount);
+  const positions = new Float32Array(bufferLength);
+  const colors = new Float32Array(bufferLength);
+  const geometry = new LineSegmentsGeometry();
+
+  // 属性の確立。位置も色も初期値ゼロで枠だけ作り、中身は最初の update() が書く
+  geometry.setPositions(positions);
+  geometry.setColors(colors);
+
+  return {
+    pathCount,
+    positions,
+    positionBuffer: extractInterleavedBuffer(geometry, 'instanceStart'),
+    baseColors: createBaseColors(wavelengths),
+    colors,
+    colorBuffer: extractInterleavedBuffer(geometry, 'instanceColorStart'),
+    geometry,
+  };
 }
 
 /**

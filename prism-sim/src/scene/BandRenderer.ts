@@ -53,42 +53,17 @@ export default class BandRenderer {
   /** シーンに追加するノード。 */
   readonly object: Mesh;
 
-  private readonly geometry: BufferGeometry;
+  /** マテリアルは貼り替えても持ち回る（`object` の同一性と合わせて保つ）。 */
   private readonly material: MeshBasicMaterial;
 
-  /** 四角形の枠数。波長数 − 1。 */
-  private readonly quadCount: number;
-
-  /** 位置バッファの実体。 */
-  private readonly positions: Float32Array;
-
-  private readonly positionAttribute: BufferAttribute;
-
-  /** 枠ごとの基準色（作業色空間）。強度を掛ける前の値で、構築後は変わらない。 */
-  private readonly baseColors: Float32Array;
-
-  /** 頂点色バッファの実体。毎フレーム「基準色 × 強度」で書き換える。 */
-  private readonly colors: Float32Array;
-
-  private readonly colorAttribute: BufferAttribute;
+  /** 波長の本数に依存する持ち物。モードを切り替えるとまとめて貼り替わる。 */
+  private slots: BandSlots;
 
   /**
    * @param wavelengths 描画する波長の並び [nm]。色はここから構築時に一度だけ決まる
    */
   constructor(wavelengths: readonly number[]) {
-    this.quadCount = Math.max(wavelengths.length - 1, 0);
-
-    const vertexCount = this.quadCount * VERTICES_PER_QUAD;
-    this.positions = new Float32Array(vertexCount * COMPONENTS_PER_VERTEX);
-    this.positionAttribute = new BufferAttribute(this.positions, COMPONENTS_PER_VERTEX);
-
-    this.baseColors = createBandColorBuffer(wavelengths);
-    this.colors = new Float32Array(this.baseColors.length);
-    this.colorAttribute = new BufferAttribute(this.colors, COMPONENTS_PER_VERTEX);
-
-    this.geometry = new BufferGeometry();
-    this.geometry.setAttribute('position', this.positionAttribute);
-    this.geometry.setAttribute('color', this.colorAttribute);
+    this.slots = createSlots(wavelengths);
 
     this.material = new MeshBasicMaterial({
       vertexColors: true,
@@ -98,7 +73,7 @@ export default class BandRenderer {
       side: DoubleSide,
     });
 
-    this.object = new Mesh(this.geometry, this.material);
+    this.object = new Mesh(this.slots.geometry, this.material);
     this.object.renderOrder = RENDER_ORDER.screenBand;
     // 自前でバッファを書き換えるためバウンディングが古くなる。カリングを切る
     this.object.frustumCulled = false;
@@ -115,13 +90,15 @@ export default class BandRenderer {
    * @throws {RangeError} 投影結果の本数が構築時の波長数と一致しない場合
    */
   update(hits: readonly (ScreenHit | null)[], screen: ScreenPlane): void {
-    if (hits.length !== this.quadCount + 1) {
+    const { quadCount, positionAttribute, colorAttribute } = this.slots;
+
+    if (hits.length !== quadCount + 1) {
       throw new RangeError(
-        `投影結果の本数が一致しません（期待 ${this.quadCount + 1} / 実際 ${hits.length}）`
+        `投影結果の本数が一致しません（期待 ${quadCount + 1} / 実際 ${hits.length}）`
       );
     }
 
-    for (let quadIndex = 0; quadIndex < this.quadCount; quadIndex += 1) {
+    for (let quadIndex = 0; quadIndex < quadCount; quadIndex += 1) {
       const near = hits[quadIndex];
       const far = hits[quadIndex + 1];
 
@@ -134,13 +111,34 @@ export default class BandRenderer {
       this.writeQuad(quadIndex, screen, near, far);
     }
 
-    this.positionAttribute.needsUpdate = true;
-    this.colorAttribute.needsUpdate = true;
+    positionAttribute.needsUpdate = true;
+    colorAttribute.needsUpdate = true;
+  }
+
+  /**
+   * 波長の並びを差し替える（TASKS 4-3）。
+   *
+   * 作り直すのは四角形の枚数に依存するジオメトリだけで、`object`・`material`・
+   * シーンへの所属・`renderOrder` はそのまま持ち回る。旧ジオメトリはここで解放する。
+   *
+   * @param wavelengths 新しい波長の並び [nm]
+   */
+  setWavelengths(wavelengths: readonly number[]): void {
+    const previous = this.slots;
+
+    this.slots = createSlots(wavelengths);
+    this.object.geometry = this.slots.geometry;
+    previous.geometry.dispose();
+  }
+
+  /** 現在の四角形の枚数。**検証用**（貼り替えが効いたかを外から数える）。 */
+  get quadCount(): number {
+    return this.slots.quadCount;
   }
 
   /** ジオメトリとマテリアルを解放する。 */
   dispose(): void {
-    this.geometry.dispose();
+    this.slots.geometry.dispose();
     this.material.dispose();
   }
 
@@ -200,9 +198,9 @@ export default class BandRenderer {
     for (let vertex = 0; vertex < VERTICES_PER_QUAD; vertex += 1) {
       const intensity = QUAD_VERTEX_IS_FAR[vertex] === true ? farIntensity : nearIntensity;
 
-      this.colors[offset] = (this.baseColors[offset] ?? 0) * intensity;
-      this.colors[offset + 1] = (this.baseColors[offset + 1] ?? 0) * intensity;
-      this.colors[offset + 2] = (this.baseColors[offset + 2] ?? 0) * intensity;
+      this.slots.colors[offset] = (this.slots.baseColors[offset] ?? 0) * intensity;
+      this.slots.colors[offset + 1] = (this.slots.baseColors[offset + 1] ?? 0) * intensity;
+      this.slots.colors[offset + 2] = (this.slots.baseColors[offset + 2] ?? 0) * intensity;
       offset += COMPONENTS_PER_VERTEX;
     }
   }
@@ -233,12 +231,53 @@ export default class BandRenderer {
    * @returns 次の書き込み位置
    */
   private writeVertex(offset: number, point: { x: number; y: number; z: number }): number {
-    this.positions[offset] = point.x;
-    this.positions[offset + 1] = point.y;
-    this.positions[offset + 2] = point.z;
+    this.slots.positions[offset] = point.x;
+    this.slots.positions[offset + 1] = point.y;
+    this.slots.positions[offset + 2] = point.z;
 
     return offset + COMPONENTS_PER_VERTEX;
   }
+}
+
+/**
+ * 波長の本数に依存する持ち物。**まとめて差し替わる**ので 1 つの塊にしてある
+ * （どれか 1 つだけ貼り替えると枚数が食い違い、`update` の検査をすり抜けて壊れる）。
+ */
+interface BandSlots {
+  /** 四角形の枠数。波長数 − 1。 */
+  readonly quadCount: number;
+  /** 位置バッファの実体。 */
+  readonly positions: Float32Array;
+  readonly positionAttribute: BufferAttribute;
+  /** 枠ごとの基準色（作業色空間）。強度を掛ける前の値。 */
+  readonly baseColors: Float32Array;
+  /** 頂点色バッファの実体。毎フレーム「基準色 × 強度」で書き換える。 */
+  readonly colors: Float32Array;
+  readonly colorAttribute: BufferAttribute;
+  /** 上の属性を載せたジオメトリ。 */
+  readonly geometry: BufferGeometry;
+}
+
+/**
+ * 波長の並びから、本数に依存する持ち物一式を作る。
+ *
+ * @param wavelengths 波長の並び [nm]
+ * @returns 貼り替え単位の持ち物
+ */
+function createSlots(wavelengths: readonly number[]): BandSlots {
+  const quadCount = Math.max(wavelengths.length - 1, 0);
+  const vertexCount = quadCount * VERTICES_PER_QUAD;
+  const positions = new Float32Array(vertexCount * COMPONENTS_PER_VERTEX);
+  const positionAttribute = new BufferAttribute(positions, COMPONENTS_PER_VERTEX);
+  const baseColors = createBandColorBuffer(wavelengths);
+  const colors = new Float32Array(baseColors.length);
+  const colorAttribute = new BufferAttribute(colors, COMPONENTS_PER_VERTEX);
+  const geometry = new BufferGeometry();
+
+  geometry.setAttribute('position', positionAttribute);
+  geometry.setAttribute('color', colorAttribute);
+
+  return { quadCount, positions, positionAttribute, baseColors, colors, colorAttribute, geometry };
 }
 
 /**

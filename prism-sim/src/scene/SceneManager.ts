@@ -285,6 +285,17 @@ export default class SceneManager {
     return this.renderCallCount;
   }
 
+  /**
+   * WebGL が抱えているジオメトリ・テクスチャの数。**検証用**
+   * （4-3 の貼り替えで旧ジオメトリが解放されているかを外から数える）。
+   */
+  get memoryInfo(): { geometries: number; textures: number } {
+    return {
+      geometries: this.renderer.info.memory.geometries,
+      textures: this.renderer.info.memory.textures,
+    };
+  }
+
   /** 描画ループを停止する。 */
   stop(): void {
     this.renderer.setAnimationLoop(null);

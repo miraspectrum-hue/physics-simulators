@@ -21,6 +21,7 @@ import {
 import { dot, negate, normalize, sub, vec3 } from './optics/vec3';
 import BandRenderer from './scene/BandRenderer';
 import { composeCapturePng } from './scene/captureComposite';
+import { wavelengthsForMode } from './optics/spectrumMode';
 import BeamRenderer from './scene/BeamRenderer';
 import FloorObject from './scene/FloorObject';
 import InteractionCtl from './scene/InteractionCtl';
@@ -58,6 +59,7 @@ import type {
   MaterialName,
   PrismMaterial,
   Ray,
+  SpectrumMode,
   Vec3,
 } from './types/optics';
 import { animateAngle } from './ui/animateAngle';
@@ -551,7 +553,6 @@ function main(): void {
   const worldToLocal = new Matrix4().copy(localToWorld).invert();
 
   const solid = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
-  const wavelengths = sampleWavelengths(CONTINUOUS_SAMPLE_COUNT);
 
   // 光源はプリズムから独立してワールドに存在する。狙点と入射角の基準は「意図した既定姿勢」から
   // 起動時に一度だけ導出して凍結する。以後プリズムを動かしても、この 2 つは追従しない
@@ -571,6 +572,11 @@ function main(): void {
   const entryNormalAngleDeg = currentEntryNormalAngleDeg();
 
   const store = createStore();
+
+  // 描画に使う波長列は表示モードが決める（TASKS 4-3）。切替のたびに貼り替わるので
+  // const にはできない。`traceWorldPaths` などはこの束縛を閉じ込めて読む
+  let wavelengths = wavelengthsForMode(store.getState().spectrumMode);
+
   const panel = new ControlPanel(document.body, store);
   const overlay = new InfoOverlay(container);
 
@@ -783,11 +789,12 @@ function main(): void {
     const measured = measuredIncidenceDeg(localRay, solid);
 
     // 情報バーの主役は「物理の事実」なので、n と δ は誇張を掛けない m=1 で別に追跡する。
-    // 2 波長ぶんなので描画用の 48 波長に比べれば無視できる
+    // **描画の波長列とは独立**なので、スペクトル表示モードを切り替えても
+    // n・δ・分離幅は 1 ビットも動かない（全反射の本数だけが実本数に追従する）
     const referenceWavelengths = [REPORT_RED_NM, REPORT_VIOLET_NM];
     const physicalPaths = traceSpectrum(localRay, solid, material, referenceWavelengths);
 
-    // 描画側の分離幅も同じ 2 波長で測る。48 サンプルの両端（380/750nm）で測ると
+    // 描画側の分離幅も同じ 2 波長で測る。サンプル列の両端（連続なら 380/750nm）で測ると
     // 実物理の値と波長範囲が食い違い、括弧内の比較が成り立たなくなる
     const drawnPaths =
       state.exaggeration === 1
@@ -889,6 +896,44 @@ function main(): void {
     onBeamsRefreshed();
   };
 
+  /**
+   * 直近に各レンダラへ渡した表示モード（TASKS 4-3・裁定④）。
+   *
+   * **貼り替えは遷移のときだけ行う。** モード → 波長列は関数なので、モードが同じなら
+   * 波長列も同じである。ここを毎 dirty フレームで撃つと、切替と無関係な操作の
+   * たびにジオメトリを捨てて作り直すことになる（`SceneManager.applyBox` の
+   * 冪等ガードと同じ作法）。
+   */
+  let appliedSpectrumMode = store.getState().spectrumMode;
+
+  /**
+   * 表示モードの遷移を 4 つのレンダラへ反映する。
+   *
+   * 貼り替えるのは本数に依存するジオメトリだけで、`object` もマテリアルも
+   * シーンへの所属も `SceneManager.onResize` の購読も、断面図の DOM と凍結した
+   * ビューポートもそのまま残る。だから再追加も再購読も再フィットも要らない。
+   *
+   * @param mode 新しい表示モード
+   */
+  const applySpectrumMode = (mode: SpectrumMode): void => {
+    if (mode === appliedSpectrumMode) {
+      return;
+    }
+
+    appliedSpectrumMode = mode;
+    wavelengths = wavelengthsForMode(mode);
+
+    beams.setWavelengths(wavelengths);
+    reflectionBeams.setWavelengths(wavelengths);
+    band.setWavelengths(wavelengths);
+    sectionView.setWavelengths(wavelengths);
+
+    markDirty();
+  };
+
+  store.subscribe((state) => {
+    applySpectrumMode(state.spectrumMode);
+  });
   store.subscribe(markDirty);
 
   // ギズモはプリズムの matrixWorld を直接動かす。姿勢の変化を dirty に流すだけでよい
@@ -1325,7 +1370,22 @@ function main(): void {
       band: band.object,
       beams: beams.object,
       reflectionBeams: reflectionBeams.object,
-      wavelengths,
+      // モード切替で貼り替わるので値の写しではなくゲッターにする（TASKS 4-3）
+      get wavelengths(): readonly number[] {
+        return wavelengths;
+      },
+      spectrumMode: (): SpectrumMode => store.getState().spectrumMode,
+      setSpectrumMode: (mode: SpectrumMode): void => {
+        store.update({ spectrumMode: mode });
+      },
+      memoryInfo: (): { geometries: number; textures: number } => sceneManager.memoryInfo,
+      // 4-3 段階2b の検証用。3 系統が同じ本数へ貼り替わったことを外から数える
+      rendererCounts: (): { beam: number; reflection: number; band: number; section: number } => ({
+        beam: beams.pathCount,
+        reflection: reflectionBeams.pathCount,
+        band: band.quadCount,
+        section: sectionView.rayLineCount(),
+      }),
       // オラクル①-a 用。描画バッファとは独立に traceSpectrum を回して強度を取り直せる
       tracePaths: (): readonly LightPath[] => traceWorldPaths(store.getState()),
       // 6-2 段階4 の検証用。着地の値と、遷移が生きているかを外から読む

@@ -161,8 +161,15 @@ export default class SectionView {
 
   private readonly incidentLine: SVGPolylineElement;
 
-  /** 波長ごとの折れ線（内部区間 + 射出区間）。本数は構築時に決まり増減しない。 */
-  private readonly rayLines: readonly SVGPolylineElement[];
+  /**
+   * 波長ごとの折れ線（内部区間 + 射出区間）。
+   *
+   * **本数はスペクトル表示モードで変わる**（TASKS 4-3）。貼り替えるのはこの並びだけで、
+   * `element`・凍結した `transform`・三角形・弧・δ ラベルはそのまま持ち回る。
+   * 特に `transform` を作り直すと、現在の姿勢で再フィットして**モードを切り替えた
+   * だけで断面図の枠が動く**という回帰になる。
+   */
+  private rayLines: readonly SVGPolylineElement[];
 
   /** 構築時に凍結したビューポート。以後 `fitViewport` は呼ばない。 */
   private readonly transform: ViewportTransform;
@@ -223,12 +230,8 @@ export default class SectionView {
     // 波長ごとの色は 3D と同じ源（`wavelengthToRgb`）から引く。BeamRenderer は同じ値を
     // WebGL の作業色空間へ変換して使っており、SVG に要るのは変換前の sRGB そのもの
     this.rayLines = wavelengths.map((wavelengthNm) => {
-      const line = document.createElementNS(SVG_NS, 'polyline');
+      const line = createRayLine(wavelengthNm);
 
-      line.setAttribute('fill', 'none');
-      line.setAttribute('stroke', cssColor(wavelengthNm));
-      line.setAttribute('stroke-width', '1');
-      line.setAttribute('stroke-linejoin', 'round');
       this.element.appendChild(line);
 
       return line;
@@ -359,6 +362,33 @@ export default class SectionView {
 
     this.drawRays(plane, paths);
     this.drawAnnotation(plane, paths, annotation);
+  }
+
+  /**
+   * 波長の並びを差し替える（TASKS 4-3）。
+   *
+   * 入れ替えるのは光線の折れ線だけである。新しい線は**入射光より前**に差し込む。
+   * 末尾へ足すと注記の上に光線が乗り、可読性パスで作った重なり順が壊れる。
+   *
+   * @param wavelengths 新しい波長の並び [nm]
+   */
+  setWavelengths(wavelengths: readonly number[]): void {
+    for (const line of this.rayLines) {
+      line.remove();
+    }
+
+    this.rayLines = wavelengths.map((wavelengthNm) => {
+      const line = createRayLine(wavelengthNm);
+
+      this.element.insertBefore(line, this.incidentLine);
+
+      return line;
+    });
+  }
+
+  /** 現在の折れ線の本数。**検証用**（貼り替えが効いたかを外から数える）。 */
+  rayLineCount(): number {
+    return this.rayLines.length;
   }
 
   /** 要素を親から外す。 */
@@ -701,6 +731,26 @@ function applyLabelColor(label: SVGTextElement, fill: string): void {
   label.setAttribute('stroke-width', String(LABEL_HALO_WIDTH_PX));
   label.setAttribute('stroke-linejoin', 'round');
   label.setAttribute('paint-order', 'stroke');
+}
+
+/**
+ * 波長 1 つぶんの折れ線を作る（親には入れない）。
+ *
+ * 波長ごとの色は 3D と同じ源から引く。`BeamRenderer` は同じ値を WebGL の作業色空間へ
+ * 変換して使っており、SVG に要るのは変換前の sRGB そのものである。
+ *
+ * @param wavelengthNm 波長 [nm]
+ * @returns 折れ線の要素
+ */
+function createRayLine(wavelengthNm: number): SVGPolylineElement {
+  const line = document.createElementNS(SVG_NS, 'polyline');
+
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', cssColor(wavelengthNm));
+  line.setAttribute('stroke-width', '1');
+  line.setAttribute('stroke-linejoin', 'round');
+
+  return line;
 }
 
 /**
