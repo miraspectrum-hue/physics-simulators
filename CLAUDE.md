@@ -14,7 +14,7 @@
 | 3D | Three.js 0.185.1 + @types/three 0.185.4（WebGL2） |
 | ビルド | Vite 8.2.1 |
 | スタイル | 素の CSS（CSS Variables でテーマ管理、CSS フレームワーク不使用） |
-| テスト | Vitest 4.1.10（**DOM・WebGL に触れない純粋ロジックが対象**。`src/optics/` の全体、Three の数学（`Matrix4` / `Vector3`）のみに依存する `src/scene/` の純粋関数、`src/ui/store.ts` のような状態ロジックを含む。シーングラフ・DOM を触るモジュールは対象外） |
+| テスト | Vitest 4.1.10（+ jsdom 29.1.1）。**対象の境界は下の「テスト方針」節で定める** |
 | パッケージ管理 | npm |
 | 実行環境 | Chrome 最新版 / デスクトップ |
 
@@ -51,8 +51,43 @@ prism-sim/
 │   └── styles/
 │       └── main.css
 └── tests/
-    └── optics/                  # dispersion / convexSolid / tracer / fresnel のテスト
+    ├── optics/                  # dispersion / convexSolid / tracer / fresnel のテスト
+    ├── scene/                   # scene 層の純粋関数。svgRaster.test.ts のみ jsdom
+    └── ui/                      # store / shareUrl 等。ControlPanel.test.ts のみ jsdom
 ```
+
+## テスト方針（Vitest と CDP の境界）
+
+テストは 2 層に分ける。**どちらに置くかは「DOM を触るか」ではなく「決定論的に速く回せるか」で決める。**
+
+### Vitest（`prism-sim/tests/`）
+
+| 環境 | 対象 |
+|------|------|
+| `node`（既定） | 純粋ロジック。`src/optics/` の全体、Three の数学（`Matrix4` / `Vector3`）のみに依存する `src/scene/` の純粋関数、`src/ui/store.ts` のような状態ロジック |
+| `jsdom` | **DOM の構造・状態束縛ロジック**。属性・要素の組み立て、UI ⇄ store の双方向、a11y の意味論（`role` / `name` / `legend`） |
+
+- jsdom を使うファイルは**先頭に `// @vitest-environment jsdom` を書く**。環境はファイル単位で
+  切り替わるので、他は `node` のままにしておく（全体を jsdom にはしない）
+- 現在 jsdom 節に属するのは 2 ファイルだけである
+  - `tests/scene/svgRaster.test.ts` —— ラスタ化の前に SVG へ焼き込む属性（PNG-2）
+  - `tests/ui/ControlPanel.test.ts` —— スペクトルラジオ ⇄ store の双方向（4-3）
+- **jsdom でも WebGL と実レイアウトには触れない。** `getBoundingClientRect` は 0 を返し CSS も
+  効かないので、見た目・寸法・画素を jsdom で確かめようとしてはいけない（それは CDP 側の仕事）
+- 同じ id を持つ要素を何度も組み立てるテストでは `beforeEach` で DOM を掃く。jsdom の `#id`
+  セレクタは `getElementById` に落ちるため、id が重複すると要素に限定した検索が外を拾う
+
+### CDP（開発サーバ + Chrome DevTools Protocol の使い捨てスクリプト）
+
+- 実描画・画素比較・実レイアウト（`getBoundingClientRect` / `devicePixelRatio` / リサイズ）
+- `main.ts` の配線を含む end-to-end（共有 URL の復元、`hashchange`、キーボード操作、console エラー 0）
+- ビーム位置指紋。**指紋を報告するときは測定 URL とモードを必ず併記する**
+
+### この節の経緯
+
+`ControlPanel.ts` は当初「シーングラフ・DOM を触るモジュールは Vitest 対象外」として除外していたが、
+PNG-2 で jsdom を devDependency に入れた時点でこの方針へ更新した（2026-08-27、4-3）。
+描画を伴わない DOM 束縛は決定論的で速く、CDP に置くと回帰検知が人手に依存するためである。
 
 ## コーディング規約
 
