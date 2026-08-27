@@ -175,6 +175,18 @@ export interface ConvexSolidHit {
  */
 export type MaterialName = 'BK7' | 'SF10' | '水' | 'ダイヤモンド';
 
+/**
+ * スペクトルの表示モード（SPEC.md「F-24」・TASKS 4-3）。
+ *
+ * 決めるのは**波長サンプル列だけ**である。レンダラの種別は変わらず、両モードとも
+ * 同じ `LightPath[]` パイプラインを通る。7 色は連続 48 の部分集合ではなく別の値列
+ * （660/610/580/510/480/450/410nm）なので、切り替えは再サンプリングを伴う。
+ *
+ * `MaterialName` と同じくユニオンにしておくことで、モードを足したときに
+ * `SPECTRUM_MODE_CODES` などの `Record<SpectrumMode, …>` への登録をコンパイラが要求する。
+ */
+export type SpectrumMode = 'continuous' | 'sevenColor';
+
 export interface PrismMaterial {
   /** 表示名。レコードのキーと一致する */
   readonly name: MaterialName;

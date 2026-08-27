@@ -12,7 +12,7 @@ import {
   SOURCE_ANGLE_MAX_DEG,
   SCREEN_DISTANCE_MIN,
 } from '../../src/ui/store';
-import type { MaterialName } from '../../src/types/optics';
+import type { MaterialName, SpectrumMode } from '../../src/types/optics';
 
 /**
  * src/ui/shareUrl.ts の受け入れ条件（状態 ↔ URL 断片）。
@@ -50,7 +50,8 @@ const SAMPLE: ShareableState = {
     exaggeration: 3,
     material: 'SF10',
     screenDistance: 12.5,
-    },
+    spectrumMode: 'sevenColor',
+  },
   prismRotationDeg: -47.5,
   prismX: 1.25,
   prismY: -0.75,
@@ -115,14 +116,17 @@ describe('6-6 段階1 A: 往復', () => {
 });
 
 describe('6-6 段階1 B: 既定の省略', () => {
-  it('既定の状態は v だけになる', () => {
+  it('既定の状態は v と spec だけになる', () => {
     // Arrange & Act
     const fragment = encodeUrl(DEFAULT_SHAREABLE_STATE);
 
-    // Assert: 版だけが残り、他は 1 つも出ない
+    // Assert: 版と表示モード以外は 1 つも出ない。
+    //         `spec` が省略の対象外なのは 4-3 の裁定による（既定を将来動かしたときに
+    //         過去の共有 URL が別のモードで描かれるのを防ぐ。`sa` と同じ忠実性の扱い）
     const params = toParams(fragment);
     expect(params.get('v')).toBe('1');
-    expect([...params.keys()]).toEqual(['v']);
+    expect(params.get('spec')).toBe('cont');
+    expect([...params.keys()]).toEqual(['v', 'spec']);
   });
 
   it('v だけの断片も空文字も既定へ戻る', () => {
@@ -134,6 +138,7 @@ describe('6-6 段階1 B: 既定の省略', () => {
       expect(restored.app.exaggeration).toBe(DEFAULT_SHAREABLE_STATE.app.exaggeration);
       expect(restored.app.material).toBe(DEFAULT_MATERIAL);
       expect(restored.app.screenDistance).toBe(DEFAULT_SHAREABLE_STATE.app.screenDistance);
+      expect(restored.app.spectrumMode).toBe(DEFAULT_SHAREABLE_STATE.app.spectrumMode);
       expect(restored.prismRotationDeg).toBe(DEFAULT_SHAREABLE_STATE.prismRotationDeg);
       expect(restored.prismX).toBe(DEFAULT_SHAREABLE_STATE.prismX);
       expect(restored.prismY).toBe(DEFAULT_SHAREABLE_STATE.prismY);
@@ -338,5 +343,86 @@ describe('6-6 段階1 G: アンカーの不在', () => {
     expect(decodeUrl('v=1&sa=abc').screenAnchor).toBeNull();
     expect(decodeUrl('v=1&sa=1,2').screenAnchor).toBeNull();
     expect(encodeUrl(DEFAULT_SHAREABLE_STATE)).not.toContain('sa=');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4-3 H: スペクトル表示モード
+// ---------------------------------------------------------------------------
+
+/**
+ * URL 上のモードコード。**`SPECTRUM_MODE_CODES` を import しない。**
+ * SUT の表をそのまま期待値にすると、表を書き換えたときにテストも一緒に動いてしまい、
+ * 「共有 URL の意味が変わらない」という肝心の性質を守れなくなる。
+ */
+const CODE = { continuous: 'cont', sevenColor: '7' } as const;
+
+/**
+ * 指定したモードを持つ往復用の状態を作る。
+ *
+ * @param mode 入れるモード
+ * @returns 符号化に渡す状態
+ */
+function stateWithMode(mode: SpectrumMode): ShareableState {
+  return { ...SAMPLE, app: { ...SAMPLE.app, spectrumMode: mode } };
+}
+
+describe('4-3 H: スペクトル表示モードの往復', () => {
+  it('連続モードが往復で保たれる', () => {
+    // Arrange
+    const state = stateWithMode('continuous');
+
+    // Act
+    const restored = decodeUrl('#' + encodeUrl(state));
+
+    // Assert
+    expect(restored.app.spectrumMode).toBe('continuous');
+  });
+
+  it('7 色モードが往復で保たれる', () => {
+    // Arrange
+    const state = stateWithMode('sevenColor');
+
+    // Act
+    const restored = decodeUrl('#' + encodeUrl(state));
+
+    // Assert
+    expect(restored.app.spectrumMode).toBe('sevenColor');
+  });
+
+  it('spec を常に出す（既定のモードでも省略しない）', () => {
+    // Arrange: 他の項目と違い、これは既定と一致しても省かない。既定を将来変えたときに
+    //          過去の共有 URL が別のモードで描かれてしまうため（6-6 段階4 の sa と同じ忠実性）
+    const continuous = stateWithMode('continuous');
+    const sevenColor = stateWithMode('sevenColor');
+
+    // Act
+    const continuousFragment = encodeUrl(continuous);
+    const sevenColorFragment = encodeUrl(sevenColor);
+
+    // Assert
+    expect(continuousFragment).toContain('spec=' + CODE.continuous);
+    expect(sevenColorFragment).toContain('spec=' + CODE.sevenColor);
+  });
+
+  it('spec が無い断片は連続モードになる', () => {
+    // Arrange: 4-3 より前に作られた共有 URL はこの形。48 連続で作られた絵が
+    //          そのまま 48 連続で描かれなければならない
+
+    // Act
+    const restored = decodeUrl('#v=1&a=31.5&mat=sf10');
+
+    // Assert
+    expect(restored.app.spectrumMode).toBe('continuous');
+  });
+
+  it('未知のモードコードは連続モードになる', () => {
+    // Arrange: 寛容デコード。未知材質が BK7 になるのと同じ扱いで、投げない
+
+    // Act
+    const restored = decodeUrl('#v=1&spec=rainbow');
+
+    // Assert
+    expect(restored.app.spectrumMode).toBe('continuous');
   });
 });

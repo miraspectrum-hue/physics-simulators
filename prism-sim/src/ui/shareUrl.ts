@@ -3,7 +3,7 @@ import {
   DEFAULT_PRISM_X,
   DEFAULT_PRISM_Y,
 } from '../scene/prismPose';
-import type { MaterialName } from '../types/optics';
+import type { MaterialName, SpectrumMode } from '../types/optics';
 
 import type { AppState } from './store';
 import {
@@ -12,6 +12,7 @@ import {
   DEFAULT_MATERIAL,
   DEFAULT_SCREEN_DISTANCE,
   DEFAULT_SOURCE_ANGLE_DEG,
+  DEFAULT_SPECTRUM_MODE,
 } from './store';
 
 /**
@@ -96,6 +97,17 @@ export const MATERIAL_CODES: Record<MaterialName, string> = {
   ダイヤモンド: 'diamond',
 };
 
+/**
+ * スペクトル表示モード → URL 上のコード（TASKS 4-3）。
+ *
+ * 材質と同じ網羅パターン。`Record<SpectrumMode, string>` と型付けることで、
+ * モードを足したらここへの登録をコンパイラが強制する。
+ */
+export const SPECTRUM_MODE_CODES: Record<SpectrumMode, string> = {
+  continuous: 'cont',
+  sevenColor: '7',
+};
+
 /** 何も指定しなかったときの状態。`encodeUrl` はこれと同じ項目を省く。 */
 export const DEFAULT_SHAREABLE_STATE: ShareableState = {
   app: {
@@ -103,6 +115,7 @@ export const DEFAULT_SHAREABLE_STATE: ShareableState = {
     exaggeration: DEFAULT_EXAGGERATION,
     material: DEFAULT_MATERIAL,
     screenDistance: DEFAULT_SCREEN_DISTANCE,
+    spectrumMode: DEFAULT_SPECTRUM_MODE,
   },
   prismRotationDeg: DEFAULT_PRISM_ROTATION_DEG,
   prismX: DEFAULT_PRISM_X,
@@ -272,6 +285,23 @@ function readMaterial(params: URLSearchParams): MaterialName {
 }
 
 /**
+ * モードコードを読む。未知のコードは既定の連続モード。
+ *
+ * 逆引きは `SPECTRUM_MODE_CODES` を走査して作る（`readMaterial` と同じ手）。
+ * 逆向きの表を別に持つと、モードを足したときに片方だけ更新される余地が生まれる。
+ *
+ * @param params 表
+ * @returns 表示モード
+ */
+function readSpectrumMode(params: URLSearchParams): SpectrumMode {
+  const raw = params.get('spec');
+  const entries = Object.entries(SPECTRUM_MODE_CODES) as Array<[SpectrumMode, string]>;
+  const found = entries.find(([, code]) => code === raw);
+
+  return found?.[0] ?? DEFAULT_SPECTRUM_MODE;
+}
+
+/**
  * アンカーを読む。指定が無い・成分数が違う・数として読めない場合は null。
  *
  * null は「URL が指定していない」であって既定値ではない。復元側は
@@ -357,6 +387,11 @@ export function encodeUrl(state: ShareableState): string {
     parts.push('mat=' + MATERIAL_CODES[state.app.material]);
   }
 
+  // **既定と一致しても省かない。** 他の項目と扱いを変えるのは、既定を将来動かしたときに
+  // 過去の共有 URL が別のモードで描かれてしまうためである（6-6 段階4 で `sa` を
+  // 常に出すと決めたのと同じ忠実性の判断）。載る絵は作られたときのままであるべき
+  parts.push('spec=' + SPECTRUM_MODE_CODES[state.app.spectrumMode]);
+
   putNumber(
     parts,
     'sd',
@@ -417,6 +452,7 @@ export function decodeUrl(fragment: string): ShareableState {
     exaggeration: readNumber(params, 'm', defaults.app.exaggeration),
     material: readMaterial(params),
     screenDistance: readNumber(params, 'sd', defaults.app.screenDistance),
+    spectrumMode: readSpectrumMode(params),
   });
 
   // 姿勢とアンカーには確立した値域が無い（回転はギズモで連続、位置は無制限）。

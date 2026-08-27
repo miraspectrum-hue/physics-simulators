@@ -12,6 +12,8 @@ import {
   SOURCE_ANGLE_MAX_DEG,
   SOURCE_ANGLE_MIN_DEG,
   createStore,
+  DEFAULT_SPECTRUM_MODE,
+  type AppState,
 } from '../../src/ui/store';
 
 /**
@@ -46,6 +48,7 @@ describe('U-1. createStore: 初期状態', () => {
       exaggeration: DEFAULT_EXAGGERATION,
       material: DEFAULT_MATERIAL,
       screenDistance: DEFAULT_SCREEN_DISTANCE,
+      spectrumMode: DEFAULT_SPECTRUM_MODE,
     });
   });
 
@@ -90,6 +93,7 @@ describe('U-2. createStore: 更新すると購読者が呼ばれる', () => {
       exaggeration: 4,
       material: DEFAULT_MATERIAL,
       screenDistance: DEFAULT_SCREEN_DISTANCE,
+      spectrumMode: DEFAULT_SPECTRUM_MODE,
     });
   });
 
@@ -183,6 +187,7 @@ describe('U-3. createStore: 値域外はクランプする', () => {
       exaggeration: EXAGGERATION_MAX,
       material: DEFAULT_MATERIAL,
       screenDistance: DEFAULT_SCREEN_DISTANCE,
+      spectrumMode: DEFAULT_SPECTRUM_MODE,
     });
   });
 });
@@ -195,7 +200,7 @@ describe('U-4. createStore: reset で初期状態へ戻る', () => {
   it('変更したすべての値が既定へ復帰する', () => {
     // Arrange
     const store = createStore();
-    store.update({ sourceAngleDeg: -60, exaggeration: 9 });
+    store.update({ sourceAngleDeg: -60, exaggeration: 9, spectrumMode: 'sevenColor' });
 
     // Act
     store.reset();
@@ -206,6 +211,7 @@ describe('U-4. createStore: reset で初期状態へ戻る', () => {
       exaggeration: DEFAULT_EXAGGERATION,
       material: DEFAULT_MATERIAL,
       screenDistance: DEFAULT_SCREEN_DISTANCE,
+      spectrumMode: DEFAULT_SPECTRUM_MODE,
     });
   });
 
@@ -338,6 +344,7 @@ describe('U-6. createStore: 材質を保持する', () => {
       exaggeration: DEFAULT_EXAGGERATION,
       material: 'ダイヤモンド',
       screenDistance: DEFAULT_SCREEN_DISTANCE,
+      spectrumMode: DEFAULT_SPECTRUM_MODE,
     });
   });
 
@@ -448,6 +455,7 @@ describe('U-7. createStore: スクリーン距離を保持する', () => {
       exaggeration: DEFAULT_EXAGGERATION,
       material: DEFAULT_MATERIAL,
       screenDistance: 10,
+      spectrumMode: DEFAULT_SPECTRUM_MODE,
     });
   });
 
@@ -483,5 +491,48 @@ describe('U-7. createStore: スクリーン距離を保持する', () => {
     // Act & Assert
     expect(SCREEN_DISTANCE_MAX).toBeGreaterThan(measuredOverflowDistance);
     expect(SCREEN_DISTANCE_MIN).toBeLessThan(DEFAULT_SCREEN_DISTANCE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U-8. スペクトル表示モード（TASKS 4-3）
+// ---------------------------------------------------------------------------
+
+describe('U-8. createStore: スペクトル表示モードを保持する', () => {
+  it('既定は連続モードで始まる', () => {
+    // Arrange & Act: 既定を 7 色にすると、spec を持たない過去の共有 URL が
+    //                寛容デコードで既定に落ち、48 連続で作られた絵が黙って 7 色になる
+    const store = createStore();
+
+    // Assert
+    expect(store.getState().spectrumMode).toBe('continuous');
+  });
+
+  it('未知の値は連続モードへ丸められる', () => {
+    // Arrange: URL 復元やキーボード入力で型の外の値が入りうる（材質と同じ扱い）
+    const store = createStore();
+
+    // Act
+    // 型の外の値は実行時にしか来ないので、ここだけ unknown を経由して渡す
+    store.update({ spectrumMode: 'rainbow' } as unknown as Partial<AppState>);
+
+    // Assert
+    expect(store.getState().spectrumMode).toBe('continuous');
+  });
+
+  it('有効な 2 値はそのまま保たれる', () => {
+    // Arrange: 丸めが効きすぎて 7 色を選べない、という壊れ方を塞ぐ
+    const store = createStore();
+
+    // Act
+    store.update({ spectrumMode: 'sevenColor' });
+    const sevenColor = store.getState().spectrumMode;
+
+    store.update({ spectrumMode: 'continuous' });
+    const continuous = store.getState().spectrumMode;
+
+    // Assert
+    expect(sevenColor).toBe('sevenColor');
+    expect(continuous).toBe('continuous');
   });
 });
