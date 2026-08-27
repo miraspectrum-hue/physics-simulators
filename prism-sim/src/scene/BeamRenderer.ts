@@ -1,9 +1,9 @@
-import { AdditiveBlending, Color, InterleavedBufferAttribute, SRGBColorSpace } from 'three';
+import { AdditiveBlending, InterleavedBufferAttribute } from 'three';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
-import { wavelengthToRgb } from '../optics/spectrum';
+import { displayColorForWavelength } from '../optics/displayColor';
 import {
   beamBufferLength,
   packSegmentColors,
@@ -154,17 +154,16 @@ export default class BeamRenderer {
  */
 function createBaseColors(wavelengths: readonly number[]): Float32Array {
   const colors = new Float32Array(wavelengths.length * 3);
-  const workColor = new Color();
 
   wavelengths.forEach((wavelengthNm, pathIndex) => {
-    const rgb = wavelengthToRgb(wavelengthNm);
-    // sRGB として解釈させたうえで作業色空間の値を読み出す
-    workColor.setRGB(rgb.r, rgb.g, rgb.b, SRGBColorSpace);
+    // `displayColorForWavelength` は輝度フロアを適用済みの**線形作業色空間**の値を返す。
+    // sRGB → 線形の変換も向こうで済んでいるので、ここで色空間を触る必要はない
+    const [r, g, b] = displayColorForWavelength(wavelengthNm);
 
     const offset = pathIndex * 3;
-    colors[offset] = workColor.r;
-    colors[offset + 1] = workColor.g;
-    colors[offset + 2] = workColor.b;
+    colors[offset] = r;
+    colors[offset + 1] = g;
+    colors[offset + 2] = b;
   });
 
   return colors;

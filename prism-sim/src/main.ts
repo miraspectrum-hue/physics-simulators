@@ -10,6 +10,7 @@ import {
 } from './optics/convexSolid';
 import { dispersionPlane, worldToDispersionUV } from './optics/dispersionPlane';
 import { refractiveIndex } from './optics/dispersion';
+import { displayColorCss } from './optics/displayColor';
 import { sampleWavelengths, wavelengthToRgb } from './optics/spectrum';
 import {
   incidenceAngleDeg,
@@ -846,13 +847,11 @@ function main(): void {
         return null;
       }
 
-      const rgb = wavelengthToRgb(wavelengthNm);
-      const channel = (value: number): number => Math.round(value * 255);
-
       return {
         path: transformLightPath(localPath, localToWorld),
         label: `${caption} ${formatAngle(deviationDeg)}${exaggerationNote}`,
-        color: `rgb(${channel(rgb.r)}, ${channel(rgb.g)}, ${channel(rgb.b)})`,
+        // ラベルの色も光線と同じ入口から引く（輝度フロアの恩恵をそのまま受ける）
+        color: displayColorCss(wavelengthNm),
       };
     };
 

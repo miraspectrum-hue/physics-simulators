@@ -1,15 +1,13 @@
 import {
   BufferAttribute,
   BufferGeometry,
-  Color,
   DoubleSide,
   Mesh,
   MeshBasicMaterial,
   NormalBlending,
-  SRGBColorSpace,
 } from 'three';
 
-import { wavelengthToRgb } from '../optics/spectrum';
+import { displayColorForWavelength } from '../optics/displayColor';
 import { RENDER_ORDER } from './renderOrder';
 import { planeUVToWorld } from './ScreenObject';
 import type { ScreenHit } from './screenProjection';
@@ -261,14 +259,10 @@ export default class BandRenderer {
 function createBandColorBuffer(wavelengths: readonly number[]): Float32Array {
   const quadCount = Math.max(wavelengths.length - 1, 0);
   const colors = new Float32Array(quadCount * VERTICES_PER_QUAD * COMPONENTS_PER_VERTEX);
-  const workColor = new Color();
-
-  const workingColorOf = (wavelengthNm: number): [number, number, number] => {
-    const rgb = wavelengthToRgb(wavelengthNm);
-    workColor.setRGB(rgb.r, rgb.g, rgb.b, SRGBColorSpace);
-
-    return [workColor.r, workColor.g, workColor.b];
-  };
+  // 3D ビームとまったく同じ入口から引く（輝度フロア適用済みの線形値）
+  const workingColorOf = (wavelengthNm: number): [number, number, number] => [
+    ...displayColorForWavelength(wavelengthNm),
+  ];
 
   for (let quadIndex = 0; quadIndex < quadCount; quadIndex += 1) {
     const nearColor = workingColorOf(wavelengths[quadIndex] ?? 0);

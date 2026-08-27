@@ -1,7 +1,8 @@
 import { worldToDispersionUV } from '../optics/dispersionPlane';
-import { wavelengthToRgb } from '../optics/spectrum';
+import { displayColorCss } from '../optics/displayColor';
 import type { DispersionPlane, LightPath, PlaneUV, Vec3 } from '../types/optics';
 
+import { haloColorFor } from './labelHalo';
 import {
   expandBounds,
   fitViewport,
@@ -91,6 +92,14 @@ const NORMAL_LENGTH_PX = 46;
 
 /** ラベルを弧の外側へ逃がす量 [px]。 */
 const LABEL_OFFSET_PX = 21;
+
+/**
+ * ラベルの縁取りの太さ [px]。
+ *
+ * `paint-order: stroke` なので実際に文字の外へ出るのは半分の 1.5px。font-size 10 の
+ * 字画（約 1.5px）に対して同程度の縁が付き、隣接画素まで縁取り色で埋まる。
+ */
+const LABEL_HALO_WIDTH_PX = 3;
 
 /** θ₁ のラベルを置く位置（掃引の比率）。開けた側なので中点でよい。 */
 const THETA_LABEL_FRACTION = 0.5;
@@ -281,10 +290,10 @@ export default class SectionView {
   private appendLabel(fill: string): SVGTextElement {
     const label = document.createElementNS(SVG_NS, 'text');
 
-    label.setAttribute('fill', fill);
     label.setAttribute('font-size', '10');
     label.setAttribute('text-anchor', 'middle');
     label.setAttribute('dominant-baseline', 'middle');
+    applyLabelColor(label, fill);
     this.element.appendChild(label);
 
     return label;
@@ -536,7 +545,7 @@ export default class SectionView {
 
     target.leg.setAttribute('stroke', deviation.color);
     target.arc.setAttribute('stroke', deviation.color);
-    target.label.setAttribute('fill', deviation.color);
+    applyLabelColor(target.label, deviation.color);
 
     this.drawDashedRay(target.leg, exitPoint, incidentDir, radiusPx * 1.35);
     this.drawArc(
@@ -673,18 +682,36 @@ function rotateUv(direction: PlaneUV, angleDeg: number): PlaneUV {
 }
 
 /**
+ * ラベルへ文字色と縁取りを当てる。
+ *
+ * 縁取りは**文字の下**へ塗る（`paint-order: stroke`）。上に塗ると線幅の半分が
+ * 文字を食って細くなる。`stroke-linejoin: round` は角の尖りを丸めるためで、
+ * 小さな文字では尖りが点に見える。
+ *
+ * 背後の光線は入射角や材質で動くので、ラベル位置での背景を事前に知ることはできない。
+ * 縁取りが glyph を囲めば、文字の隣にあるのは常に縁取りの色になり、
+ * 背景が何であってもコントラストの下限が決まる（`labelHalo.ts` 参照）。
+ *
+ * @param label 対象のテキスト要素
+ * @param fill 文字の色
+ */
+function applyLabelColor(label: SVGTextElement, fill: string): void {
+  label.setAttribute('fill', fill);
+  label.setAttribute('stroke', haloColorFor(fill));
+  label.setAttribute('stroke-width', String(LABEL_HALO_WIDTH_PX));
+  label.setAttribute('stroke-linejoin', 'round');
+  label.setAttribute('paint-order', 'stroke');
+}
+
+/**
  * 波長を CSS の色にする。
  *
- * 3D の基準色とまったく同じ `wavelengthToRgb()` から引く。`BeamRenderer` はこの値を
- * さらに WebGL の作業色空間へ変換して使うが、SVG に要るのは変換前の sRGB そのもの
- * なので、変換を挟まないここが 3D と同じ「元の色」になる。
+ * 3D のビームとまったく同じ入口（`displayColorCss`）から引く。輝度フロアの適用も
+ * 線形 → sRGB の変換も向こうで済んでいるので、ここに色の判断は残さない。
  *
  * @param wavelengthNm 波長 [nm]
  * @returns 例 `rgb(255, 0, 0)`
  */
 function cssColor(wavelengthNm: number): string {
-  const rgb = wavelengthToRgb(wavelengthNm);
-  const channel = (value: number): number => Math.round(Math.min(Math.max(value, 0), 1) * 255);
-
-  return `rgb(${channel(rgb.r)}, ${channel(rgb.g)}, ${channel(rgb.b)})`;
+  return displayColorCss(wavelengthNm);
 }
