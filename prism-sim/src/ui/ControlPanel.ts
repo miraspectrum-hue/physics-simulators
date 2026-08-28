@@ -1,4 +1,5 @@
 import { ALL_MATERIALS } from '../optics/constants';
+import { DEFAULT_PRISM_X, DEFAULT_PRISM_Y } from '../scene/prismPose';
 import type { MaterialName, MinimumDeviation, SpectrumMode } from '../types/optics';
 
 import { minimumDeviationOf } from './materialOptics';
@@ -19,6 +20,18 @@ const UNAVAILABLE = '—';
 /** 姿勢スライダーの下限・上限 [deg]。Euler の Z が取りうる範囲に合わせる。 */
 const ROTATION_MIN_DEG = -180;
 const ROTATION_MAX_DEG = 180;
+
+/**
+ * 位置スライダーの下限・上限（TASKS 4-8）。
+ *
+ * 位置そのものに値域は無い（`shareUrl.ts` の px/py は無制限のまま）。
+ * ただし `range` 入力である以上、有限の min/max が要る。既定カメラ
+ * （FOV 45°・z=6.5）の可視半高がおよそ 2.69、プリズムの外接半径が
+ * 一辺 2 の正三角形で ≈1.15 なので、±3 なら回転させても既定カメラから
+ * 大きく外れず、遠クリップ面（200）にも床（y=-1.2）にも余裕を持って収まる。
+ */
+const POSITION_MIN = -3;
+const POSITION_MAX = 3;
 
 /**
  * 頂角 60° で直接透過が起きない材質の警告文（TASKS 4-2b）。
@@ -92,6 +105,10 @@ export default class ControlPanel {
   private readonly sourceAngleNotice: HTMLElement;
   private readonly rotationSlider: HTMLInputElement;
   private readonly rotationValue: HTMLElement;
+  private readonly positionXSlider: HTMLInputElement;
+  private readonly positionXValue: HTMLElement;
+  private readonly positionYSlider: HTMLInputElement;
+  private readonly positionYValue: HTMLElement;
   private readonly materialSelect: HTMLSelectElement;
   private readonly materialWarning: HTMLElement;
   private readonly exaggerationSlider: HTMLInputElement;
@@ -105,6 +122,12 @@ export default class ControlPanel {
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
   private readonly rotationSubscribers: Array<(angleDeg: number) => void> = [];
+
+  /** X 位置スライダーが動かされたときに呼ぶ購読者（TASKS 4-8）。 */
+  private readonly positionXSubscribers: Array<(x: number) => void> = [];
+
+  /** Y 位置スライダーが動かされたときに呼ぶ購読者（TASKS 4-8）。 */
+  private readonly positionYSubscribers: Array<(y: number) => void> = [];
 
   /** リセットが押されたときに呼ぶ購読者。 */
   private readonly resetSubscribers: Array<() => void> = [];
@@ -532,6 +555,78 @@ export default class ControlPanel {
 
     poseSection.append(poseLabel, this.rotationSlider);
 
+    // X/Y 位置スライダー（TASKS 4-8）。#prism-rotation をそのまま鏡写しする——
+    // ネイティブ range・label[for]・非発火の表示専用 setter を持つ 1 自由度の対
+    const positionXLabel = document.createElement('label');
+    positionXLabel.className = 'control-panel__row';
+    positionXLabel.htmlFor = 'prism-position-x';
+
+    const positionXLabelText = document.createElement('span');
+    positionXLabelText.textContent = 'X 位置';
+
+    this.positionXValue = document.createElement('span');
+    this.positionXValue.className = 'control-panel__value';
+
+    positionXLabel.append(positionXLabelText, this.positionXValue);
+
+    this.positionXSlider = document.createElement('input');
+    this.positionXSlider.type = 'range';
+    this.positionXSlider.id = 'prism-position-x';
+    this.positionXSlider.className = 'control-panel__slider';
+    this.positionXSlider.min = String(POSITION_MIN);
+    this.positionXSlider.max = String(POSITION_MAX);
+    this.positionXSlider.step = '0.05';
+
+    this.positionXSlider.addEventListener('input', () => {
+      const x = Number(this.positionXSlider.value);
+
+      this.positionXValue.textContent = x.toFixed(2);
+
+      for (const subscriber of this.positionXSubscribers) {
+        subscriber(x);
+      }
+    });
+
+    poseSection.append(positionXLabel, this.positionXSlider);
+
+    const positionYLabel = document.createElement('label');
+    positionYLabel.className = 'control-panel__row';
+    positionYLabel.htmlFor = 'prism-position-y';
+
+    const positionYLabelText = document.createElement('span');
+    positionYLabelText.textContent = 'Y 位置';
+
+    this.positionYValue = document.createElement('span');
+    this.positionYValue.className = 'control-panel__value';
+
+    positionYLabel.append(positionYLabelText, this.positionYValue);
+
+    this.positionYSlider = document.createElement('input');
+    this.positionYSlider.type = 'range';
+    this.positionYSlider.id = 'prism-position-y';
+    this.positionYSlider.className = 'control-panel__slider';
+    this.positionYSlider.min = String(POSITION_MIN);
+    this.positionYSlider.max = String(POSITION_MAX);
+    this.positionYSlider.step = '0.05';
+
+    this.positionYSlider.addEventListener('input', () => {
+      const y = Number(this.positionYSlider.value);
+
+      this.positionYValue.textContent = y.toFixed(2);
+
+      for (const subscriber of this.positionYSubscribers) {
+        subscriber(y);
+      }
+    });
+
+    poseSection.append(positionYLabel, this.positionYSlider);
+
+    // 明示的に既定値を書く。range 入力は value 属性を省くと min/max の中点になる
+    // 仕様だが、jsdom はこれを再計算しない（テストで実際に判明した）。ブラウザ差に
+    // 依存させず、ここで DEFAULT_PRISM_X/Y をそのまま書き込んでおくのが確実
+    this.setPositionX(DEFAULT_PRISM_X);
+    this.setPositionY(DEFAULT_PRISM_Y);
+
     const hint = document.createElement('p');
     hint.className = 'control-panel__hint';
     hint.textContent = 'R: 回転ギズモ / G: 移動ギズモ / Esc: カメラ操作';
@@ -606,6 +701,24 @@ export default class ControlPanel {
    */
   onRotationInput(subscriber: (angleDeg: number) => void): void {
     this.rotationSubscribers.push(subscriber);
+  }
+
+  /**
+   * X 位置スライダーが動かされたときの購読者を登録する（TASKS 4-8）。
+   *
+   * @param subscriber 新しい X 位置（ワールド）を受け取る
+   */
+  onPositionXInput(subscriber: (x: number) => void): void {
+    this.positionXSubscribers.push(subscriber);
+  }
+
+  /**
+   * Y 位置スライダーが動かされたときの購読者を登録する（TASKS 4-8）。
+   *
+   * @param subscriber 新しい Y 位置（ワールド）を受け取る
+   */
+  onPositionYInput(subscriber: (y: number) => void): void {
+    this.positionYSubscribers.push(subscriber);
   }
 
   /** リセットが押されたときの購読者を登録する。 */
@@ -815,6 +928,34 @@ export default class ControlPanel {
 
     this.rotationSlider.value = text;
     this.rotationValue.textContent = `${text}°`;
+  }
+
+  /**
+   * X 位置スライダーの**表示だけ**を更新する（ギズモ操作の反映用。TASKS 4-8）。
+   *
+   * `setRotationDeg` と同じ非発火の流儀。`onPositionXInput` の購読者は動かない。
+   *
+   * @param x X 位置（ワールド）
+   */
+  setPositionX(x: number): void {
+    const text = x.toFixed(2);
+
+    this.positionXSlider.value = text;
+    this.positionXValue.textContent = text;
+  }
+
+  /**
+   * Y 位置スライダーの**表示だけ**を更新する（ギズモ操作の反映用。TASKS 4-8）。
+   *
+   * `setRotationDeg` と同じ非発火の流儀。`onPositionYInput` の購読者は動かない。
+   *
+   * @param y Y 位置（ワールド）
+   */
+  setPositionY(y: number): void {
+    const text = y.toFixed(2);
+
+    this.positionYSlider.value = text;
+    this.positionYValue.textContent = text;
   }
 
   /**

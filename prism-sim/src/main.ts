@@ -981,6 +981,44 @@ function main(): void {
     panel.setRotationDeg(currentRotationDeg());
   });
 
+  /**
+   * 現在の位置（ワールド） [world unit]（TASKS 4-8）。単一の真実である Object3D から読む。
+   * `currentRotationDeg` と同じ形——別変数に二重保持しない。
+   */
+  const currentPositionX = (): number => prism.object.position.x;
+  const currentPositionY = (): number => prism.object.position.y;
+
+  /**
+   * X/Y 位置を設定して再計算を予約する（TASKS 4-8）。
+   *
+   * `applyRotationDeg` と同じ形。位置は世界座標の並進成分そのもの＝幾何入力なので、
+   * グロー/数値表示（4-7）とは逆に `markDirty` を呼ぶのが正しい（光路が実際に動くため）。
+   *
+   * @param x 新しい X 位置
+   */
+  const applyPositionX = (x: number): void => {
+    prism.object.position.x = x;
+    prism.object.updateMatrixWorld(true);
+    markDirty();
+  };
+
+  /** @param y 新しい Y 位置 */
+  const applyPositionY = (y: number): void => {
+    prism.object.position.y = y;
+    prism.object.updateMatrixWorld(true);
+    markDirty();
+  };
+
+  // スライダー → 位置
+  panel.onPositionXInput(applyPositionX);
+  panel.onPositionYInput(applyPositionY);
+
+  // ギズモ（移動モード）→ スライダー。表示だけ書き換えるのでエコーにならない
+  interaction.onPoseChange(() => {
+    panel.setPositionX(currentPositionX());
+    panel.setPositionY(currentPositionY());
+  });
+
   // 「光路に合わせる」。今の光路からアンカーを取り直し、現在の距離で置き直す
   panel.onFocusScreen(() => {
     const anchor = meanExitAnchor(traceWorldPaths(store.getState()));
@@ -1137,6 +1175,8 @@ function main(): void {
     prism.object.rotation.set(0, 0, DEFAULT_PRISM_ROTATION_DEG * RAD_PER_DEG);
     prism.object.updateMatrixWorld(true);
     panel.setRotationDeg(currentRotationDeg());
+    panel.setPositionX(currentPositionX());
+    panel.setPositionY(currentPositionY());
     markDirty();
     console.log(`[操作] リセット → 姿勢 ${currentRotationDeg().toFixed(1)}度`);
   });
@@ -1201,6 +1241,8 @@ function main(): void {
     panel.setRotationDeg(currentRotationDeg());
     prism.object.position.set(state.prismX, state.prismY, 0);
     prism.object.updateMatrixWorld(true);
+    panel.setPositionX(currentPositionX());
+    panel.setPositionY(currentPositionY());
     markDirty();
 
     // 7: 凍結アンカー。**再導出しない。** null は「URL が指定していない」なので、
@@ -1361,6 +1403,8 @@ function main(): void {
   });
 
   panel.setRotationDeg(currentRotationDeg());
+  panel.setPositionX(currentPositionX());
+  panel.setPositionY(currentPositionY());
 
   // ★ここまでが初期化。`aimPoint` / `entryNormalAngleDeg` は既定姿勢で凍結済みで、
   //   最初の光路もこの後の refreshBeams() で引かれる。

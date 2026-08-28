@@ -108,6 +108,24 @@ const GLOW_ID = 'glow-toggle';
 /** 数値表示トグルの id。 */
 const NUMBERS_ID = 'numbers-toggle';
 
+/**
+ * range スライダーを id で取り出す。`radioOf` と同じ形だが、range 入力に使うことを
+ * 名前で示す（`#prism-rotation` にも `#prism-position-x/y` にも使う）。
+ *
+ * @param parent パネルを差し込んだ親要素
+ * @param id スライダーの id
+ * @returns スライダーの要素
+ */
+function sliderOf(parent: HTMLElement, id: string): HTMLInputElement {
+  const slider = parent.querySelector(`#${id}`);
+
+  if (!(slider instanceof HTMLInputElement)) {
+    throw new Error(`スライダー ${id} が見つかりません`);
+  }
+
+  return slider;
+}
+
 describe('4-3: スペクトル表示モードのラジオ', () => {
   // パネルは id を持つので、前のテストの残骸があると id が重複する。
   // jsdom の `#id` セレクタは `getElementById` に落ちるため、重複すると
@@ -280,5 +298,190 @@ describe('4-7: グロー・数値表示トグル', () => {
     // Assert
     expect(buttonOf(parent, GLOW_ID).getAttribute('aria-pressed')).toBe('false');
     expect(buttonOf(parent, NUMBERS_ID).getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4-8 段階1→2: プリズムの X/Y 位置スライダー。
+//
+// 段階1では `ControlPanel` にまだ無い操作面を、`unknown` キャスト経由の局所拡張
+// （`withFuturePosition`）で疑似的に呼び、8件が個別に Red で落ちることを確認した。
+// 段階2で `onPositionXInput`/`onPositionYInput`/`setPositionX`/`setPositionY` を
+// 本体へ正式に追加したので、ここからは局所拡張を使わず直接呼び出しに統合する。
+//
+// #prism-rotation（既存）が確立した鏡写し元のパターン:
+//   - ネイティブ input[type=range]。id は label[for] と対応する
+//   - onXxxInput(subscriber) は人の操作（input イベント）だけを拾う
+//   - setXxx(value) は表示だけを書き換え、購読者を呼ばない
+//     （ギズモ → スライダー → ギズモ、というエコーを防ぐ。setRotationDeg と同じ流儀）
+//
+// ★4-7（glow/nums）とは性質が逆であることに注意。あちらは表示専用で計算に無関係
+// だったが、位置は世界座標の並進成分そのもの＝幾何入力である。変更されたときに
+// 光路が再計算されるのが正しい（source-angle/screen-distance と同類）。
+// ただし ControlPanel は three を一切知らないので、実際に Object3D.position を
+// 読み書きし refreshBeams を誘発するかどうかは main.ts の責務であり、jsdom では
+// 検証できない（CDP は段階2で確認済み）。ここで縛れるのは ControlPanel 自身の契約だけである。
+//
+// 純粋スライス（clamp/range/単位変換）について:
+//   #prism-rotation に対応するクランプ関数は無い。ROTATION_MIN_DEG/MAX_DEG は
+//   HTML の min/max 属性文字列としてしか使われず、範囲の強制はブラウザのネイティブ
+//   range 入力に委ねている。共有 URL の rz 読み取り（decodeUrl）も同様にクランプ無し・
+//   有限性チェックのみ（shareUrl.ts のコメントに「回転はギズモで連続、位置は無制限」と
+//   明記されている）。鏡写しの結果、位置（px/py）にも純粋スライスは無い。
+//
+// 期待値の出典:
+//   既定値は `src/scene/prismPose.ts` の DEFAULT_PRISM_X / DEFAULT_PRISM_Y（= 0）。
+//   SUT 側の値を読んで作らず、定数の値をそのままハードコードする。
+// ---------------------------------------------------------------------------
+
+/** X 位置スライダーの id。 */
+const POSITION_X_ID = 'prism-position-x';
+/** Y 位置スライダーの id。 */
+const POSITION_Y_ID = 'prism-position-y';
+
+describe('4-8 段階1 A: X/Y 位置スライダーの存在と既定値', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('プリズム節に X 位置スライダーが存在し、label[for] を持つ', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+    const slider = sliderOf(parent, POSITION_X_ID);
+
+    // Assert
+    expect(slider.type).toBe('range');
+    expect(parent.querySelector(`label[for="${POSITION_X_ID}"]`)).not.toBeNull();
+  });
+
+  it('プリズム節に Y 位置スライダーが存在し、label[for] を持つ', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+    const slider = sliderOf(parent, POSITION_Y_ID);
+
+    // Assert
+    expect(slider.type).toBe('range');
+    expect(parent.querySelector(`label[for="${POSITION_Y_ID}"]`)).not.toBeNull();
+  });
+
+  it('構築時の値は DEFAULT_PRISM_X/Y（0）を映す', () => {
+    // Arrange: 期待値は prismPose.ts の定数からそのまま。SUT からは作らない
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+
+    // Assert
+    expect(Number(sliderOf(parent, POSITION_X_ID).value)).toBe(0);
+    expect(Number(sliderOf(parent, POSITION_Y_ID).value)).toBe(0);
+  });
+});
+
+describe('4-8 段階1 B: 人の操作 → 購読者', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('X スライダーを動かすと onPositionXInput の購読者に新しい x が届く', () => {
+    // Arrange
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: number[] = [];
+
+    panel.onPositionXInput((x) => received.push(x));
+
+    // Act: input イベントで人の操作を模す（rotationSlider と同じ経路）
+    const slider = sliderOf(parent, POSITION_X_ID);
+
+    slider.value = '1.5';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Assert
+    expect(received).toEqual([1.5]);
+  });
+
+  it('Y スライダーを動かすと onPositionYInput の購読者に新しい y が届く', () => {
+    // Arrange
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: number[] = [];
+
+    panel.onPositionYInput((y) => received.push(y));
+
+    // Act
+    const slider = sliderOf(parent, POSITION_Y_ID);
+
+    slider.value = '-0.75';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Assert
+    expect(received).toEqual([-0.75]);
+  });
+});
+
+describe('4-8 段階1 C: 表示専用 setter（ギズモ→スライダーの非発火経路）', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('setPositionX は購読者を呼ばずに見た目だけを変える（エコー防止）', () => {
+    // Arrange: setRotationDeg と同じ非発火の流儀。ギズモ → スライダー → ギズモ、の輪にしない
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: number[] = [];
+
+    panel.onPositionXInput((x) => received.push(x));
+
+    // Act
+    panel.setPositionX(2.25);
+
+    // Assert
+    expect(Number(sliderOf(parent, POSITION_X_ID).value)).toBe(2.25);
+    expect(received).toEqual([]);
+  });
+
+  it('setPositionY は購読者を呼ばずに見た目だけを変える（エコー防止）', () => {
+    // Arrange
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: number[] = [];
+
+    panel.onPositionYInput((y) => received.push(y));
+
+    // Act
+    panel.setPositionY(-1.1);
+
+    // Assert
+    expect(Number(sliderOf(parent, POSITION_Y_ID).value)).toBe(-1.1);
+    expect(received).toEqual([]);
+  });
+});
+
+describe('4-8 段階1 D: 回転スライダーの回帰を巻き込まない', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('X 位置スライダーを動かしても回転スライダーの値は変わらない', () => {
+    // Arrange: #prism-rotation は既存の要素。値そのものをハードコードせず、
+    // 「操作の前後で変わらないこと」だけを見る（無関係のはずの回帰を検知する）
+    const store = createStore();
+    const { parent } = mountPanel(store);
+    const rotationBefore = sliderOf(parent, 'prism-rotation').value;
+
+    // Act
+    const slider = sliderOf(parent, POSITION_X_ID);
+
+    slider.value = '3';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Assert
+    expect(sliderOf(parent, 'prism-rotation').value).toBe(rotationBefore);
   });
 });
