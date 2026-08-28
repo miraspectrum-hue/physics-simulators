@@ -99,6 +99,8 @@ export default class ControlPanel {
   private readonly screenDistanceSlider: HTMLInputElement;
   private readonly screenDistanceValue: HTMLElement;
   private readonly sectionToggle: HTMLButtonElement;
+  private readonly glowToggle: HTMLButtonElement;
+  private readonly numbersToggle: HTMLButtonElement;
   private readonly shareStatus: HTMLElement;
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
@@ -118,6 +120,12 @@ export default class ControlPanel {
 
   /** 断面図トグルが押されたときに呼ぶ購読者。 */
   private readonly sectionToggleSubscribers: Array<(visible: boolean) => void> = [];
+
+  /** グロートグルが押されたときに呼ぶ購読者（TASKS 4-7）。 */
+  private readonly glowToggleSubscribers: Array<(enabled: boolean) => void> = [];
+
+  /** 数値表示トグルが押されたときに呼ぶ購読者（TASKS 4-7）。 */
+  private readonly numbersToggleSubscribers: Array<(visible: boolean) => void> = [];
 
   /** 「URL をコピー」が押されたときに呼ぶ購読者。 */
   private readonly copyShareUrlSubscribers: Array<() => void> = [];
@@ -446,7 +454,42 @@ export default class ControlPanel {
     viewHint.textContent =
       '主断面を真横から見た図を左上に重ねます。プリズムを回しても図の向きは変わりません。';
 
-    viewSection.append(this.sectionToggle, viewHint);
+    // グロー・数値表示トグル（TASKS 4-7）。断面図と同じくどちらも描画専用の切り替えで
+    // 光路の計算に一切影響しないので、store を通さず aria-pressed が状態を持つ。
+    // ただし断面図と違い既定は ON（押された状態）
+    this.glowToggle = document.createElement('button');
+    this.glowToggle.type = 'button';
+    this.glowToggle.id = 'glow-toggle';
+    this.glowToggle.className = 'control-panel__button';
+    this.glowToggle.textContent = 'グロー';
+    this.glowToggle.setAttribute('aria-pressed', 'true');
+    this.glowToggle.addEventListener('click', () => {
+      const next = this.glowToggle.getAttribute('aria-pressed') !== 'true';
+
+      this.glowToggle.setAttribute('aria-pressed', String(next));
+
+      for (const subscriber of this.glowToggleSubscribers) {
+        subscriber(next);
+      }
+    });
+
+    this.numbersToggle = document.createElement('button');
+    this.numbersToggle.type = 'button';
+    this.numbersToggle.id = 'numbers-toggle';
+    this.numbersToggle.className = 'control-panel__button';
+    this.numbersToggle.textContent = '数値表示';
+    this.numbersToggle.setAttribute('aria-pressed', 'true');
+    this.numbersToggle.addEventListener('click', () => {
+      const next = this.numbersToggle.getAttribute('aria-pressed') !== 'true';
+
+      this.numbersToggle.setAttribute('aria-pressed', String(next));
+
+      for (const subscriber of this.numbersToggleSubscribers) {
+        subscriber(next);
+      }
+    });
+
+    viewSection.append(this.sectionToggle, viewHint, this.glowToggle, this.numbersToggle);
     this.element.appendChild(viewSection);
 
     // 姿勢セクション。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
@@ -615,6 +658,26 @@ export default class ControlPanel {
   }
 
   /**
+   * グロートグルが押されたときの購読者を登録する（TASKS 4-7）。
+   *
+   * 押した後の状態（有効にするなら true）を受け取る。断面図と同じ理由で store には
+   * 持たせない —— Bloom の ON/OFF はポストプロセスだけの話で、光路の計算に無関係。
+   */
+  onToggleGlow(subscriber: (enabled: boolean) => void): void {
+    this.glowToggleSubscribers.push(subscriber);
+  }
+
+  /**
+   * 数値表示トグルが押されたときの購読者を登録する（TASKS 4-7）。
+   *
+   * 押した後の状態（表示するなら true）を受け取る。情報バーの DOM 表示だけの話で、
+   * 光路の計算に無関係なので store には持たせない。
+   */
+  onToggleNumbers(subscriber: (visible: boolean) => void): void {
+    this.numbersToggleSubscribers.push(subscriber);
+  }
+
+  /**
    * 入射角まわりの案内を一時的に掲げる。null で即座に下ろす。
    *
    * 押下時にだけ呼ぶこと。`render()` は触らないので、状態が変わっても点滅しない。
@@ -703,6 +766,39 @@ export default class ControlPanel {
   /** 断面図トグルが押された状態かどうか。共有 URL へ書き出すために読む。 */
   isSectionPressed(): boolean {
     return this.sectionToggle.getAttribute('aria-pressed') === 'true';
+  }
+
+  /**
+   * グロートグルの**表示だけ**を更新する（共有 URL からの復元用。TASKS 4-7）。
+   *
+   * `setSectionPressed` と同じ非発火の流儀。属性を直接書くので `click` は起きず、
+   * `onToggleGlow` の購読者は動かない。
+   *
+   * @param enabled 押された状態にするなら true
+   */
+  setGlowPressed(enabled: boolean): void {
+    this.glowToggle.setAttribute('aria-pressed', String(enabled));
+  }
+
+  /** グロートグルが押された状態かどうか。共有 URL へ書き出すために読む。 */
+  isGlowPressed(): boolean {
+    return this.glowToggle.getAttribute('aria-pressed') === 'true';
+  }
+
+  /**
+   * 数値表示トグルの**表示だけ**を更新する（共有 URL からの復元用。TASKS 4-7）。
+   *
+   * `setSectionPressed` と同じ非発火の流儀。
+   *
+   * @param visible 押された状態にするなら true
+   */
+  setNumbersPressed(visible: boolean): void {
+    this.numbersToggle.setAttribute('aria-pressed', String(visible));
+  }
+
+  /** 数値表示トグルが押された状態かどうか。共有 URL へ書き出すために読む。 */
+  isNumbersPressed(): boolean {
+    return this.numbersToggle.getAttribute('aria-pressed') === 'true';
   }
 
   /**

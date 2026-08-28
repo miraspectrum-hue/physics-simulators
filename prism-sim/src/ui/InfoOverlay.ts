@@ -121,6 +121,18 @@ export default class InfoOverlay {
   }
 
   /**
+   * バー全体の表示・非表示を切り替える（TASKS 4-7）。
+   *
+   * CSS の `display` だけを操作する。数値の計算・`update()` の呼び出し自体は止めない
+   * （簡素優先。非表示中も裏で値は更新され続けるが、コストは無視できる）。
+   *
+   * @param visible true で表示する
+   */
+  setVisible(visible: boolean): void {
+    this.element.style.display = visible ? '' : 'none';
+  }
+
+  /**
    * ラベルと値の組をバーへ追加する。
    *
    * @param labelText 見出し

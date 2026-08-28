@@ -68,6 +68,46 @@ function radioOf(parent: HTMLElement, id: string): HTMLInputElement {
   return radio;
 }
 
+/**
+ * パネルを組み立て、要素とインスタンスの両方を返す。
+ *
+ * グロー・数値表示トグルの購読者テスト（`onToggleGlow` 等）はインスタンスへの参照が要る。
+ * 上の `mount` はスペクトルラジオのテストが要素だけで足りるため既存のままにしてある。
+ *
+ * @param store 束ねる store
+ * @returns パネルを差し込んだ親要素と ControlPanel インスタンス
+ */
+function mountPanel(store: Store): { parent: HTMLElement; panel: ControlPanel } {
+  const parent = document.createElement('div');
+
+  document.body.appendChild(parent);
+  const panel = new ControlPanel(parent, store);
+
+  return { parent, panel };
+}
+
+/**
+ * ボタンを id で取り出す。
+ *
+ * @param parent パネルを差し込んだ親要素
+ * @param id ボタンの id
+ * @returns ボタンの要素
+ */
+function buttonOf(parent: HTMLElement, id: string): HTMLButtonElement {
+  const button = parent.querySelector(`#${id}`);
+
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`ボタン ${id} が見つかりません`);
+  }
+
+  return button;
+}
+
+/** グロートグルの id。 */
+const GLOW_ID = 'glow-toggle';
+/** 数値表示トグルの id。 */
+const NUMBERS_ID = 'numbers-toggle';
+
 describe('4-3: スペクトル表示モードのラジオ', () => {
   // パネルは id を持つので、前のテストの残骸があると id が重複する。
   // jsdom の `#id` セレクタは `getElementById` に落ちるため、重複すると
@@ -144,5 +184,101 @@ describe('4-3: スペクトル表示モードのラジオ', () => {
       radioOf(parent, CONTINUOUS_ID).name
     );
     expect(group?.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+  });
+});
+
+/**
+ * ControlPanel の「表示」節に置いたグロー・数値表示トグル（TASKS 4-7）。
+ *
+ * 何を守るためのテストか:
+ *   どちらも断面図トグルと同じ性質（描画専用・計算に無関係）なので store を経由しない。
+ *   守るべきは
+ *     - 既定が ON（押された状態）で始まること
+ *     - 人がクリックすると反転し、購読者にその状態が届くこと
+ *     - 共有 URL からの復元は `setGlowPressed`/`setNumbersPressed` で見た目だけ動き、
+ *       購読者を呼ばない（`setSectionPressed` と同じ非発火の流儀。エコーを防ぐ）
+ *     - グローと数値表示が互いに独立していること
+ */
+describe('4-7: グロー・数値表示トグル', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('構築時は両方とも押された状態（既定 ON）', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+
+    // Assert
+    expect(buttonOf(parent, GLOW_ID).getAttribute('aria-pressed')).toBe('true');
+    expect(buttonOf(parent, NUMBERS_ID).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('グローをクリックすると押下状態が反転し、購読者に false が届く', () => {
+    // Arrange
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: boolean[] = [];
+
+    panel.onToggleGlow((enabled) => received.push(enabled));
+
+    // Act
+    buttonOf(parent, GLOW_ID).click();
+
+    // Assert
+    expect(buttonOf(parent, GLOW_ID).getAttribute('aria-pressed')).toBe('false');
+    expect(received).toEqual([false]);
+  });
+
+  it('数値表示をクリックすると押下状態が反転し、購読者に false が届く', () => {
+    // Arrange
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: boolean[] = [];
+
+    panel.onToggleNumbers((visible) => received.push(visible));
+
+    // Act
+    buttonOf(parent, NUMBERS_ID).click();
+
+    // Assert
+    expect(buttonOf(parent, NUMBERS_ID).getAttribute('aria-pressed')).toBe('false');
+    expect(received).toEqual([false]);
+  });
+
+  it('復元用の setter は購読者を呼ばずに見た目だけ変える', () => {
+    // Arrange: 共有 URL からの復元（setSectionPressed と同じ非発火の流儀）
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: boolean[] = [];
+
+    panel.onToggleGlow((enabled) => received.push(enabled));
+    panel.onToggleNumbers((visible) => received.push(visible));
+
+    // Act
+    panel.setGlowPressed(false);
+    panel.setNumbersPressed(false);
+
+    // Assert
+    expect(buttonOf(parent, GLOW_ID).getAttribute('aria-pressed')).toBe('false');
+    expect(buttonOf(parent, NUMBERS_ID).getAttribute('aria-pressed')).toBe('false');
+    expect(panel.isGlowPressed()).toBe(false);
+    expect(panel.isNumbersPressed()).toBe(false);
+    expect(received).toEqual([]);
+  });
+
+  it('グローと数値表示は独立している（片方のクリックがもう片方に波及しない）', () => {
+    // Arrange
+    const store = createStore();
+    const { parent } = mountPanel(store);
+
+    // Act
+    buttonOf(parent, GLOW_ID).click();
+
+    // Assert
+    expect(buttonOf(parent, GLOW_ID).getAttribute('aria-pressed')).toBe('false');
+    expect(buttonOf(parent, NUMBERS_ID).getAttribute('aria-pressed')).toBe('true');
   });
 });

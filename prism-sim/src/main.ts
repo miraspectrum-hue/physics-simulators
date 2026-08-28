@@ -709,6 +709,14 @@ function main(): void {
     dirty = true;
   };
 
+  /**
+   * `refreshBeams` が実際に再計算まで進んだ回数。**検証用**（TASKS 4-7）。
+   *
+   * `dirty` ガードで早期 return したときは増えない。グロー・数値表示のトグルが
+   * `markDirty` を経由しないこと（＝再計算を誘発しないこと）を外から数えて確かめる。
+   */
+  let refreshBeamsRunCount = 0;
+
   /** 直前に出力した termination の内訳。変化した時だけログを出すために持つ。 */
   let lastTerminationSummary = '';
 
@@ -735,6 +743,7 @@ function main(): void {
       return;
     }
     dirty = false;
+    refreshBeamsRunCount += 1;
 
     const state = store.getState();
 
@@ -1158,6 +1167,8 @@ function main(): void {
           Math.atan2(screenAnchor.direction.y, screenAnchor.direction.x) * DEG_PER_RAD,
       },
       sectionVisible: panel.isSectionPressed(),
+      glowEnabled: panel.isGlowPressed(),
+      numbersVisible: panel.isNumbersPressed(),
     };
   };
 
@@ -1209,6 +1220,16 @@ function main(): void {
     panel.setSectionPressed(state.sectionVisible);
     sectionView.setVisible(state.sectionVisible);
     markDirty();
+
+    // 9, 10: グロー・数値表示（TASKS 4-7）。表示専用 setter + 実体の反映のみ。
+    // **sec と違い、ここでは markDirty を呼ばない。** どちらも光路の計算に無関係なので、
+    // このためだけに再計算を誘発しない（4-7 裁定②のガード）。復元は起動時／hashchange
+    // でしか起きないので、直前の断面図の markDirty につられて結果的に 1 回だけ
+    // 再計算が走ることはあるが、それは sec 側の既存 debt であり、ここが新たに増やす分ではない
+    panel.setGlowPressed(state.glowEnabled);
+    sceneManager.setGlowEnabled(state.glowEnabled);
+    panel.setNumbersPressed(state.numbersVisible);
+    overlay.setVisible(state.numbersVisible);
   };
 
   /** URL を書き換えるのを待っているタイマー。待機中でなければ undefined。 */
@@ -1253,8 +1274,23 @@ function main(): void {
   };
 
   // 状態が変わったフレームでだけ予約する。dirty の源（store・姿勢・トグル・アンカー）が
-  // すべて refreshBeams を通るので、ここ 1 か所で全部の変化を拾える
+  // すべて refreshBeams を通るので、ここ 1 か所で全部の変化を拾える。
+  // **例外は次のグロー・数値表示（TASKS 4-7）。** どちらも表示専用で光路の計算に
+  // 無関係なので、refreshBeams を経由させない（裁定②）。その代わり、それぞれの
+  // 購読者から scheduleUrlUpdate を直接呼ぶ
   onBeamsRefreshed = scheduleUrlUpdate;
+
+  panel.onToggleGlow((enabled) => {
+    sceneManager.setGlowEnabled(enabled);
+    scheduleUrlUpdate();
+    console.log(`[操作] グロー = ${enabled ? 'ON' : 'OFF'}`);
+  });
+
+  panel.onToggleNumbers((visible) => {
+    overlay.setVisible(visible);
+    scheduleUrlUpdate();
+    console.log(`[操作] 数値表示 = ${visible ? 'ON' : 'OFF'}`);
+  });
 
   panel.onCopyShareUrl(() => {
     // **「今見ているものを、そのままコピー」を保証する。** `location.href` をそのまま読むと、
@@ -1411,6 +1447,10 @@ function main(): void {
         buildCapturePng().then(({ dataUrl }) => dataUrl),
       renderCount: (): number => sceneManager.renderCount,
       resizeCount: (): number => sceneManager.resizeCount,
+      // TASKS 4-7 の検証用。グロー/数値表示トグルが refreshBeams を誘発しないことを数える
+      refreshBeamsRunCount: (): number => refreshBeamsRunCount,
+      glowEnabled: (): boolean => sceneManager.glowEnabled,
+      numbersVisible: (): boolean => panel.isNumbersPressed(),
       canvas: sceneManager.domElement,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();

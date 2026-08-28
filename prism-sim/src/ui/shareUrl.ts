@@ -41,6 +41,12 @@ export const SHARE_SCHEMA_VERSION = 1;
 /** 断面図の既定の表示状態。 */
 export const DEFAULT_SECTION_VISIBLE = false;
 
+/** Bloom（グロー）の既定の有効状態（TASKS 4-7）。 */
+export const DEFAULT_GLOW_ENABLED = true;
+
+/** 情報バー（数値表示）の既定の表示状態（TASKS 4-7）。 */
+export const DEFAULT_NUMBERS_VISIBLE = true;
+
 /**
  * スクリーンの凍結アンカー。
  *
@@ -81,6 +87,19 @@ export interface ShareableState {
   readonly screenAnchor: ShareableAnchor | null;
   /** 断面図を表示しているか */
   readonly sectionVisible: boolean;
+  /**
+   * Bloom（グロー）が有効か（TASKS 4-7）。
+   *
+   * `sectionVisible` と同じ独立フィールド。ポストプロセスの ON/OFF は光路の計算に
+   * 無関係なので `AppState` には入れない（4-3 で spectrumMode を store に置いた基準の裏返し）。
+   */
+  readonly glowEnabled: boolean;
+  /**
+   * 情報バー（数値表示）が見えているか（TASKS 4-7）。
+   *
+   * DOM の表示切替のみで計算に無関係。`glowEnabled` と同じ理由で独立フィールドに置く。
+   */
+  readonly numbersVisible: boolean;
 }
 
 /**
@@ -122,6 +141,8 @@ export const DEFAULT_SHAREABLE_STATE: ShareableState = {
   prismY: DEFAULT_PRISM_Y,
   screenAnchor: null,
   sectionVisible: DEFAULT_SECTION_VISIBLE,
+  glowEnabled: DEFAULT_GLOW_ENABLED,
+  numbersVisible: DEFAULT_NUMBERS_VISIBLE,
 };
 
 /**
@@ -423,6 +444,17 @@ export function encodeUrl(state: ShareableState): string {
     parts.push('sec=' + (state.sectionVisible ? '1' : '0'));
   }
 
+  // グロー・数値表示（TASKS 4-7）。sec と同じ非対称：既定と同じなら省く。
+  // 表示専用の boolean は「既定 ON なら省略」で URL を綺麗に保つ。計算モードの enum
+  // （spec）とは扱いが違う（あちらは既定が動いたときの忠実性を優先して常に出す）
+  if (state.glowEnabled !== defaults.glowEnabled) {
+    parts.push('glow=' + (state.glowEnabled ? '1' : '0'));
+  }
+
+  if (state.numbersVisible !== defaults.numbersVisible) {
+    parts.push('nums=' + (state.numbersVisible ? '1' : '0'));
+  }
+
   return parts.join('&');
 }
 
@@ -464,5 +496,8 @@ export function decodeUrl(fragment: string): ShareableState {
     prismY: readNumber(params, 'py', defaults.prismY),
     screenAnchor: readAnchor(params),
     sectionVisible: readBoolean(params, 'sec', defaults.sectionVisible),
+    // readBoolean は '1'/'0' だけを認め、欠損・未知はすべて既定（true）に落ちる
+    glowEnabled: readBoolean(params, 'glow', defaults.glowEnabled),
+    numbersVisible: readBoolean(params, 'nums', defaults.numbersVisible),
   };
 }

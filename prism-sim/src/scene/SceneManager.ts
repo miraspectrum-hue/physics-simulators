@@ -278,6 +278,26 @@ export default class SceneManager {
   }
 
   /**
+   * Bloom（グロー）の ON/OFF を切り替える（TASKS 4-7）。
+   *
+   * `bloomPass.enabled` を直接切るだけで、描画ループは常時 RAF で回っているので
+   * 次フレームからそのまま反映される。ポストプロセスのパスの有効/無効を切るだけであり、
+   * シーングラフにもジオメトリにも触れないので、光路の再計算（`refreshBeams`）は不要である。
+   *
+   * @param enabled true でグローを有効にする
+   */
+  setGlowEnabled(enabled: boolean): void {
+    this.bloomPass.enabled = enabled;
+  }
+
+  /**
+   * Bloom が今 ON かどうか。**検証用**（`setGlowEnabled` が実際に効いているかを外から読む）。
+   */
+  get glowEnabled(): boolean {
+    return this.bloomPass.enabled;
+  }
+
+  /**
    * これまでに `composer.render()` を撃った回数。**検証用**
    * （書き出しが余分に撃つ回数を外から数える）。
    */

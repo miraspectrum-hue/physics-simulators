@@ -57,6 +57,8 @@ const SAMPLE: ShareableState = {
   prismY: -0.75,
   screenAnchor: { x: 1.234, y: -0.567, directionDeg: -38.65 },
   sectionVisible: true,
+  glowEnabled: false,
+  numbersVisible: false,
 };
 
 /** 桁の取り決め。往復の比較にそのまま使う。 */
@@ -97,6 +99,8 @@ describe('6-6 段階1 A: 往復', () => {
     expect(restored.prismX).toBeCloseTo(SAMPLE.prismX, DECIMALS.prismPosition);
     expect(restored.prismY).toBeCloseTo(SAMPLE.prismY, DECIMALS.prismPosition);
     expect(restored.sectionVisible).toBe(true);
+    expect(restored.glowEnabled).toBe(false);
+    expect(restored.numbersVisible).toBe(false);
     expect(restored.screenAnchor?.x).toBeCloseTo(1.234, DECIMALS.anchor);
     expect(restored.screenAnchor?.y).toBeCloseTo(-0.567, DECIMALS.anchor);
     expect(restored.screenAnchor?.directionDeg).toBeCloseTo(-38.65, DECIMALS.anchor);
@@ -143,6 +147,8 @@ describe('6-6 段階1 B: 既定の省略', () => {
       expect(restored.prismX).toBe(DEFAULT_SHAREABLE_STATE.prismX);
       expect(restored.prismY).toBe(DEFAULT_SHAREABLE_STATE.prismY);
       expect(restored.sectionVisible).toBe(false);
+      expect(restored.glowEnabled).toBe(true);
+      expect(restored.numbersVisible).toBe(true);
     }
   });
 });
@@ -424,5 +430,134 @@ describe('4-3 H: スペクトル表示モードの往復', () => {
 
     // Assert
     expect(restored.app.spectrumMode).toBe('continuous');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4-7 段階1→2: 表示専用トグル（glow / nums）の URL 純粋層。
+//
+// 段階1では `ShareableState` にまだ無い 2 フィールドを、`unknown` キャスト経由の
+// 局所拡張型（`withFuture`/`futureOf`）で疑似的に読み書きし、10 件中 9 件が
+// 個別に Red で落ちることを確認した（1 件＝既定省略のテストだけは、何も実装して
+// いなくても「何も出ない」が真になるため Red にならないと明記して報告済み）。
+// 段階2で `glowEnabled`/`numbersVisible` を本体へ正式追加したので、ここからは
+// 局所拡張を使わず、`SAMPLE`/`DEFAULT_SHAREABLE_STATE` の実フィールドを直接読む。
+// ---------------------------------------------------------------------------
+
+describe('4-7 段階1 A: 往復（両方 false）', () => {
+  it('glow=0 & nums=0 が往復で保たれる', () => {
+    // Arrange: 既定（両方 true）から両方だけ false に落とす
+    const state: ShareableState = {
+      ...DEFAULT_SHAREABLE_STATE,
+      glowEnabled: false,
+      numbersVisible: false,
+    };
+
+    // Act
+    const restored = decodeUrl(encodeUrl(state));
+
+    // Assert: 期待値は SUT から作らず独立にハードコード
+    expect(restored.glowEnabled).toBe(false);
+    expect(restored.numbersVisible).toBe(false);
+  });
+});
+
+describe('4-7 段階1 B: 既定の省略', () => {
+  it('既定（両方 true）のとき glow/nums キーが出力に現れない', () => {
+    // Arrange: 既定そのもの（sec と同じ非対称。既定と同じなら省く。spec とは異なる）
+    // Act
+    const params = toParams(encodeUrl(DEFAULT_SHAREABLE_STATE));
+
+    // Assert
+    expect(params.get('glow')).toBeNull();
+    expect(params.get('nums')).toBeNull();
+  });
+});
+
+describe('4-7 段階1 C: decode の既定・寛容性（readBoolean と同じ規則）', () => {
+  it('キー欠損は既定の true になる', () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&mat=sf10');
+
+    // Assert
+    expect(restored.glowEnabled).toBe(true);
+    expect(restored.numbersVisible).toBe(true);
+  });
+
+  it("'0' は false になる", () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&glow=0&nums=0');
+
+    // Assert
+    expect(restored.glowEnabled).toBe(false);
+    expect(restored.numbersVisible).toBe(false);
+  });
+
+  it("'1' は true になる", () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&glow=1&nums=1');
+
+    // Assert
+    expect(restored.glowEnabled).toBe(true);
+    expect(restored.numbersVisible).toBe(true);
+  });
+
+  it('未知コードは既定の true になる', () => {
+    // Arrange & Act: readBoolean は '1'/'0' 以外をすべて既定へ落とす
+    const restored = decodeUrl('v=1&glow=maybe&nums=xyz');
+
+    // Assert
+    expect(restored.glowEnabled).toBe(true);
+    expect(restored.numbersVisible).toBe(true);
+  });
+});
+
+describe('4-7 段階1 D: glow と nums の独立性', () => {
+  it('glow だけ false にしても、nums は巻き込まれない', () => {
+    // Arrange
+    const glowOnly: ShareableState = { ...DEFAULT_SHAREABLE_STATE, glowEnabled: false };
+
+    // Act
+    const restored = decodeUrl(encodeUrl(glowOnly));
+
+    // Assert
+    expect(restored.glowEnabled).toBe(false);
+    expect(restored.numbersVisible).toBe(true);
+  });
+
+  it('nums だけ false にしても、glow は巻き込まれない', () => {
+    // Arrange
+    const numsOnly: ShareableState = { ...DEFAULT_SHAREABLE_STATE, numbersVisible: false };
+
+    // Act
+    const restored = decodeUrl(encodeUrl(numsOnly));
+
+    // Assert
+    expect(restored.glowEnabled).toBe(true);
+    expect(restored.numbersVisible).toBe(false);
+  });
+});
+
+describe('4-7 段階1 E: sec との同時デコード（★既存 sec の回帰も兼ねる）', () => {
+  it('sec=0&glow=0&nums=0 が同じ断片から同時に読める', () => {
+    // Arrange & Act: 生の断片を直接デコードする。sec の既定は false なので
+    // encodeUrl 経由では sec=0 を再現できない（既定と同じなら省く規則で消える）。
+    // decode 側が glow/nums を新しく足しても sec の読み取りを壊さないかを見る
+    const restored = decodeUrl('v=1&sec=0&glow=0&nums=0');
+
+    // Assert
+    expect(restored.sectionVisible).toBe(false);
+    expect(restored.glowEnabled).toBe(false);
+    expect(restored.numbersVisible).toBe(false);
+  });
+
+  it('sec=1&glow=0&nums=1 のように混在しても個別に読める', () => {
+    // Arrange & Act: 3 つが同じ値である必要はない。混在時の独立性を見る
+    const restored = decodeUrl('v=1&sec=1&glow=0&nums=1');
+
+    // Assert
+    expect(restored.sectionVisible).toBe(true);
+    expect(restored.glowEnabled).toBe(false);
+    expect(restored.numbersVisible).toBe(true);
   });
 });
