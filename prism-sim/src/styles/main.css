@@ -250,6 +250,32 @@ body {
   display: none;
 }
 
+/*
+ * WebGL2 非対応時のフォールバックメッセージ（TASKS 5-3）。無地画面の代わりに
+ * 画面中央へ大きく表示する。配色は .control-panel__warning をそのまま流用し、
+ * ここでは配置と大きさだけを ID セレクタで上書きする（カスケード順序に依存しない）。
+ */
+#webgl-fallback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  width: min(480px, calc(100% - 48px));
+  padding: 24px 28px;
+  font-size: 15px;
+  line-height: 1.8;
+  text-align: center;
+}
+
+#webgl-fallback p {
+  margin: 0 0 10px;
+}
+
+#webgl-fallback p:last-child {
+  margin-bottom: 0;
+}
+
 /* 断面 2D ビューのインセット（TASKS 6-1）。3D の上に重ねるだけで操作は奪わない。 */
 .section-view {
   position: absolute;

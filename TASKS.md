@@ -327,10 +327,55 @@ CLAUDE.md「Three.js 運用」で保留していた **tracer のミュータブ�
 （`src/optics/` は純粋関数のまま維持する）。6-5 で光線本数が増えたときはこの表と比較する。
 
 | 5-2 | 極端条件の確認（かすめ入射・ビーム外し・多重全反射は `5e63828`/3-9 の全域掃引テストで実質カバー済み。頂点直撃のみ未確認・未記録） | 🔴 高 | [ ] | 3-9 |
-| 5-3 | WebGL2 非対応時のフォールバックメッセージ | 🟡 中 | [ ] | 2-1 |
+| 5-3 | WebGL2 非対応時のフォールバックメッセージ（設計メモは下記） | 🟡 中 | [x] | 2-1 |
 | 5-4 | メモリリークの確認（材質切替の繰り返しで dispose が効いているか） | 🟡 中 | [ ] | 4-2 |
 | 5-5 | `npm run build` の成果物での動作確認（2026-08-28 実機スモークで確認。下記メモ参照） | 🟡 中 | [x] | 5-1 |
 | 5-6 | README に操作方法と物理モデルの説明を追記 | 🟢 低 | [ ] | 5-5 |
+
+### 5-3 の設計メモ
+
+- **偵察で確定した事実：three.js 0.185.1 の `WebGLRenderer` は WebGL1 フォールバックを
+  持たない。** `contextName = 'webgl2'` がソース上ハードコードされており（three本体の
+  `WebGLRenderer.js`）、`'webgl2'` のコンテキスト生成が失敗すると即座に例外を投げる。
+  「WebGL1へ実際にフォールバックして描画を継続する」は現在の依存では不可能で、
+  SPEC.md の「非対応時は明示的なメッセージを表示」（検出して警告、描画は諦める）が
+  唯一現実的な選択肢だった
+- **二段構えで無地画面を根絶した。**
+  1. **事前チェック**：`three/addons/capabilities/WebGL.js` の `WebGL.isWebGL2Available()`
+     を `SceneManager` 構築前に呼ぶ。`false` なら `renderWebGLFallback(container)` して
+     即 `return`——`WebGLRenderer` を一度も呼ばないので、例外そのものが発生しない
+  2. **スコープ限定 `try/catch`**：`isWebGL2Available()` が `true` でも GPU
+     ブロックリスト等で実際のコンテキスト生成が失敗する場合に備え、
+     `new SceneManager(container)` の呼び出し**だけ**を囲む。`main()` 全体は囲わない
+     （無関係な後続バグまで飲み込まないため）。catch 節は `console.error(error)` で
+     原因を残してから同じ `renderWebGLFallback(container)` に合流する——UX は救うが
+     原因は握り潰さない
+- **`renderWebGLFallback` は DOM 構造の組み立てだけを行う純粋な副作用関数**
+  （`src/ui/webglFallback.ts`）。WebGL・three には一切触れない。`id="webgl-fallback"`
+  で冪等判定（既に挿入済みなら何もしない）、`role="alert"` でスクリーンリーダ通知、
+  クラスは新設せず既存の `.control-panel__warning`（配色）をそのまま再利用。
+  **配置だけは隅の極小要素にせず、`#webgl-fallback` の ID セレクタで画面中央・大きめの
+  幅（`min(480px, 100%-48px)`）に上書きした**（`main.css`）。カスケード順序に依存しない
+  よう、レイアウト上書きは ID セレクタ（`.control-panel__warning` より強い）で行った
+- **段階1（9件）は段階2の実装後、Red-first のまま全て Green になった。** 1件
+  （canvas を生成しないことの確認）は関数の設計上つねに真になる構造的な例外として
+  段階1で明記済みのとおり
+- **★CDP 実測（`getContext` を書き換えて WebGL2 非対応を再現）**：
+  | シナリオ | canvas | フォールバック表示 | `__debug` | console |
+  |---|---|---|---|---|
+  | A: 通常（WebGL2あり） | 1 | 出ない | あり | エラー0（回帰無し） |
+  | B: 事前チェックで弾く（`getContext('webgl2')` を無効化） | 0 | **出る**（`role=alert`・本文一致） | 無し | **エラー0**（Uncaught に到達しない） |
+  | C: `isWebGL2Available` は true だが `WebGLRenderer` 構築失敗（2引数呼び出しだけ無効化） | 0 | **出る**（Bと同一メッセージへ合流） | 無し | `console.error` に原因が1件残る（`Error: THREE.WebGLRenderer: Error creating WebGL context.` ——**「Uncaught」ではない**＝捕捉済み） |
+
+  シナリオCの区別方法：`isWebGL2Available()` は `canvas.getContext('webgl2')` を
+  引数無し（1引数）で呼ぶのに対し、実際の `WebGLRenderer` は
+  `canvas.getContext('webgl2', contextAttributes)` を2引数で呼ぶ。引数の有無で
+  呼び出し元を判別し、2引数呼び出しだけを失敗させることで
+  「対応report はtrueなのに実際の構築だけ失敗する」状況を確定的に再現した
+  （実機の GPU ブロックリスト再現は不要だった）
+  - スクリーンショットで実際に読めることを確認（中央に十分な大きさ・オレンジ系警告色・
+    2段落とも折り返して表示。隅の極小要素になっていない）
+  - 本番ビルド（`vite build`）でも `tsc`/`vitest`/`console` すべて確認済み
 
 ### Phase 5 完了条件
 - ✅ 1920×1080 / 連続 48 波長で 60 fps を維持している

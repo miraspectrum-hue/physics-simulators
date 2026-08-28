@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import { AmbientLight, DirectionalLight, Matrix4, Vector3 } from 'three';
+import WebGL from 'three/addons/capabilities/WebGL.js';
 
 import { BK7, CONTINUOUS_SAMPLE_COUNT, LINE_D_NM, MATERIALS } from './optics/constants';
 import {
@@ -70,6 +71,7 @@ import InfoOverlay, { formatAngle, type InfoValues } from './ui/InfoOverlay';
 import { createStore, SOURCE_ANGLE_MAX_DEG, SOURCE_ANGLE_MIN_DEG } from './ui/store';
 import { captureFileName } from './ui/captureFileName';
 import { decodeUrl, encodeUrl, type ShareableState } from './ui/shareUrl';
+import { renderWebGLFallback } from './ui/webglFallback';
 
 import './styles/main.css';
 
@@ -532,7 +534,28 @@ function main(): void {
     throw new Error('#app が見つかりません');
   }
 
-  const sceneManager = new SceneManager(container);
+  // 検出（TASKS 5-3）。SceneManager を構築する前に確かめる。ここで弾けば
+  // WebGLRenderer は一度も投げず、無地画面のまま固まることがなくなる
+  if (!WebGL.isWebGL2Available()) {
+    renderWebGLFallback(container);
+
+    return;
+  }
+
+  // WebGL2 が「使える」と報告されていても、GPU ブロックリストやドライバの都合で
+  // 実際のコンテキスト生成が失敗することがある。ここだけをスコープ限定で囲み、
+  // 以降の無関係なバグまで飲み込まないようにする（main() 全体は囲わない）
+  let sceneManager: SceneManager;
+
+  try {
+    sceneManager = new SceneManager(container);
+  } catch (error) {
+    // UX は救うが原因は握り潰さない
+    console.error(error);
+    renderWebGLFallback(container);
+
+    return;
+  }
 
   const prism = new PrismObject();
   prism.object.rotation.z = DEFAULT_PRISM_ROTATION_DEG * RAD_PER_DEG;
