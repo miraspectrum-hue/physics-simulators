@@ -11,7 +11,7 @@ import {
   signedDistanceToPlane,
 } from '../../src/optics/convexSolid';
 import { length, normalize, vec3 } from '../../src/optics/vec3';
-import type { ConvexSolid, ConvexSolidHit, Plane, Vec3 } from '../../src/types/optics';
+import type { ConvexSolid, ConvexSolidHit, Plane, Ray, Vec3 } from '../../src/types/optics';
 
 /**
  * src/optics/convexSolid.ts の受け入れ条件（1-3-3: レイ⇔平面交差）。
@@ -760,6 +760,72 @@ describe('createTriangularPrism: レイの貫通', () => {
 
     // Assert
     expect([hit.tEnter < 0, hit.tExit > 0]).toEqual([true, true]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTriangularPrism: 頂点直撃（TASKS 5-2）
+// ---------------------------------------------------------------------------
+//
+// 底面（prism[2]）と右側面（prism[1]）がちょうど同時に退出候補になる内部レイ
+// （tracer.test.ts の「R. 頂点直撃」節・θ₁=0・左面中点入射と同じ縮退）を、
+// tracer を経由せず intersectRayConvexSolid に直接与える。1-3-3 で実装済みの
+// スラブ法が既にこの縮退を正しく扱えていることの characterization であり、
+// Red-first ではない（5-2 の裁定：多段 TDD 不要、既存の正しい挙動をピンする）。
+//
+// **どちらの面が exitPlane に選ばれるかは人工的な tie-break を入れず、実装の
+// 丸め誤差に委ねる**（5-2 の受容事項）。このテストは「選ばれた面が何であれ、
+// tExit・exitPlane が有限かつ幾何的に整合している」ことだけをピンする。
+
+describe('createTriangularPrism: 頂点直撃（2 平面が同時に退出候補）', () => {
+  /** 左側面の中点から内向き法線方向へ進む内部レイ。右下頂点を正確に射抜く。 */
+  function rayThroughRightBottomVertex(): Ray {
+    return ray(vec3(-0.5, 0.288675134594813, 0), vec3(0.866025403784439, -0.5, 0));
+  }
+
+  it('tEnter・tExit がともに有限になる（NaN・例外なし）', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = rayThroughRightBottomVertex();
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+
+    // Assert
+    expect(Number.isFinite(hit.tEnter)).toBe(true);
+    expect(Number.isFinite(hit.tExit)).toBe(true);
+  });
+
+  it('exitPlane は右側面・底面のどちらかであり、選ばれた面と退出点が幾何的に整合する', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = rayThroughRightBottomVertex();
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+    const exitPoint = pointOnRay(r, hit.tExit);
+
+    // Assert: どちらの面が選ばれても許容する（1 ULP の丸めで決まる。5-2 の受容事項）。
+    // ただし選ばれた面自身の上に退出点が乗っていること（tExit と exitPlane の整合）は必須
+    expect([prism[1], prism[2]]).toContain(hit.exitPlane);
+    expect(Math.abs(signedDistanceToPlane(hit.exitPlane, exitPoint))).toBeLessThanOrEqual(
+      TOLERANCE
+    );
+  });
+
+  it('退出点は右下頂点 (1, -0.577350269189626, 0) と一致する（どちらの面が選ばれても同じ物理点）', () => {
+    // Arrange
+    const prism = createTriangularPrism(PRISM_SIDE_LENGTH, PRISM_DEPTH);
+    const r = rayThroughRightBottomVertex();
+
+    // Act
+    const hit = expectHit(intersectRayConvexSolid(r, prism));
+    const exitPoint = pointOnRay(r, hit.tExit);
+
+    // Assert
+    expect(Math.abs(exitPoint.x - 1)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(exitPoint.y - -0.577350269189626)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(exitPoint.z - 0)).toBeLessThanOrEqual(TOLERANCE);
   });
 });
 
