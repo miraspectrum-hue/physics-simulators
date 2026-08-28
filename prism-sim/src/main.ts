@@ -717,6 +717,13 @@ function main(): void {
    */
   let refreshBeamsRunCount = 0;
 
+  /**
+   * `interaction.onCameraChange` の購読者が呼ばれた回数。**検証用**（カメラ共有）。
+   *
+   * `OrbitControls` の `'change'` が実際に中継されているかを外から数えて確かめる。
+   */
+  let cameraChangeRunCount = 0;
+
   /** 直前に出力した termination の内訳。変化した時だけログを出すために持つ。 */
   let lastTerminationSummary = '';
 
@@ -989,6 +996,23 @@ function main(): void {
   const currentPositionY = (): number => prism.object.position.y;
 
   /**
+   * 現在のカメラ視点（カメラ共有）。単一の真実は `camera.position` と
+   * `OrbitControls.target`（`InteractionCtl.cameraTarget()` 経由）——`currentRotationDeg`
+   * と同じ形で、別変数に二重保持しない。
+   */
+  const currentCameraPosition = (): { x: number; y: number; z: number } => ({
+    x: sceneManager.camera.position.x,
+    y: sceneManager.camera.position.y,
+    z: sceneManager.camera.position.z,
+  });
+
+  const currentCameraTarget = (): { x: number; y: number; z: number } => {
+    const target = interaction.cameraTarget();
+
+    return { x: target.x, y: target.y, z: target.z };
+  };
+
+  /**
    * X/Y 位置を設定して再計算を予約する（TASKS 4-8）。
    *
    * `applyRotationDeg` と同じ形。位置は世界座標の並進成分そのもの＝幾何入力なので、
@@ -1209,6 +1233,8 @@ function main(): void {
       sectionVisible: panel.isSectionPressed(),
       glowEnabled: panel.isGlowPressed(),
       numbersVisible: panel.isNumbersPressed(),
+      cameraPosition: currentCameraPosition(),
+      cameraTarget: currentCameraTarget(),
     };
   };
 
@@ -1272,6 +1298,11 @@ function main(): void {
     sceneManager.setGlowEnabled(state.glowEnabled);
     panel.setNumbersPressed(state.numbersVisible);
     overlay.setVisible(state.numbersVisible);
+
+    // 11: カメラ視点（カメラ共有）。表示専用・独立ブロック——グロー/数値表示と同じ理由で
+    // markDirty は呼ばない（視点は光路計算に無関係）。freeze/refreshBeams/姿勢の復元とは
+    // 接点が無いので、どこに置いても良い独立ブロックである（偵察で確認済み）
+    interaction.setCameraView(state.cameraPosition, state.cameraTarget);
   };
 
   /** URL を書き換えるのを待っているタイマー。待機中でなければ undefined。 */
@@ -1332,6 +1363,15 @@ function main(): void {
     overlay.setVisible(visible);
     scheduleUrlUpdate();
     console.log(`[操作] 数値表示 = ${visible ? 'ON' : 'OFF'}`);
+  });
+
+  // カメラのドラッグ → URL（カメラ共有）。表示専用で光路計算に無関係なので markDirty は
+  // 呼ばない（グロー/数値表示=4-7と同じガード。位置スライダー=4-8とは逆）。
+  // ドラッグ中は 'change' が毎フレーム飛ぶが、scheduleUrlUpdate の 300ms 静穏デバウンスに
+  // 乗せるので書き込みは 1 回に畳まれる（姿勢の replaceState と同じ仕組み）
+  interaction.onCameraChange(() => {
+    cameraChangeRunCount += 1;
+    scheduleUrlUpdate();
   });
 
   panel.onCopyShareUrl(() => {
@@ -1493,8 +1533,17 @@ function main(): void {
       resizeCount: (): number => sceneManager.resizeCount,
       // TASKS 4-7 の検証用。グロー/数値表示トグルが refreshBeams を誘発しないことを数える
       refreshBeamsRunCount: (): number => refreshBeamsRunCount,
+      cameraChangeRunCount: (): number => cameraChangeRunCount,
       glowEnabled: (): boolean => sceneManager.glowEnabled,
       numbersVisible: (): boolean => panel.isNumbersPressed(),
+      // カメラ共有の検証用。position は既存の camera（Object3D）からそのまま読める
+      cameraTarget: (): Vector3 => interaction.cameraTarget(),
+      // 精度実測用。URL往復を介さず直接視点を設定できるので、丸め誤差だけを
+      // タイミングのズレ（慣性の残り）と混同せずに切り分けられる
+      setCameraView: (
+        position: { x: number; y: number; z: number },
+        target: { x: number; y: number; z: number }
+      ): void => interaction.setCameraView(position, target),
       canvas: sceneManager.domElement,
       sectionUv: (): readonly { u: number; v: number }[] => {
         const plane = currentDispersionPlane();

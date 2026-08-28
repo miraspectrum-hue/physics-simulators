@@ -47,6 +47,25 @@ export const DEFAULT_GLOW_ENABLED = true;
 /** 情報バー（数値表示）の既定の表示状態（TASKS 4-7）。 */
 export const DEFAULT_NUMBERS_VISIBLE = true;
 
+/** 3 成分の座標値。カメラの位置・注視点はこの形で共有する（カメラ共有）。 */
+export interface ShareableVec3 {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/**
+ * カメラ位置の既定値（カメラ共有）。
+ *
+ * `SceneManager` の起動時カメラ位置（`DEFAULT_CAMERA_Z = 6.5`）と同じ値。
+ * ここへ import すると scene 層から ui 層への逆依存になるため、定数として独立に持つ
+ * （glow/nums が sceneManager/panel の実体を知らずに独立フィールドで持つのと同じ形）。
+ */
+export const DEFAULT_CAMERA_POSITION: ShareableVec3 = { x: 0, y: 0, z: 6.5 };
+
+/** カメラの注視点の既定値（カメラ共有）。`OrbitControls.target` の既定 `(0,0,0)` と同じ値。 */
+export const DEFAULT_CAMERA_TARGET: ShareableVec3 = { x: 0, y: 0, z: 0 };
+
 /**
  * スクリーンの凍結アンカー。
  *
@@ -100,6 +119,21 @@ export interface ShareableState {
    * DOM の表示切替のみで計算に無関係。`glowEnabled` と同じ理由で独立フィールドに置く。
    */
   readonly numbersVisible: boolean;
+  /**
+   * カメラ位置（ワールド座標）（カメラ共有）。
+   *
+   * `glowEnabled`/`numbersVisible` と同じ独立フィールド。`AppState` には入れない
+   * ——視点を変えても世界座標も光路も動かないため（`traceSpectrum` の入力に無関係）。
+   * 真実は `camera.position` そのもので、ここには複製した値を渡すだけである
+   * （`Object3D.matrix` が姿勢の単一の真実なのと同型。別変数に二重保持しない）。
+   *
+   * Perspective カメラでは `OrbitControls` のドリー（ズーム）が `camera.zoom` ではなく
+   * `camera.position` の移動に畳み込まれるため（`zoom` は Orthographic のときだけ動く）、
+   * 視点は position + target の 2 点で過不足なく定まる（`camera.up` も不変のため不要）。
+   */
+  readonly cameraPosition: ShareableVec3;
+  /** カメラの注視点（`OrbitControls.target`、ワールド座標）（カメラ共有）。 */
+  readonly cameraTarget: ShareableVec3;
 }
 
 /**
@@ -143,6 +177,8 @@ export const DEFAULT_SHAREABLE_STATE: ShareableState = {
   sectionVisible: DEFAULT_SECTION_VISIBLE,
   glowEnabled: DEFAULT_GLOW_ENABLED,
   numbersVisible: DEFAULT_NUMBERS_VISIBLE,
+  cameraPosition: DEFAULT_CAMERA_POSITION,
+  cameraTarget: DEFAULT_CAMERA_TARGET,
 };
 
 /**
@@ -167,10 +203,14 @@ const DECIMALS = {
   prismRotationDeg: 6,
   prismPosition: 6,
   anchor: 6,
+  camera: 6,
 } as const;
 
 /** アンカーの成分数（x, y, 方向角）。 */
 const ANCHOR_PART_COUNT = 3;
+
+/** カメラ視点の成分数（position の x,y,z + target の x,y,z）。 */
+const CAMERA_PART_COUNT = 6;
 
 /**
  * 指定の桁へ丸める。
@@ -361,6 +401,119 @@ function readAnchor(params: URLSearchParams): ShareableAnchor | null {
 }
 
 /**
+ * カメラ視点を複合キー `cam` として積む（カメラ共有）。
+ *
+ * `sa` と同じ手動カンマ結合（`URLSearchParams.toString()` の `%2C` 変換を避ける）だが、
+ * 省略の判定が `sa` とは違う。**6 成分すべてが丸め後に既定と一致するときだけ、
+ * `cam` ごと省く。** 1 成分でも既定と違えば 6 値をまとめて載せる（間引かない）。
+ * position/target を別々に省略可否判定すると、「position だけ既定・target だけ非既定」
+ * のような部分一致 URL が生まれ、複合キー 1 本という設計と矛盾する。
+ *
+ * @param parts 積み先
+ * @param position カメラ位置
+ * @param target 注視点
+ * @param defaults 既定の状態
+ */
+function putCamera(
+  parts: string[],
+  position: ShareableVec3,
+  target: ShareableVec3,
+  defaults: ShareableState
+): void {
+  const { x: px, y: py, z: pz } = position;
+  const { x: tx, y: ty, z: tz } = target;
+
+  // 非有限が混じっていたら丸ごと省く（URL に NaN を持ち込まない。putNumber と同じ規約）
+  if (
+    !Number.isFinite(px) ||
+    !Number.isFinite(py) ||
+    !Number.isFinite(pz) ||
+    !Number.isFinite(tx) ||
+    !Number.isFinite(ty) ||
+    !Number.isFinite(tz)
+  ) {
+    return;
+  }
+
+  const decimals = DECIMALS.camera;
+  const dp = defaults.cameraPosition;
+  const dt = defaults.cameraTarget;
+
+  const allDefault =
+    roundTo(px, decimals) === roundTo(dp.x, decimals) &&
+    roundTo(py, decimals) === roundTo(dp.y, decimals) &&
+    roundTo(pz, decimals) === roundTo(dp.z, decimals) &&
+    roundTo(tx, decimals) === roundTo(dt.x, decimals) &&
+    roundTo(ty, decimals) === roundTo(dt.y, decimals) &&
+    roundTo(tz, decimals) === roundTo(dt.z, decimals);
+
+  if (allDefault) {
+    return;
+  }
+
+  parts.push(
+    'cam=' + [px, py, pz, tx, ty, tz].map((value) => formatNumber(value, decimals)).join(',')
+  );
+}
+
+/**
+ * カメラ視点を読む。指定が無い・成分数が違う・数として読めない場合は既定視点。
+ *
+ * `sa`（screenAnchor）と違い、カメラ視点は「起動時に光路から導出される値」ではなく
+ * コード上の定数（`SceneManager` の初期カメラ位置と同じ）を既定として持つ。
+ * そのため欠損・解釈不能はどちらも同じ既定へ落とせばよく、`sa` のような
+ * 「null＝指定なし、呼び出し側が導出」という中間状態を持たない。
+ *
+ * @param params 表
+ * @param defaults 既定の状態
+ * @returns カメラ位置と注視点の組
+ */
+function readCamera(
+  params: URLSearchParams,
+  defaults: ShareableState
+): { cameraPosition: ShareableVec3; cameraTarget: ShareableVec3 } {
+  const fallback = {
+    cameraPosition: defaults.cameraPosition,
+    cameraTarget: defaults.cameraTarget,
+  };
+  const raw = params.get('cam');
+
+  if (raw === null) {
+    return fallback;
+  }
+
+  const parts = raw.split(',').map(Number);
+
+  if (parts.length !== CAMERA_PART_COUNT) {
+    return fallback;
+  }
+
+  const [px, py, pz, tx, ty, tz] = parts;
+
+  if (
+    px === undefined ||
+    py === undefined ||
+    pz === undefined ||
+    tx === undefined ||
+    ty === undefined ||
+    tz === undefined ||
+    !Number.isFinite(px) ||
+    !Number.isFinite(py) ||
+    !Number.isFinite(pz) ||
+    !Number.isFinite(tx) ||
+    !Number.isFinite(ty) ||
+    !Number.isFinite(tz)
+  ) {
+    return fallback;
+  }
+
+  return {
+    cameraPosition: { x: px, y: py, z: pz },
+    cameraTarget: { x: tx, y: ty, z: tz },
+  };
+}
+
+/**
  * 状態を URL 断片へ符号化する。
  *
  * 返すのは先頭の `#` を**含まない**断片（例 `v=1&a=30&mat=sf10`）。
@@ -455,6 +608,10 @@ export function encodeUrl(state: ShareableState): string {
     parts.push('nums=' + (state.numbersVisible ? '1' : '0'));
   }
 
+  // カメラ視点（カメラ共有）。glow/nums と同じ独立フィールドだが、6 値の複合キーなので
+  // 単純な !== 比較ではなく putCamera が丸め後の一致判定と省略をまとめて行う
+  putCamera(parts, state.cameraPosition, state.cameraTarget, defaults);
+
   return parts.join('&');
 }
 
@@ -489,6 +646,8 @@ export function decodeUrl(fragment: string): ShareableState {
 
   // 姿勢とアンカーには確立した値域が無い（回転はギズモで連続、位置は無制限）。
   // 有限性だけを見て、外れたら既定へ落とす
+  const camera = readCamera(params, defaults);
+
   return {
     app,
     prismRotationDeg: readNumber(params, 'rz', defaults.prismRotationDeg),
@@ -499,5 +658,7 @@ export function decodeUrl(fragment: string): ShareableState {
     // readBoolean は '1'/'0' だけを認め、欠損・未知はすべて既定（true）に落ちる
     glowEnabled: readBoolean(params, 'glow', defaults.glowEnabled),
     numbersVisible: readBoolean(params, 'nums', defaults.numbersVisible),
+    cameraPosition: camera.cameraPosition,
+    cameraTarget: camera.cameraTarget,
   };
 }

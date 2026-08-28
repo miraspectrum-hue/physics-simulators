@@ -74,6 +74,9 @@ export default class InteractionCtl {
   /** モードが変わったときに呼ぶ購読者。 */
   private readonly modeSubscribers: Array<(mode: InteractionMode) => void> = [];
 
+  /** カメラ視点が変わったときに呼ぶ購読者（カメラ共有）。 */
+  private readonly cameraChangeSubscribers: Array<() => void> = [];
+
   /** キーボード切替のリスナ。dispose で外すために保持する。 */
   private readonly keyListener: (event: KeyboardEvent) => void;
 
@@ -88,6 +91,15 @@ export default class InteractionCtl {
 
     this.orbit = new OrbitControls(camera, domElement);
     this.orbit.enableDamping = true;
+
+    // カメラ視点の変化を中継する（カメラ共有）。ドラッグ中は毎フレーム飛ぶので、
+    // 呼び出し側（main.ts）でデバウンスする前提。`orbit` オブジェクト自体は
+    // 外へ漏らさず、この 3 面（取得・設定・購読）だけを公開する
+    this.orbit.addEventListener('change', () => {
+      for (const subscriber of this.cameraChangeSubscribers) {
+        subscriber();
+      }
+    });
 
     this.transform = new TransformControls(camera, domElement);
     this.transform.mode = 'rotate';
@@ -177,6 +189,55 @@ export default class InteractionCtl {
    */
   onModeChange(subscriber: (mode: InteractionMode) => void): void {
     this.modeSubscribers.push(subscriber);
+  }
+
+  /**
+   * 現在の注視点を読む（カメラ共有）。
+   *
+   * `OrbitControls.target` の複製を返す。**生の参照ではない**——呼び出し側が直接
+   * 書き換えると `orbit` の内部状態（球面座標のキャッシュ）と食い違うため、
+   * 視点を変えるときは必ず `setCameraView` を通す。
+   *
+   * @returns 注視点の複製
+   */
+  cameraTarget(): Vector3 {
+    return this.orbit.target.clone();
+  }
+
+  /**
+   * カメラ視点（位置と注視点）を直接設定する（カメラ共有）。
+   *
+   * Perspective カメラでは `OrbitControls` のドリー（ズーム操作）が `camera.zoom`
+   * ではなく `camera.position` の移動に畳み込まれるため（`zoom` が動くのは
+   * Orthographic のときだけ）、視点は position + target の 2 点で過不足なく定まる。
+   *
+   * 設定直後に `orbit.update()` を明示的に呼ぶ。呼ばないと、次にレンダーループが
+   * `update(deltaSeconds)` を呼ぶまで内部の球面座標（カメラの向き）が古いままになり、
+   * 同一フレーム内での確実な反映が保証できない。
+   *
+   * @param position 新しいカメラ位置（ワールド座標）
+   * @param target 新しい注視点（ワールド座標）
+   */
+  setCameraView(
+    position: { x: number; y: number; z: number },
+    target: { x: number; y: number; z: number }
+  ): void {
+    this.camera.position.set(position.x, position.y, position.z);
+    this.orbit.target.set(target.x, target.y, target.z);
+    this.orbit.update();
+  }
+
+  /**
+   * カメラ視点の変化を購読する（カメラ共有）。
+   *
+   * `OrbitControls` の `'change'` イベントを中継するだけ。ドラッグ中は 1 フレームごとに
+   * 発火するため、購読側でデバウンスすること（`main.ts` は既存の `scheduleUrlUpdate`
+   * の静穏時間デバウンスにそのまま乗せる）。
+   *
+   * @param subscriber 視点が変わるたびに呼ばれる
+   */
+  onCameraChange(subscriber: () => void): void {
+    this.cameraChangeSubscribers.push(subscriber);
   }
 
   /**

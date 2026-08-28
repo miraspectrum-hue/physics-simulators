@@ -59,6 +59,8 @@ const SAMPLE: ShareableState = {
   sectionVisible: true,
   glowEnabled: false,
   numbersVisible: false,
+  cameraPosition: { x: 3.111111, y: -1.222222, z: 9.333333 },
+  cameraTarget: { x: 0.444444, y: -0.555555, z: 0.666666 },
 };
 
 /** 桁の取り決め。往復の比較にそのまま使う。 */
@@ -68,6 +70,7 @@ const DECIMALS = {
   prismRotationDeg: 3,
   prismPosition: 3,
   anchor: 3,
+  camera: 6,
 } as const;
 
 /** 断片をキーと値の表に開く。テスト側の独立な道具（SUT を通さない）。 */
@@ -104,6 +107,12 @@ describe('6-6 段階1 A: 往復', () => {
     expect(restored.screenAnchor?.x).toBeCloseTo(1.234, DECIMALS.anchor);
     expect(restored.screenAnchor?.y).toBeCloseTo(-0.567, DECIMALS.anchor);
     expect(restored.screenAnchor?.directionDeg).toBeCloseTo(-38.65, DECIMALS.anchor);
+    expect(restored.cameraPosition.x).toBeCloseTo(3.111111, DECIMALS.camera);
+    expect(restored.cameraPosition.y).toBeCloseTo(-1.222222, DECIMALS.camera);
+    expect(restored.cameraPosition.z).toBeCloseTo(9.333333, DECIMALS.camera);
+    expect(restored.cameraTarget.x).toBeCloseTo(0.444444, DECIMALS.camera);
+    expect(restored.cameraTarget.y).toBeCloseTo(-0.555555, DECIMALS.camera);
+    expect(restored.cameraTarget.z).toBeCloseTo(0.666666, DECIMALS.camera);
   });
 
   it('2 度目の符号化で値が動かない（冪等安定）', () => {
@@ -149,6 +158,8 @@ describe('6-6 段階1 B: 既定の省略', () => {
       expect(restored.sectionVisible).toBe(false);
       expect(restored.glowEnabled).toBe(true);
       expect(restored.numbersVisible).toBe(true);
+      expect(restored.cameraPosition).toEqual(DEFAULT_SHAREABLE_STATE.cameraPosition);
+      expect(restored.cameraTarget).toEqual(DEFAULT_SHAREABLE_STATE.cameraTarget);
     }
   });
 });
@@ -559,5 +570,146 @@ describe('4-7 段階1 E: sec との同時デコード（★既存 sec の回帰�
     expect(restored.sectionVisible).toBe(true);
     expect(restored.glowEnabled).toBe(false);
     expect(restored.numbersVisible).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// カメラ共有 段階1→2: `ShareableState.cameraPosition`/`cameraTarget` の URL 純粋層。
+//
+// 段階1では局所拡張型（`withFutureCamera`/`futureOf`）で疑似的に読み書きし、
+// 6 件中 5 件が個別に Red で落ちることを確認した（1 件＝既定省略のテストだけは、
+// 何も実装していなくても「cam キーが無い」が真になるため Red にならないと明記して
+// 報告済み。4-7 段階1 の glow/nums と同じ構造的な非空虚の例外）。
+// 段階2で `cameraPosition`/`cameraTarget` を本体へ正式追加したので、ここからは
+// 局所拡張を使わず、`SAMPLE`/`DEFAULT_SHAREABLE_STATE` の実フィールドを直接読む。
+//
+// 住処は glow/nums と同型（裁定①）：表示専用・独立フィールド・AppState に入れない。
+// エンコードは sa 流の手動カンマ結合（裁定②）：cam = px,py,pz,tx,ty,tz を 1 キーに、
+// 6 桁、全 6 成分が既定と一致するときだけ cam ごと省く「複合 omit-when-default」。
+// ---------------------------------------------------------------------------
+
+describe('カメラ共有 段階2 A: 往復', () => {
+  it('非既定の視点が往復で保たれる（position + target、6 桁）', () => {
+    // Arrange: 期待値は既定とも SUT 出力とも独立にハードコード
+    const state: ShareableState = {
+      ...SAMPLE,
+      cameraPosition: { x: 3.123456, y: -2.654321, z: 8.111111 },
+      cameraTarget: { x: 0.5, y: -0.25, z: 0.75 },
+    };
+
+    // Act
+    const restored = decodeUrl(encodeUrl(state));
+
+    // Assert
+    expect(restored.cameraPosition.x).toBeCloseTo(3.123456, 6);
+    expect(restored.cameraPosition.y).toBeCloseTo(-2.654321, 6);
+    expect(restored.cameraPosition.z).toBeCloseTo(8.111111, 6);
+    expect(restored.cameraTarget.x).toBeCloseTo(0.5, 6);
+    expect(restored.cameraTarget.y).toBeCloseTo(-0.25, 6);
+    expect(restored.cameraTarget.z).toBeCloseTo(0.75, 6);
+  });
+});
+
+describe('カメラ共有 段階2 B: 既定の省略（複合キー）', () => {
+  it('既定視点のとき cam キーが出力に現れない', () => {
+    // Arrange: position/target とも既定のまま（DEFAULT_SHAREABLE_STATE そのもの）
+    // Act
+    const params = toParams(encodeUrl(DEFAULT_SHAREABLE_STATE));
+
+    // Assert
+    expect(params.get('cam')).toBeNull();
+  });
+
+  it('1 成分でも既定と違えば cam が 6 値まとめて掲載される（複合 omit-when-default の裏）', () => {
+    // Arrange: target は既定のまま、position.z だけ既定 6.5 → 9 にずらす
+    const state: ShareableState = {
+      ...DEFAULT_SHAREABLE_STATE,
+      cameraPosition: { x: 0, y: 0, z: 9 },
+    };
+
+    // Act
+    const params = toParams(encodeUrl(state));
+
+    // Assert: 変わっていない 5 成分も含めて 6 値まとめて出る（間引かない）
+    expect(params.get('cam')).toBe('0,0,9,0,0,0');
+  });
+});
+
+describe('カメラ共有 段階2 C: decode の既定・寛容性', () => {
+  it('cam キー欠損は既定視点になる', () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&mat=sf10');
+
+    // Assert
+    expect(restored.cameraPosition).toEqual(DEFAULT_SHAREABLE_STATE.cameraPosition);
+    expect(restored.cameraTarget).toEqual(DEFAULT_SHAREABLE_STATE.cameraTarget);
+  });
+
+  it('壊れた cam（6 個でない・NaN 混入・空）は既定視点になる（投げない）', () => {
+    // Arrange: 6-6 の decodeUrl と同じ寛容規則をカメラにも適用する
+    const brokenCams = [
+      'v=1&cam=1,2,3',
+      'v=1&cam=1,2,3,4,5',
+      'v=1&cam=1,2,3,4,5,6,7',
+      'v=1&cam=a,b,c,d,e,f',
+      'v=1&cam=1,2,NaN,4,5,6',
+      'v=1&cam=',
+    ];
+
+    // Act & Assert
+    for (const fragment of brokenCams) {
+      expect(() => decodeUrl(fragment), `断片 ${JSON.stringify(fragment)}`).not.toThrow();
+
+      const restored = decodeUrl(fragment);
+
+      expect(restored.cameraPosition, fragment).toEqual(DEFAULT_SHAREABLE_STATE.cameraPosition);
+      expect(restored.cameraTarget, fragment).toEqual(DEFAULT_SHAREABLE_STATE.cameraTarget);
+    }
+  });
+});
+
+describe('カメラ共有 段階2 D: 他キーとの独立性', () => {
+  it('cam・sa・sec が同じ断片から同時に個別に読める', () => {
+    // Arrange & Act: 生の断片を直接デコードする
+    const restored = decodeUrl('v=1&sec=1&sa=1.5,-2.5,30&cam=1,2,3,4,5,6');
+
+    // Assert
+    expect(restored.sectionVisible).toBe(true);
+    expect(restored.screenAnchor).toEqual({ x: 1.5, y: -2.5, directionDeg: 30 });
+    expect(restored.cameraPosition).toEqual({ x: 1, y: 2, z: 3 });
+    expect(restored.cameraTarget).toEqual({ x: 4, y: 5, z: 6 });
+  });
+
+  it('cam を足しても sa・sec の既存往復は影響を受けない（回帰）', () => {
+    // Arrange: SAMPLE は screenAnchor も sectionVisible も既定と異なる
+    const state: ShareableState = {
+      ...SAMPLE,
+      cameraPosition: { x: 9, y: 8, z: 7 },
+      cameraTarget: { x: 6, y: 5, z: 4 },
+    };
+
+    // Act
+    const restored = decodeUrl(encodeUrl(state));
+
+    // Assert: 期待値は SAMPLE 自身の値（SUT 出力から作らない）
+    expect(restored.screenAnchor?.x).toBeCloseTo(SAMPLE.screenAnchor!.x, 3);
+    expect(restored.screenAnchor?.y).toBeCloseTo(SAMPLE.screenAnchor!.y, 3);
+    expect(restored.sectionVisible).toBe(SAMPLE.sectionVisible);
+  });
+});
+
+describe('カメラ共有 段階2 E: 桁', () => {
+  it('cam は 6 桁に丸められ、末尾の 0 は落ちる', () => {
+    // Arrange: position.x は 7 桁目で丸めが要る値、y/z は既定のまま
+    const state: ShareableState = {
+      ...DEFAULT_SHAREABLE_STATE,
+      cameraPosition: { x: 1.1234567, y: 0, z: 6.5 },
+    };
+
+    // Act
+    const params = toParams(encodeUrl(state));
+
+    // Assert: 1.1234567 → 1.123457（6 桁丸め）。target 側は既定のまま 0,0,0
+    expect(params.get('cam')).toBe('1.123457,0,6.5,0,0,0');
   });
 });
