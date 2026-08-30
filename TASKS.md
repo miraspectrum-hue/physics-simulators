@@ -174,7 +174,7 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 | 4-2b | ダイヤモンド選択時の警告表示（「頂角 60° では射出しません（常に全反射）」） | 🟡 中 | [x] | 4-2, 1-2-6c |
 | 4-3 | スペクトル表示モード切替（連続 48 / 7 色） | 🟡 中 | [x] | 4-1, 1-2-4 |
 | 4-4 | 分散誇張スライダー（×1〜×10） | 🟡 中 | [x] | 4-1, 1-2-1 |
-| 4-5 | ビーム幅スライダー | 🟢 低 | [ ] | 4-1 |
+| 4-5 | ビーム幅スライダー（表示専用。設計メモは下記） | 🟢 低 | [x] | 4-1 |
 | 4-6 | `InfoOverlay.ts`：θ₁・屈折角・n(λ)・偏角 δ(赤/紫)・全反射の有無 | 🟡 中 | [x] | 4-1, 1-4-4 |
 | 4-7 | 表示トグル（グロー ON/OFF、数値表示 ON/OFF） | 🟢 低 | [x] | 4-1, 2-7 |
 | 4-8 | キーボード操作対応・フォーカスリング | 🟡 中 | [x] | 4-1 |
@@ -214,6 +214,53 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
   証拠として再掲）**：「旧ジオメトリは貼り替え時に dispose。20 往復で geometries 19 のまま」。
   これはビーム指紋（上記）とは別の指標（`renderer.info.memory.geometries`）であり、
   コミットメッセージにのみ記録されていたためここへ転記する
+
+### 4-5 の設計メモ
+
+- **表示専用配線（非 `AppState`）の裁定と根拠。** ビーム幅（`LineMaterial.linewidth`）は
+  `traceSpectrum` の入力にならず、`geometry.attributes.instanceStart`（光路の座標＝GPU に渡す
+  位置バッファ）にも一切触れない、純粋な描画側の uniform（4-5 偵察でソース読解済み）。
+  よって `AppState` には入れず、`glowEnabled`/`numbersVisible`（4-7）と同じ `ShareableState` の
+  独立フィールドとして置いた。配線も同型——`store.subscribe(markDirty)` を経由させず、
+  `panel.onBeamWidthInput` の購読者から直接 `beams.setLineWidth`/`reflectionBeams.setLineWidth`
+  を呼んだ後、`scheduleUrlUpdate()` へ直行する（`markDirty` は一度も呼ばない）。DOM 側は
+  `position`/`rotation`（4-8）と同型——range 入力・非 `store` の独立購読者配列・
+  `set...()` は非発火の表示専用 setter
+- **★弁別器の実測 3 値（「太さは動くが座標は動かない」の証拠）。** 測定 URL
+  `#v=1&a=70&mat=sf10&sa=0.324229,0.351336,-11.371&sec=1` で幅を 3.5px → 8.0px に変更：
+  | 指標 | 3.5px | 8.0px | 意味 |
+  |---|---|---|---|
+  | `geometry.attributes.instanceStart` のチェックサム | `1058842712`（length 2304） | `1058842712`（length 2304） | **完全一致＝座標不変** |
+  | `__debug.refreshBeamsRunCount()` | 2 | 2 | **不変＝再計算を焼いていない** |
+  | 画素 diff（RGBA 合計閾値 30） | ノイズ床（無変更 2 枚の diff）= 0 | 3,295,382 / 3,790,160px | **表示は明確に変化** |
+
+  ノイズ床が完全にゼロ（このアプリの描画は AA/Bloom 込みで完全決定論的）なので、8.0px 時の
+  巨大な diff は測定ノイズではなく実際の変化。スクリーンショットでも目視確認済み——線が太く、
+  Bloom の閾値パスがより明るい面積を拾うため halo がキャンバス広範囲に及ぶのは物理的に妥当
+- **★URL エンコードの新ティア。** `shareUrl.ts` の `DECIMALS` にはこれまで2種類しか無かった
+  ——世界の幾何に効く量の 6 桁組（`sourceAngleDeg`/`screenDistance`/`prismRotationDeg`/
+  `prismPosition`/`anchor`/`camera`）と、倍率である `exaggeration` の 0 桁。ビーム幅は
+  「世界の幾何には効かない px 表示スカラー」という点で 6 桁組ではないが、`exaggeration` と
+  違って `traceSpectrum` の入力でもない（＝計算精度の要求が無い）。**どちらのティアにも
+  当てはまらない、初めての「連続値かつ表示専用」のケース**として `beamWidthPx: 1`（1 桁）を
+  新設した。根拠：px 表示スカラーであり世界座標には効かない／0.1px 未満はどの画面密度でも
+  知覚できない／UI 側のスライダー刻みが 0.5px なので 1 桁で完全にロスレス。将来また
+  「連続値かつ表示専用」の項目が増えたときの一貫性のため、この判断根拠をここに残す
+- **既定値・範囲**: 既定 3.5px は現行の `BeamRenderer.ts` の `LINE_WIDTH_PX` 定数と同値
+  （現状の見た目を維持し、4-5 より前に作られた共有 URL の見た目も変えない——`putNumber` の
+  omit-when-default により `bw` キー自体が既定では出ないので、既存 URL はそのままクリーンに
+  保たれる）。範囲は min 1.0 / max 8.0 / step 0.5（細すぎて見えない下限〜個々の光線が潰れて
+  識別しづらくなる上限）
+- **★jsdom の罠（4-8 の `DEFAULT_PRISM_X/Y` と同型）を実測で確認し回避した。** range 入力は
+  `value` 属性を省くと仕様上 min/max の中点になるはずだが、jsdom はこれを再計算しない。
+  `ControlPanel` のコンストラクタで `setBeamWidth(DEFAULT_BEAM_WIDTH_PX)` を外して実測したところ、
+  jsdom は仕様上の中点（4.5）にすらならず `50` を返すことを確認（テストが実際に Red になった）。
+  コンストラクタでの明示初期化により回避済み。回帰確認用のテスト
+  （`4-5 段階2 A: ★jsdom罠回避`）を常設した
+- **非空虚化の証明（段階1 の omit-when-default テストが実挙動を検証していることの立証）。**
+  `encodeUrl` の `putNumber(parts, 'bw', ...)` 呼び出しを一時的に無条件 `parts.push('bw=...')`
+  へ変異させたところ、既定省略のテスト（および `bw` を含まないキー集合を検査する既存の
+  6-6 回帰テスト）が Red になることを確認。復元後、残留なしで 928/928 Green
 
 ### 4-7 の設計メモ
 

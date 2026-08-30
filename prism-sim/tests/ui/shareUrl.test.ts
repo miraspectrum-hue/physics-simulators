@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_BEAM_WIDTH_PX,
   DEFAULT_SHAREABLE_STATE,
   MATERIAL_CODES,
   decodeUrl,
@@ -61,6 +62,7 @@ const SAMPLE: ShareableState = {
   numbersVisible: false,
   cameraPosition: { x: 3.111111, y: -1.222222, z: 9.333333 },
   cameraTarget: { x: 0.444444, y: -0.555555, z: 0.666666 },
+  beamWidthPx: 5.0,
 };
 
 /** 桁の取り決め。往復の比較にそのまま使う。 */
@@ -71,6 +73,7 @@ const DECIMALS = {
   prismPosition: 3,
   anchor: 3,
   camera: 6,
+  beamWidthPx: 1,
 } as const;
 
 /** 断片をキーと値の表に開く。テスト側の独立な道具（SUT を通さない）。 */
@@ -711,5 +714,99 @@ describe('カメラ共有 段階2 E: 桁', () => {
 
     // Assert: 1.1234567 → 1.123457（6 桁丸め）。target 側は既定のまま 0,0,0
     expect(params.get('cam')).toBe('1.123457,0,6.5,0,0,0');
+  });
+});
+
+/**
+ * 4-5 段階1: ビーム幅（`beamWidthPx`）の URL 往復。
+ *
+ * **段階1時点では未配線。** `ShareableState.beamWidthPx` と `DEFAULT_BEAM_WIDTH_PX`（=3.5）
+ * だけを先に用意し、`encodeUrl`/`decodeUrl` はまだ `bw` キーに一切触れない
+ * （4-5 偵察で確定：ビーム幅は `traceSpectrum` の入力にならない表示専用値なので
+ * `glowEnabled`/`numbersVisible` と同じ独立フィールドとして置く。桁は 1 桁——
+ * 世界の幾何（座標）には効かない px 表示スカラーであり、0.1px 未満はどの画面密度でも
+ * 知覚できず、UI 側のスライダー刻みが 0.5 px を想定する前提なら 1 桁で完全にロスレス。
+ * 6 桁組・exaggeration の 0 桁のどちらとも異なる、初めての「連続値かつ表示専用」の桁）。
+ *
+ * A・D は「既定を動かさない」側の挙動で、未配線のままでも成立してしまう
+ * （何もしなければ既定のまま、が結果的に正解と一致する）。**B・C・E は実際に
+ * 非既定の値を運ぶ経路が要るため、段階1時点では確実に Red になる。**
+ */
+describe('4-5 段階1 A: 既定の省略', () => {
+  it('既定値（3.5px）のとき bw キーが出力に現れない', () => {
+    // Arrange: 既定そのもの
+    // Act
+    const params = toParams(encodeUrl(DEFAULT_SHAREABLE_STATE));
+
+    // Assert
+    expect(params.get('bw')).toBeNull();
+  });
+});
+
+describe('4-5 段階1 B: 非既定値の emit', () => {
+  it('非既定値（5.0px, 2.0px）が bw として小数 1 桁で載る', () => {
+    // Arrange & Act & Assert: 末尾の 0 は落ちる（他の数値キーと同じ規約）
+    for (const [beamWidthPx, expected] of [
+      [5.0, '5'],
+      [2.0, '2'],
+    ] as const) {
+      const state: ShareableState = { ...DEFAULT_SHAREABLE_STATE, beamWidthPx };
+      const params = toParams(encodeUrl(state));
+
+      expect(params.get('bw'), `beamWidthPx=${beamWidthPx}`).toBe(expected);
+    }
+  });
+});
+
+describe('4-5 段階1 C: decode の復元', () => {
+  it('bw キーありの URL から beamWidthPx が復元される', () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&bw=5.0');
+
+    // Assert
+    expect(restored.beamWidthPx).toBe(5.0);
+  });
+});
+
+describe('4-5 段階1 D: decode の寛容性', () => {
+  it('bw キー欠損は既定の 3.5 になる', () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&mat=sf10');
+
+    // Assert
+    expect(restored.beamWidthPx).toBe(DEFAULT_BEAM_WIDTH_PX);
+  });
+
+  it('bw が不正値（数として読めない）でも既定の 3.5 になる（投げない）', () => {
+    // Arrange & Act
+    const restored = decodeUrl('v=1&bw=not-a-number');
+
+    // Assert
+    expect(restored.beamWidthPx).toBe(DEFAULT_BEAM_WIDTH_PX);
+  });
+});
+
+describe('4-5 段階1 E: ラウンドトリップ', () => {
+  it('0.5 刻みの代表値が encode→decode で完全一致する', () => {
+    // Arrange & Act & Assert: いずれも既定（3.5）とは異なる値
+    for (const beamWidthPx of [1.5, 2.0, 4.5, 6.0, 10.0]) {
+      const state: ShareableState = { ...DEFAULT_SHAREABLE_STATE, beamWidthPx };
+      const restored = decodeUrl(encodeUrl(state));
+
+      expect(restored.beamWidthPx, `beamWidthPx=${beamWidthPx}`).toBe(beamWidthPx);
+    }
+  });
+});
+
+describe('4-5 段階1 F: 桁', () => {
+  it('小数 2 桁以上の値は 1 桁に丸められる', () => {
+    // Arrange: DECIMALS.beamWidthPx = 1（このファイル冒頭の桁の取り決めを参照）
+    const state: ShareableState = { ...DEFAULT_SHAREABLE_STATE, beamWidthPx: 4.73 };
+
+    // Act
+    const params = toParams(encodeUrl(state));
+
+    // Assert: 4.73 → 4.7（1 桁丸め）
+    expect(params.get('bw')).toBe('4.7');
   });
 });

@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import ControlPanel from '../../src/ui/ControlPanel';
+import { DEFAULT_BEAM_WIDTH_PX } from '../../src/ui/shareUrl';
 import { createStore, type Store } from '../../src/ui/store';
 
 /**
@@ -483,5 +484,136 @@ describe('4-8 段階1 D: 回転スライダーの回帰を巻き込まない', (
 
     // Assert
     expect(sliderOf(parent, 'prism-rotation').value).toBe(rotationBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4-5 段階2: ビーム幅スライダー。
+//
+// #prism-position-x/y と同じ鏡写しパターン（表示専用・非 store・非発火 setter）。
+// 4-5 裁定：ビーム幅は traceSpectrum の入力にならないため、位置/回転と同じ非 AppState の
+// 独立配線を採る（glow/nums と同じ理由だが、値は連続数なので range 入力）。
+//
+// ★jsdom の罠（4-8 で発覚）: range 入力は value 属性を省くと min/max の中点になる仕様だが、
+// jsdom はこれを再計算しない。ControlPanel のコンストラクタは `setBeamWidth(DEFAULT_BEAM_WIDTH_PX)`
+// を明示的に呼んでいるので、初期値が中点（(1.0+8.0)/2 = 4.5）ではなく既定の 3.5 になることを
+// ここで固定し、この罠を実際に踏んでいないことを回帰的に確認する。
+//
+// 期待値の出典: 既定値は src/ui/shareUrl.ts の DEFAULT_BEAM_WIDTH_PX（= 3.5）。
+// ---------------------------------------------------------------------------
+
+/** ビーム幅スライダーの id。 */
+const BEAM_WIDTH_ID = 'beam-width';
+
+describe('4-5 段階2 A: ビーム幅スライダーの存在と既定値', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('光源節にビーム幅スライダーが存在し、label[for] を持つ', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+    const slider = sliderOf(parent, BEAM_WIDTH_ID);
+
+    // Assert
+    expect(slider.type).toBe('range');
+    expect(parent.querySelector(`label[for="${BEAM_WIDTH_ID}"]`)).not.toBeNull();
+  });
+
+  it('min/max/step が裁定どおり（1.0 / 8.0 / 0.5）', () => {
+    // Arrange
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+    const slider = sliderOf(parent, BEAM_WIDTH_ID);
+
+    // Assert
+    expect(slider.min).toBe('1');
+    expect(slider.max).toBe('8');
+    expect(slider.step).toBe('0.5');
+  });
+
+  it('★jsdom罠回避: 構築時の値は min/max の中点（4.5）ではなく DEFAULT_BEAM_WIDTH_PX（3.5）', () => {
+    // Arrange: 期待値は shareUrl.ts の定数からそのまま。SUT からは作らない
+    const store = createStore();
+
+    // Act
+    const { parent } = mountPanel(store);
+
+    // Assert
+    expect(Number(sliderOf(parent, BEAM_WIDTH_ID).value)).toBe(DEFAULT_BEAM_WIDTH_PX);
+    expect(Number(sliderOf(parent, BEAM_WIDTH_ID).value)).not.toBe(4.5);
+  });
+});
+
+describe('4-5 段階2 B: 人の操作 → 購読者', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('ビーム幅スライダーを動かすと onBeamWidthInput の購読者に新しい px が届く', () => {
+    // Arrange
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: number[] = [];
+
+    panel.onBeamWidthInput((widthPx) => received.push(widthPx));
+
+    // Act: input イベントで人の操作を模す（position/rotation と同じ経路）
+    const slider = sliderOf(parent, BEAM_WIDTH_ID);
+
+    slider.value = '6';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Assert
+    expect(received).toEqual([6]);
+  });
+});
+
+describe('4-5 段階2 C: 表示専用 setter（URL 復元の非発火経路）', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('setBeamWidth は購読者を呼ばずに見た目だけを変える（エコー防止）', () => {
+    // Arrange: setPositionX/Y と同じ非発火の流儀
+    const store = createStore();
+    const { parent, panel } = mountPanel(store);
+    const received: number[] = [];
+
+    panel.onBeamWidthInput((widthPx) => received.push(widthPx));
+
+    // Act
+    panel.setBeamWidth(6.5);
+
+    // Assert
+    expect(Number(sliderOf(parent, BEAM_WIDTH_ID).value)).toBe(6.5);
+    expect(received).toEqual([]);
+  });
+});
+
+describe('4-5 段階2 D: 位置スライダーの回帰を巻き込まない', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('ビーム幅スライダーを動かしても X 位置スライダーの値は変わらない', () => {
+    // Arrange: 無関係のはずの回帰を検知する（4-8 段階1 D と同じ形）
+    const store = createStore();
+    const { parent } = mountPanel(store);
+    const positionXBefore = sliderOf(parent, POSITION_X_ID).value;
+
+    // Act
+    const slider = sliderOf(parent, BEAM_WIDTH_ID);
+
+    slider.value = '7';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Assert
+    expect(sliderOf(parent, POSITION_X_ID).value).toBe(positionXBefore);
   });
 });

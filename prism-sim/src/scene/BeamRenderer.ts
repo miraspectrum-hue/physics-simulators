@@ -128,6 +128,16 @@ export default class BeamRenderer {
   }
 
   /**
+   * 現在のビーム幅 [px]（TASKS 4-5）。
+   *
+   * `material.linewidth` が単一の真実。`prism.object.position` と同じ流儀で、
+   * 呼び出し側（`main.ts` の `collectShareableState`）は別変数に二重保持しない。
+   */
+  get lineWidth(): number {
+    return this.material.linewidth;
+  }
+
+  /**
    * 線幅の計算に使う描画面の大きさを反映する。
    *
    * `LineSegments2.onBeforeRender` も毎フレーム同じ値を入れるが、レイキャストは
@@ -138,6 +148,20 @@ export default class BeamRenderer {
    */
   setResolution(width: number, height: number): void {
     this.material.resolution.set(width, height);
+  }
+
+  /**
+   * ビーム幅を反映する（TASKS 4-5）。
+   *
+   * `setResolution` と同型の uniform 書き換えのみ。`linewidth` はシェーダの `#define` では
+   * なく uniform なので再コンパイルを伴わず、ジオメトリ（`geometry.attributes.instanceStart`）
+   * にも触れない。表示専用（4-5 偵察で確定）——呼び出し側は `update()`/`refreshBeams()` を
+   * 誘発する必要がない。
+   *
+   * @param widthPx 線幅 [px]
+   */
+  setLineWidth(widthPx: number): void {
+    this.material.linewidth = widthPx;
   }
 
   /** ジオメトリとマテリアルを解放する。 */

@@ -47,6 +47,14 @@ export const DEFAULT_GLOW_ENABLED = true;
 /** 情報バー（数値表示）の既定の表示状態（TASKS 4-7）。 */
 export const DEFAULT_NUMBERS_VISIBLE = true;
 
+/**
+ * ビーム幅の既定値 [px]（TASKS 4-5）。`BeamRenderer.ts` の `LINE_WIDTH_PX` と同じ値。
+ *
+ * **段階1時点では未配線。** `encodeUrl`/`decodeUrl` はまだ `bw` キーに触れない
+ * （4-5 偵察で確定した「表示専用・非 AppState」の置き場所だけを型として先に用意する）。
+ */
+export const DEFAULT_BEAM_WIDTH_PX = 3.5;
+
 /** 3 成分の座標値。カメラの位置・注視点はこの形で共有する（カメラ共有）。 */
 export interface ShareableVec3 {
   readonly x: number;
@@ -134,6 +142,13 @@ export interface ShareableState {
   readonly cameraPosition: ShareableVec3;
   /** カメラの注視点（`OrbitControls.target`、ワールド座標）（カメラ共有）。 */
   readonly cameraTarget: ShareableVec3;
+  /**
+   * ビーム幅 [px]（TASKS 4-5）。
+   *
+   * `glowEnabled`/`numbersVisible` と同じ独立フィールド（4-5 偵察で確定：`traceSpectrum`
+   * の入力にならない表示専用値のため `AppState` には入れない）。
+   */
+  readonly beamWidthPx: number;
 }
 
 /**
@@ -179,6 +194,7 @@ export const DEFAULT_SHAREABLE_STATE: ShareableState = {
   numbersVisible: DEFAULT_NUMBERS_VISIBLE,
   cameraPosition: DEFAULT_CAMERA_POSITION,
   cameraTarget: DEFAULT_CAMERA_TARGET,
+  beamWidthPx: DEFAULT_BEAM_WIDTH_PX,
 };
 
 /**
@@ -204,6 +220,11 @@ const DECIMALS = {
   prismPosition: 6,
   anchor: 6,
   camera: 6,
+  // ビーム幅は exaggeration と同じ側（世界の幾何＝座標には効かない px 表示スカラー）だが、
+  // 整数の exaggeration（倍率）とも違い、UI 側のスライダー刻みが 0.5 px を想定するため
+  // 1 桁を採る。0.1px 未満はどの画面密度でも知覚できず、0.5 刻みの代表値は 1 桁で
+  // 完全にロスレス（6 桁組のような幾何の画素ズレという上振れリスクがそもそも存在しない）
+  beamWidthPx: 1,
 } as const;
 
 /** アンカーの成分数（x, y, 方向角）。 */
@@ -608,6 +629,11 @@ export function encodeUrl(state: ShareableState): string {
     parts.push('nums=' + (state.numbersVisible ? '1' : '0'));
   }
 
+  // ビーム幅（TASKS 4-5）。glow/nums と同じ表示専用の独立フィールドだが、値が真偽値ではなく
+  // 連続数なので putNumber（omit-when-default・1 桁丸め）を使う。他の putNumber 呼び出しと
+  // 手続きは同じでも、この値だけは traceSpectrum に無関係（4-5 偵察で確定済み）
+  putNumber(parts, 'bw', state.beamWidthPx, defaults.beamWidthPx, DECIMALS.beamWidthPx);
+
   // カメラ視点（カメラ共有）。glow/nums と同じ独立フィールドだが、6 値の複合キーなので
   // 単純な !== 比較ではなく putCamera が丸め後の一致判定と省略をまとめて行う
   putCamera(parts, state.cameraPosition, state.cameraTarget, defaults);
@@ -658,6 +684,8 @@ export function decodeUrl(fragment: string): ShareableState {
     // readBoolean は '1'/'0' だけを認め、欠損・未知はすべて既定（true）に落ちる
     glowEnabled: readBoolean(params, 'glow', defaults.glowEnabled),
     numbersVisible: readBoolean(params, 'nums', defaults.numbersVisible),
+    // readNumber は欠損・空・解釈不能をすべて既定（3.5）に落とす（他の数値キーと同じ規則）
+    beamWidthPx: readNumber(params, 'bw', defaults.beamWidthPx),
     cameraPosition: camera.cameraPosition,
     cameraTarget: camera.cameraTarget,
   };

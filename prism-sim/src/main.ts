@@ -1258,6 +1258,9 @@ function main(): void {
       numbersVisible: panel.isNumbersPressed(),
       cameraPosition: currentCameraPosition(),
       cameraTarget: currentCameraTarget(),
+      // beams/reflectionBeams は常に同じ幅で揃えて配るので、片方（beams）を読めば足りる
+      // （`currentRotationDeg` と同じ流儀。別変数に二重保持しない）
+      beamWidthPx: beams.lineWidth,
     };
   };
 
@@ -1326,6 +1329,12 @@ function main(): void {
     // markDirty は呼ばない（視点は光路計算に無関係）。freeze/refreshBeams/姿勢の復元とは
     // 接点が無いので、どこに置いても良い独立ブロックである（偵察で確認済み）
     interaction.setCameraView(state.cameraPosition, state.cameraTarget);
+
+    // 12: ビーム幅（TASKS 4-5）。グロー/数値表示と同じ理由で markDirty は呼ばない
+    // （traceSpectrum の入力にならない表示専用値。4-5 裁定）
+    panel.setBeamWidth(state.beamWidthPx);
+    beams.setLineWidth(state.beamWidthPx);
+    reflectionBeams.setLineWidth(state.beamWidthPx);
   };
 
   /** URL を書き換えるのを待っているタイマー。待機中でなければ undefined。 */
@@ -1386,6 +1395,15 @@ function main(): void {
     overlay.setVisible(visible);
     scheduleUrlUpdate();
     console.log(`[操作] 数値表示 = ${visible ? 'ON' : 'OFF'}`);
+  });
+
+  // ビーム幅（TASKS 4-5）。グロー/数値表示と同じ表示専用の独立経路——
+  // markDirty は呼ばず、scheduleUrlUpdate へ直行する（4-5 裁定）
+  panel.onBeamWidthInput((widthPx) => {
+    beams.setLineWidth(widthPx);
+    reflectionBeams.setLineWidth(widthPx);
+    scheduleUrlUpdate();
+    console.log(`[操作] ビーム幅 = ${widthPx}px`);
   });
 
   // カメラのドラッグ → URL（カメラ共有）。表示専用で光路計算に無関係なので markDirty は

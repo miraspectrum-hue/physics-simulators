@@ -3,6 +3,7 @@ import { DEFAULT_PRISM_X, DEFAULT_PRISM_Y } from '../scene/prismPose';
 import type { MaterialName, MinimumDeviation, SpectrumMode } from '../types/optics';
 
 import { minimumDeviationOf } from './materialOptics';
+import { DEFAULT_BEAM_WIDTH_PX } from './shareUrl';
 import {
   EXAGGERATION_MAX,
   EXAGGERATION_MIN,
@@ -32,6 +33,16 @@ const ROTATION_MAX_DEG = 180;
  */
 const POSITION_MIN = -3;
 const POSITION_MAX = 3;
+
+/**
+ * ビーム幅スライダーの下限・上限 [px]（TASKS 4-5、裁定済み）。
+ *
+ * `position`/`rotation` と同じ非 `AppState` の値域（`shareUrl.ts` に確立した値域は無く、
+ * ここが range 入力としての唯一の正解）。既定 3.5px を中心に、細く見づらい下限（1.0）から
+ * 個別の光線が潰れて識別しづらくなる上限（8.0）まで、0.5 刻み。
+ */
+const BEAM_WIDTH_MIN_PX = 1.0;
+const BEAM_WIDTH_MAX_PX = 8.0;
 
 /**
  * 頂角 60° で直接透過が起きない材質の警告文（TASKS 4-2b）。
@@ -99,6 +110,8 @@ export default class ControlPanel {
 
   private readonly angleSlider: HTMLInputElement;
   private readonly angleValue: HTMLElement;
+  private readonly beamWidthSlider: HTMLInputElement;
+  private readonly beamWidthValue: HTMLElement;
   private readonly minimumValue: HTMLElement;
   private readonly minimumButton: HTMLButtonElement;
   private readonly minimumWarning: HTMLElement;
@@ -128,6 +141,14 @@ export default class ControlPanel {
 
   /** Y 位置スライダーが動かされたときに呼ぶ購読者（TASKS 4-8）。 */
   private readonly positionYSubscribers: Array<(y: number) => void> = [];
+
+  /**
+   * ビーム幅スライダーが動かされたときに呼ぶ購読者（TASKS 4-5）。
+   *
+   * `position`/`rotation` と同じ非 `store` の独立配線（4-5 裁定：表示専用で
+   * `traceSpectrum` の入力にならないため）。
+   */
+  private readonly beamWidthSubscribers: Array<(widthPx: number) => void> = [];
 
   /** リセットが押されたときに呼ぶ購読者。 */
   private readonly resetSubscribers: Array<() => void> = [];
@@ -227,6 +248,43 @@ export default class ControlPanel {
     angleHint.textContent =
       'スライダーは「既定姿勢での入射角」です。プリズムを回すと実測 θ₁（下の情報バー）と乖離します。';
 
+    // ビーム幅（TASKS 4-5）。表示専用（4-5 裁定）なので store には触れず、position/rotation
+    // と同じ独立の購読者配列で通知する
+    const beamWidthLabel = document.createElement('label');
+    beamWidthLabel.className = 'control-panel__row';
+    beamWidthLabel.htmlFor = 'beam-width';
+
+    const beamWidthLabelText = document.createElement('span');
+    beamWidthLabelText.textContent = 'ビーム幅';
+
+    this.beamWidthValue = document.createElement('span');
+    this.beamWidthValue.className = 'control-panel__value';
+
+    beamWidthLabel.append(beamWidthLabelText, this.beamWidthValue);
+
+    this.beamWidthSlider = document.createElement('input');
+    this.beamWidthSlider.type = 'range';
+    this.beamWidthSlider.id = 'beam-width';
+    this.beamWidthSlider.className = 'control-panel__slider';
+    this.beamWidthSlider.min = String(BEAM_WIDTH_MIN_PX);
+    this.beamWidthSlider.max = String(BEAM_WIDTH_MAX_PX);
+    this.beamWidthSlider.step = '0.5';
+
+    this.beamWidthSlider.addEventListener('input', () => {
+      const widthPx = Number(this.beamWidthSlider.value);
+
+      this.beamWidthValue.textContent = `${widthPx.toFixed(1)}px`;
+
+      for (const subscriber of this.beamWidthSubscribers) {
+        subscriber(widthPx);
+      }
+    });
+
+    // 明示的に既定値を書く。range 入力は value 属性を省くと min/max の中点になる仕様だが、
+    // jsdom はこれを再計算しない（4-8 の position スライダーと同じ罠。実測では
+    // 中点ですらなく `50` に落ちることを確認済み——テストで実際に判明済み）
+    this.setBeamWidth(DEFAULT_BEAM_WIDTH_PX);
+
     // 最小偏角（TASKS 6-2）。目標を先に読ませ、その下のボタンで合わせる、という順に並べる。
     // δ_min は 6 項目の情報バーには入れない。目標値は操作の直前に見えているのが自然で、
     // 結果（実測 θ₁・偏角 δ）を情報バーで確かめる、という流れになる（案 b）
@@ -268,6 +326,8 @@ export default class ControlPanel {
       label,
       this.angleSlider,
       angleHint,
+      beamWidthLabel,
+      this.beamWidthSlider,
       minimumReadout,
       this.minimumButton,
       this.minimumWarning,
@@ -721,6 +781,15 @@ export default class ControlPanel {
     this.positionYSubscribers.push(subscriber);
   }
 
+  /**
+   * ビーム幅スライダーが動かされたときの購読者を登録する（TASKS 4-5）。
+   *
+   * @param subscriber 新しいビーム幅 [px] を受け取る
+   */
+  onBeamWidthInput(subscriber: (widthPx: number) => void): void {
+    this.beamWidthSubscribers.push(subscriber);
+  }
+
   /** リセットが押されたときの購読者を登録する。 */
   onReset(subscriber: () => void): void {
     this.resetSubscribers.push(subscriber);
@@ -956,6 +1025,22 @@ export default class ControlPanel {
 
     this.positionYSlider.value = text;
     this.positionYValue.textContent = text;
+  }
+
+  /**
+   * ビーム幅スライダーの**表示だけ**を更新する（共有 URL からの復元用。TASKS 4-5）。
+   *
+   * `setPositionX`/`setPositionY` と同じ非発火の流儀。`onBeamWidthInput` の購読者は動かない。
+   * コンストラクタから既定値の明示初期化にも使う（jsdom は value 属性省略時の
+   * min/max 中点フォールバックを再計算しないため）。
+   *
+   * @param widthPx ビーム幅 [px]
+   */
+  setBeamWidth(widthPx: number): void {
+    const text = widthPx.toFixed(1);
+
+    this.beamWidthSlider.value = text;
+    this.beamWidthValue.textContent = `${text}px`;
   }
 
   /**
