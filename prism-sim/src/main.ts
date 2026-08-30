@@ -1521,7 +1521,8 @@ function main(): void {
       setSpectrumMode: (mode: SpectrumMode): void => {
         store.update({ spectrumMode: mode });
       },
-      memoryInfo: (): { geometries: number; textures: number } => sceneManager.memoryInfo,
+      memoryInfo: (): { geometries: number; textures: number; programs: number } =>
+        sceneManager.memoryInfo,
       // 4-3 段階2b の検証用。3 系統が同じ本数へ貼り替わったことを外から数える
       rendererCounts: (): { beam: number; reflection: number; band: number; section: number } => ({
         beam: beams.pathCount,

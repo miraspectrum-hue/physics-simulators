@@ -306,13 +306,15 @@ export default class SceneManager {
   }
 
   /**
-   * WebGL が抱えているジオメトリ・テクスチャの数。**検証用**
-   * （4-3 の貼り替えで旧ジオメトリが解放されているかを外から数える）。
+   * WebGL が抱えているジオメトリ・テクスチャ・コンパイル済みシェーダ数。**検証用**
+   * （4-3 の貼り替えで旧ジオメトリが解放されているか、5-4 で材質切替が
+   * シェーダ再コンパイルを誘発していないかを外から数える）。
    */
-  get memoryInfo(): { geometries: number; textures: number } {
+  get memoryInfo(): { geometries: number; textures: number; programs: number } {
     return {
       geometries: this.renderer.info.memory.geometries,
       textures: this.renderer.info.memory.textures,
+      programs: this.renderer.info.programs?.length ?? 0,
     };
   }
 

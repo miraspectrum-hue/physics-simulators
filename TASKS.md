@@ -210,6 +210,10 @@ Node.js は 20.19 以上または 22.12 以上が必要（Vite 8 の engines 要
 - 往復の不変性は指紋で見る。**測定 URL とモードを必ず併記する**こと（正準 URL
   `#v=1&a=70&mat=sf10&sa=0.324229,0.351336,-11.371&sec=1` で連続 48 = `-856341260` /
   7 色 = `-946284801`。20 往復してもドリフトしない）
+- **旧ジオメトリの dispose も別途確認済み（コミット `fb3252c` 本文より転記、5-4 のクローズ
+  証拠として再掲）**：「旧ジオメトリは貼り替え時に dispose。20 往復で geometries 19 のまま」。
+  これはビーム指紋（上記）とは別の指標（`renderer.info.memory.geometries`）であり、
+  コミットメッセージにのみ記録されていたためここへ転記する
 
 ### 4-7 の設計メモ
 
@@ -328,7 +332,7 @@ CLAUDE.md「Three.js 運用」で保留していた **tracer のミュータブ�
 
 | 5-2 | 極端条件の確認（かすめ入射・ビーム外し・多重全反射・頂点直撃。設計メモは下記） | 🔴 高 | [x] | 3-9 |
 | 5-3 | WebGL2 非対応時のフォールバックメッセージ（設計メモは下記） | 🟡 中 | [x] | 2-1 |
-| 5-4 | メモリリークの確認（材質切替の繰り返しで dispose が効いているか） | 🟡 中 | [ ] | 4-2 |
+| 5-4 | メモリリークの確認（材質切替・リサイズ・PNG書き出しの繰り返しでGPU資源が増え続けないか。設計メモは下記） | 🟡 中 | [x] | 4-2 |
 | 5-5 | `npm run build` の成果物での動作確認（2026-08-28 実機スモークで確認。下記メモ参照） | 🟡 中 | [x] | 5-1 |
 | 5-6 | README に操作方法と物理モデルの説明を追記 | 🟢 低 | [ ] | 5-5 |
 
@@ -435,6 +439,47 @@ CLAUDE.md「Three.js 運用」で保留していた **tracer のミュータブ�
   - スクリーンショットで実際に読めることを確認（中央に十分な大きさ・オレンジ系警告色・
     2段落とも折り返して表示。隅の極小要素になっていない）
   - 本番ビルド（`vite build`）でも `tsc`/`vitest`/`console` すべて確認済み
+
+### 5-4 の設計メモ
+
+- **読み替え根拠**：元の行「材質切替の繰り返しで dispose が効いているか」は前提がズレている。
+  `PrismObject.setRefractiveIndex()`（`src/scene/PrismObject.ts`）は `material.ior` と
+  `rimStrength.value` を書き換えるだけで、`new` も `dispose()` も一切呼ばない。ジオメトリ・
+  マテリアル・環境テクスチャはコンストラクタで一度だけ生成され、以後不変。dispose する
+  新旧オブジェクトのペアがそもそも存在しないため、「dispose が効いているか」という問い自体が
+  成立しない。5-4 は「インプレース書き換え（および他の資源確保箇所）で GPU 資源が増え続けない
+  こと」の確認へ読み替える
+- **GPU 資源を確保/解放する箇所の全数**：材質切替（インプレース、確保無し）／
+  スペクトルモード切替（`setWavelengths` でジオメトリを貼り替え、旧は dispose。上の
+  4-3 設計メモに転記済み）／リサイズ（`composer.setSize`/`bloomPass.setSize` は**既存**の
+  `WebGLRenderTarget` を `.setSize()` で内部的に再確保するだけで新規オブジェクトは作らない。
+  `EffectComposer.reset()`（dispose+差し替えを行う別メソッド）は本アプリでは一度も呼ばれない）／
+  PNG 書き出し（`captureComposite.ts` は素の 2D canvas をローカル変数として使い捨てるのみで
+  three.js のリソースではなく `renderer.info.memory` の対象外）／カメラ・グロー・数値・位置・
+  回転（いずれも既存プロパティの代入のみで確保を伴わない）
+- **★CDP 実測**（測定 URL `#v=1&a=70&mat=sf10&sa=0.324229,0.351336,-11.371&sec=1`、
+  `__debug.memoryInfo()` = `{ geometries, textures, programs }`。`programs` は
+  `renderer.info.programs?.length ?? 0` を返す検証用ゲッターとして本タスクで追加）：
+
+  | 操作 | 試行回数 | geometries 前→後 | textures 前→後 | programs 前→後 |
+  |---|---|---|---|---|
+  | 材質切替（実 UI の `#material` セレクトに `change` を実発火、4 材質 ×30 巡） | 120 | 19→19 | 19→19 | 21→21 |
+  | リサイズ（`Emulation.setDeviceMetricsOverride` で反復。試行 25 回に対し `resizeCount` は26回発火） | 25（実適用26） | 19→19 | 19→19 | 21→21 |
+  | PNG 書き出し（`capturePngComposed()` を反復） | 15 | 19→19 | 19→19 | 21→21 |
+
+  3 操作いずれも 3 指標とも増加無し。**材質切替で `programs` が増えないことを実測で確定**
+  （`onBeforeCompile` によるカスタムシェーダ注入があるため再コンパイルの懸念があったが、
+  `ior` は three.js の `MeshPhysicalMaterial` ではシェーダ `#define` ではなく uniform として
+  扱われ、`setRefractiveIndex` は `material.needsUpdate` を一度も立てないため再コンパイルは
+  発生しない）。console エラーは全操作を通して 0
+- **未計測で残す項目**：GPU の実 VRAM 使用量そのものは、WebGL からは問い合わせる標準手段が無い
+  （`WEBGL_debug_renderer_info` 拡張は GPU ベンダ／レンダラの識別文字列のみを返し、メモリ量は
+  含まない。実測環境：`vendor: Google Inc. (Intel)` / `renderer: ANGLE (Intel, Intel(R) Arc(TM)
+  140T GPU (16GB)...)`）。`renderer.info.memory`/`renderer.info.programs` が three.js アプリで
+  実用上得られる最も直接的な代替指標であり、本タスクではこれ以上の下位レベル計測手段は無い
+- **`tsc --noEmit` 0 エラー、`npm run build` 成功、`npm run test` 31 Test Files / 915 Tests
+  passed**（`memoryInfo` の戻り値型に `programs` を追加した以外、生産コードの分岐・確保挙動は
+  一切変更していない）
 
 ### Phase 5 完了条件
 - ✅ 1920×1080 / 連続 48 波長で 60 fps を維持している
@@ -755,11 +800,12 @@ Phase 0（環境構築）
   （ダウンロード完了）を確認した。CDP（ヘッドレス）では `canceled` で止まり、4通り試して
   同じ地点だったためハーネス制約と判断していたが、実ブラウザ（Chrome、`npm run build` →
   `npm run preview`）でボタンを押すとファイルが実際に降り、画面の表示と一致することを確認した
-- **既知 debt（監査で確認）**: 5-4「メモリリークの確認（dispose が効いているか）」は前提が
-  ズレている。材質切替は `PrismObject` を dispose+再生成せず `main.ts:753`
-  `prism.setRefractiveIndex(material.catalogNd)` でインプレース書き換えする設計であり、
-  5-4 着手時は「dispose の効き」ではなく「インプレース書き換えでリークが無いこと」の確認に
-  読み替える
+- **解消済み debt（監査で確認、2026-08-30 の実測で 5-4 クローズ）**: 5-4「メモリリークの確認
+  （dispose が効いているか）」は前提がズレていた。材質切替は `PrismObject` を dispose+再生成
+  せず `main.ts:792`（当時 `main.ts:753`）`prism.setRefractiveIndex(material.catalogNd)` で
+  インプレース書き換えする設計であり、5-4 着手時は「dispose の効き」ではなく「インプレース
+  書き換え（および他の資源確保箇所）で GPU 資源が増え続けないこと」の確認へ読み替えた。
+  読み替え後の検証結果は 5-4 の設計メモを参照
 - **実機スモークテスト（2026-08-28）**: `npm run build` → `npm run preview`（dist の実配信）を
   実ブラウザ（Chrome）で実行。シナリオ A/B/C すべて PASS、console エラー 0 を確認。既定状態
   （入射角 53.3° / BK7 / 断面図 OFF）と、操作を加えた状態の両方で確認済み。この結果を根拠に、
