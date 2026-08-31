@@ -68,6 +68,16 @@ export default class InteractionCtl {
 
   private mode: InteractionMode = 'camera';
 
+  /**
+   * キーボード切替の入力を一時停止しているか（TASKS 4-9）。
+   *
+   * モーダルが開いている間、Escape の唯一の所有者はモーダル自身であるべきで、
+   * `isTypingTarget` が「入力欄で打鍵中は譲る」のと同じ考え方の自然な拡張である。
+   * `keyListener` の冒頭でこのフラグを見て、true なら `isTypingTarget` の判定より先に
+   * 早期 return する（R/G/Esc すべてのモードキーをモーダルへ譲る）。
+   */
+  private inputSuspended = false;
+
   /** 姿勢が変わったときに呼ぶ購読者。 */
   private readonly poseSubscribers: Array<() => void> = [];
 
@@ -124,6 +134,12 @@ export default class InteractionCtl {
     });
 
     this.keyListener = (event: KeyboardEvent): void => {
+      // モーダルが開いている間は Escape/R/G の唯一の所有者をモーダルへ譲る
+      // （TASKS 4-9。isTypingTarget と同じ「入力中は譲る」の自然な拡張）
+      if (this.inputSuspended) {
+        return;
+      }
+
       if (isTypingTarget(event.target)) {
         return;
       }
@@ -138,6 +154,24 @@ export default class InteractionCtl {
       this.setMode(mode);
     };
     window.addEventListener('keydown', this.keyListener);
+  }
+
+  /**
+   * キーボード切替の入力を一時停止/再開する（TASKS 4-9）。
+   *
+   * モーダルを開いたら `true`、閉じたら `false`。停止中は `window` の Escape/R/G を
+   * 一切消費しない——`isTypingTarget` が「文字入力中は譲る」のと同じ考え方を、
+   * 「モーダルが開いている間も譲る」へ拡張したもの。
+   *
+   * @param suspended 停止するなら true
+   */
+  setInputSuspended(suspended: boolean): void {
+    this.inputSuspended = suspended;
+  }
+
+  /** 現在サスペンド中か。**検証用**（`HelpModal` との一対一結線をテストから確認するため）。 */
+  get isInputSuspended(): boolean {
+    return this.inputSuspended;
   }
 
   /**

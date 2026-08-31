@@ -52,8 +52,8 @@ prism-sim/
 │       └── main.css
 └── tests/
     ├── optics/                  # dispersion / convexSolid / tracer / fresnel のテスト
-    ├── scene/                   # scene 層の純粋関数。svgRaster.test.ts のみ jsdom
-    └── ui/                      # store / shareUrl 等。ControlPanel.test.ts のみ jsdom
+    ├── scene/                   # scene 層の純粋関数。svgRaster.test.ts / InteractionCtl.test.ts は jsdom
+    └── ui/                      # store / shareUrl 等。ControlPanel.test.ts / HelpModal.test.ts は jsdom
 ```
 
 ## テスト方針（Vitest と CDP の境界）
@@ -69,9 +69,11 @@ prism-sim/
 
 - jsdom を使うファイルは**先頭に `// @vitest-environment jsdom` を書く**。環境はファイル単位で
   切り替わるので、他は `node` のままにしておく（全体を jsdom にはしない）
-- 現在 jsdom 節に属するのは 2 ファイルだけである
+- 現在 jsdom 節に属するのは 4 ファイルである
   - `tests/scene/svgRaster.test.ts` —— ラスタ化の前に SVG へ焼き込む属性（PNG-2）
   - `tests/ui/ControlPanel.test.ts` —— スペクトルラジオ ⇄ store の双方向（4-3）
+  - `tests/scene/InteractionCtl.test.ts` —— 入力サスペンドゲートと window keydown の束縛（4-9）
+  - `tests/ui/HelpModal.test.ts` —— モーダルの構造・aria・フォーカス移動/復帰の束縛（4-9）
 - **jsdom でも WebGL と実レイアウトには触れない。** `getBoundingClientRect` は 0 を返し CSS も
   効かないので、見た目・寸法・画素を jsdom で確かめようとしてはいけない（それは CDP 側の仕事）
 - 同じ id を持つ要素を何度も組み立てるテストでは `beforeEach` で DOM を掃く。jsdom の `#id`

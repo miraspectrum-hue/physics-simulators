@@ -25,7 +25,7 @@ import { composeCapturePng } from './scene/captureComposite';
 import { wavelengthsForMode } from './optics/spectrumMode';
 import BeamRenderer from './scene/BeamRenderer';
 import FloorObject from './scene/FloorObject';
-import InteractionCtl from './scene/InteractionCtl';
+import InteractionCtl, { type InteractionMode } from './scene/InteractionCtl';
 import {
   createIncidentRay,
   faceNormalAngleDeg,
@@ -65,6 +65,7 @@ import type {
 } from './types/optics';
 import { animateAngle } from './ui/animateAngle';
 import ControlPanel from './ui/ControlPanel';
+import HelpModal from './ui/HelpModal';
 import { minimumDeviationOf } from './ui/materialOptics';
 import type { AppState } from './ui/store';
 import InfoOverlay, { formatAngle, type InfoValues } from './ui/InfoOverlay';
@@ -601,6 +602,8 @@ function main(): void {
   let wavelengths = wavelengthsForMode(store.getState().spectrumMode);
 
   const panel = new ControlPanel(document.body, store);
+  // トリガーは control-panel 上部（タイトル直後）に置く。新設ヘッダーは作らない（TASKS 4-9 裁定②）
+  const helpModal = new HelpModal(panel.element);
   const overlay = new InfoOverlay(container);
 
   // 波長ごとの基準色はここで一度だけ決まる。実際に描く明るさは
@@ -988,6 +991,15 @@ function main(): void {
   });
   // 切替は R（回転）/ G（移動）/ Esc（カメラ）
   interaction.setMode('rotate');
+
+  // ヘルプモーダル（TASKS 4-9）。開閉と入力サスペンドを一対一に結ぶ——片方だけ動く状態を
+  // 作らない（4-9 裁定①：モーダルが開いている間、Escape の唯一の所有者はモーダル自身）
+  helpModal.onOpen(() => {
+    interaction.setInputSuspended(true);
+  });
+  helpModal.onClose(() => {
+    interaction.setInputSuspended(false);
+  });
 
   /** 現在の姿勢（Z 軸回転）[deg]。単一の真実である Object3D から読む。 */
   const currentRotationDeg = (): number => prism.object.rotation.z * DEG_PER_RAD;
@@ -1580,6 +1592,10 @@ function main(): void {
       numbersVisible: (): boolean => panel.isNumbersPressed(),
       // カメラ共有の検証用。position は既存の camera（Object3D）からそのまま読める
       cameraTarget: (): Vector3 => interaction.cameraTarget(),
+      // TASKS 4-9 の検証用。ESC の二重支配が解消されたことを外から数値で確認する
+      interactionMode: (): InteractionMode => interaction.currentMode(),
+      isInputSuspended: (): boolean => interaction.isInputSuspended,
+      helpModal,
       // 精度実測用。URL往復を介さず直接視点を設定できるので、丸め誤差だけを
       // タイミングのズレ（慣性の残り）と混同せずに切り分けられる
       setCameraView: (
