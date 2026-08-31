@@ -42,12 +42,47 @@ body {
   min-width: 0;
 }
 
-/* ビューポート下端の情報バー（SPEC.md「画面構成」）。数値表示専用で操作は持たない。 */
-.info-overlay {
+/*
+ * 情報バー・数値表示トグルを横に束ねるラッパー（TASKS 7-1）。
+ *
+ * 位置決めはここでだけ行う。`.info-overlay` 自身は通常フローに乗り、`flex: 1` で
+ * 残り幅を占めるだけにして、トグルボタンをバーの右端に並べる。
+ *
+ * `align-items: flex-end` が要（TASKS 7-3）。このラッパーは `bottom: 0` で下端を
+ * 固定しているだけで、**高さは中身に応じて自動で決まる**。`.info-overlay` は
+ * ON/OFF で高さが変わる（畳まれば 0 に近づく）ため、`center`（縦方向中央揃え）だと
+ * バーの高さが変わるたびにトグルボタンの縦位置も一緒にずれてしまう
+ * （実際に報告された「OFF にすると上へ動く」不具合）。`flex-end` で下端に揃えておけば、
+ * バーの高さがどう変わってもボタンの下端は常にラッパーの下端（＝画面下端）に
+ * 一致し続け、位置が動かない。
+ */
+.viewport-bottombar {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding-right: 16px;
+}
+
+/*
+ * ビューポート下端の情報バー（SPEC.md「画面構成」）。数値表示専用で操作は持たない。
+ *
+ * `max-height` を大きめの固定値にしておくのは、`.info-overlay--collapsed` の
+ * トランジション対象にするため（`auto` はアニメーションできない）。通常時はこの上限に
+ * 実質引っかからない。**幅ではなく高さを畳む**（TASKS 7-3）——`flex-wrap: wrap` の
+ * 6 項目を持つこの要素は、幅を 0 へ縮めると各項目が個別に折り返されて縦に積み上がり、
+ * かえって高さが膨らむ（OFF の方が背が高くなる不具合の原因だった）。幅は `flex: 1` の
+ * まま常に一定に保ち、高さだけを畳むことで折り返しの再計算を起こさない。
+ */
+.info-overlay {
+  flex: 1;
+  overflow: hidden;
+  max-height: 500px;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 24px;
@@ -57,6 +92,14 @@ body {
   border-top: 1px solid var(--color-panel-border);
   /* カメラ操作の邪魔をしない。バーの上でドラッグしても OrbitControls に届く */
   pointer-events: none;
+}
+
+/* 数値表示トグル OFF 時の畳み姿（TASKS 7-2・7-3）。下側から薄く畳まれて消える */
+.info-overlay--collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .info-overlay__item {
@@ -85,22 +128,57 @@ body {
   border-left: 1px solid var(--color-panel-border);
 }
 
+/* タイトルとその下の内容を罫線で分ける（TASKS 7-17、余白は 7-18 で詰めた） */
 .control-panel__title {
-  margin: 0 0 20px;
+  margin: 0 0 14px;
+  padding-bottom: 6px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--color-panel-border);
 }
 
+/*
+ * カテゴリ（光路／表現／スクリーン等）の切れ目を罫線で分ける（TASKS 7-17）。
+ * `.help-modal__group` と同じ流儀——最初のセクションは `.control-panel__title` の
+ * 下線がすでに区切りを作っているので、二重に線を引かないよう `border-top` を外す。
+ * 罫線の上下の余白は詰めてある（TASKS 7-18：間延びして見えるという指摘）。
+ */
 .control-panel__section {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-panel-border);
 }
 
+.control-panel__section:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+/*
+ * 見出し（`.control-panel__legend`）だけを左端に残し、それ以外の直接の子は
+ * 少しだけ右へ寄せる（TASKS 7-19）。見出しと中身が同じ左端に揃っていると
+ * 見出しが埋もれて見える、という指摘への対応——インデントで「見出しは別格」
+ * という階層を作る。
+ */
+.control-panel__section > :not(.control-panel__legend) {
+  margin-left: 10px;
+}
+
+/* アイコン＋見出し文字（TASKS 7-15）。ヘルプガイドの同名カテゴリと同じアイコンを使う */
 .control-panel__legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 10px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-muted);
+}
+
+/* MDI アイコン共通（TASKS 7-15）。`fill="currentColor"` なので周囲の文字色にそのまま従う */
+.mdi-icon {
+  flex: none;
 }
 
 .control-panel__row,
@@ -172,6 +250,93 @@ body {
 }
 
 /*
+ * スライダー行にインライン化したワンショットボタン（TASKS 7-1）。
+ *
+ * `.control-panel__button` と併用する（`width:100%` を打ち消すだけの差分）。
+ * `.control-panel__slider-row` の中でのみ使う。
+ */
+.control-panel__inline-button {
+  width: auto;
+  flex: none;
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/*
+ * 文字を持たずアイコンのみのボタン（「合わせる」→ TASKS 7-15）。
+ *
+ * `.control-panel__inline-button` と併用する（正方形寄りに padding を詰め直すだけの差分）。
+ * 読み上げ名は `aria-label`、ホバー時の説明は `title`——どちらも短縮前の文言
+ * （「最小偏角に合わせる」「光路に合わせる」）を DOM 側（`ControlPanel.ts`）で設定する。
+ */
+.control-panel__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+
+/*
+ * スライダーとインラインボタンを1行に並べる（距離＋「合わせる」、入射角＋「合わせる」、
+ * ビーム幅＋グロー等。TASKS 7-1・7-11）。
+ */
+.control-panel__slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.control-panel__slider-row .control-panel__slider {
+  flex: 1;
+}
+
+/*
+ * ビューポート側へ出したトグル・アクションボタン（TASKS 7-1・7-2）。
+ *
+ * `.control-panel__button` の `width:100%` はサイドバー前提の指定なので、
+ * ビューポートに浮かぶボタンでは打ち消して内容幅にする。
+ */
+.viewport-topleft .control-panel__button,
+.viewport-bottombar .control-panel__button,
+.viewport-topright .control-panel__button {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(5, 7, 13, 0.72);
+}
+
+/*
+ * 右上の全体操作ツールバー（初期状態に戻す／URL をコピー／PNG を保存／ヘルプ。TASKS 7-2）。
+ *
+ * どれも単一カテゴリに閉じない「全体操作」という性質で束ねる。`left` を指定しないので
+ * 内容幅で右端（`right: 16px`）から左へ伸びる——ボタンが増減しても右端の位置は動かない。
+ */
+.viewport-topright {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.viewport-topright__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* コピー結果などの案内文。ボタン列のすぐ下に右寄せで添える */
+.viewport-topright .control-panel__hint {
+  max-width: 280px;
+  margin: 0;
+  text-align: right;
+}
+
+/*
  * スペクトル表示モードのラジオ（TASKS 4-3）。パネル唯一のラジオ。
  *
  * 意味論と操作（矢印キー・ロービング tabindex・読み上げ）はネイティブの
@@ -192,11 +357,22 @@ body {
   color: var(--color-muted);
 }
 
+/*
+ * 選択肢を横に並べる。`.control-panel__radiogroup`（fieldset）自体は flex にしない——
+ * `legend` を flex コンテナの子にすると配置が特殊になりブラウザ間で挙動が割れるため、
+ * legend は今までどおりブロックとして単独の行に残し、選択肢だけを内側で横並びの
+ * flex 行にまとめる（`option`）。
+ */
+.control-panel__radiooptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+}
+
 .control-panel__radio {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-bottom: 4px;
   font-size: 13px;
   cursor: pointer;
 }
@@ -276,11 +452,25 @@ body {
   margin-bottom: 0;
 }
 
-/* 断面 2D ビューのインセット（TASKS 6-1）。3D の上に重ねるだけで操作は奪わない。 */
-.section-view {
+/*
+ * 断面図トグル・SectionView を縦に束ねるラッパー（TASKS 7-1）。
+ *
+ * 位置決めはここでだけ行う。`.section-view` 自身は通常フローに乗るだけにして、
+ * トグルボタンのすぐ下にパネルが開くようにする。
+ */
+.viewport-topleft {
   position: absolute;
   top: 16px;
   left: 16px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* 断面 2D ビューのインセット（TASKS 6-1）。3D の上に重ねるだけで操作は奪わない。 */
+.section-view {
   width: 320px;
   height: 320px;
   background: rgba(5, 7, 13, 0.72);
@@ -330,35 +520,82 @@ body {
   font-size: 16px;
 }
 
-.help-modal h3 {
-  margin: 0 0 6px;
+/*
+ * カテゴリ（キーボード／マウス／光路／表現／スクリーン）ごとの2列レイアウト
+ * （TASKS 7-13・7-14）。
+ *
+ * 左列＝カテゴリ名、右列＝中身。カテゴリ名を `color: var(--color-accent)` にして
+ * 右列の項目名（`dt`、太字だが無彩色）・説明文（`dd`/`p`、`--color-muted`）のどちらとも
+ * 見た目で区別する——旧デザインは `h3`（カテゴリ名）と `dd`（説明文）が同じ
+ * `--color-muted` かつ近い文字サイズで、並べると同じ種類の文言に見えてしまっていた。
+ *
+ * 右列だけが可変の行数を持つ（スライダーは複数項目、キーボード／マウスは1行）。
+ * `align-items: start` で、右列がどれだけ縦に伸びてもカテゴリ名は先頭行の高さに
+ * 揃ったまま——「カテゴリ名を毎行くり返さずに済む」擬似的な rowspan をグリッドの
+ * 行数を明示しないことで実現している（`.help-modal__group` 自体には行を1つしか
+ * 定義しない。右列の中身が何行あっても、それは右列のセルの中の話でしかない）。
+ */
+.help-modal__group {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: start;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-panel-border);
+}
+
+.help-modal__group:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+/* アイコン＋カテゴリ名（TASKS 7-14）。狭い左列でも折り返せるよう flex-wrap を許す */
+.help-modal__group-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-muted);
+  color: var(--color-accent);
 }
 
-.help-modal section {
-  margin-bottom: 16px;
-}
-
-.help-modal p {
+.help-modal__group-body {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.help-modal dl {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
+/* キー名の見た目（TASKS 7-14）。押しボタン風の小さな箱で説明文と視覚的に区切る */
+.help-modal__group-body kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-background-top);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 3px;
 }
 
-.help-modal dt {
+/* スライダー節：項目名と説明をさらに2列（右列の中だけで完結する内側のグリッド） */
+.help-modal__terms {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 6px;
+}
+
+.help-modal__terms dt {
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.help-modal dd {
-  margin: 0 0 8px;
+.help-modal__terms dd {
+  margin: 0;
   color: var(--color-muted);
 }
 

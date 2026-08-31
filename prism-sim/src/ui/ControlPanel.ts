@@ -1,7 +1,10 @@
+import { mdiMonitor, mdiPaletteOutline, mdiShimmer, mdiTarget, mdiTriangleOutline } from '@mdi/js';
+
 import { ALL_MATERIALS } from '../optics/constants';
 import { DEFAULT_PRISM_X, DEFAULT_PRISM_Y } from '../scene/prismPose';
 import type { MaterialName, MinimumDeviation, SpectrumMode } from '../types/optics';
 
+import { createMdiIcon } from './icon';
 import { minimumDeviationOf } from './materialOptics';
 import { DEFAULT_BEAM_WIDTH_PX } from './shareUrl';
 import {
@@ -64,6 +67,28 @@ const NO_DISPERSION_WARNING =
 const NO_MINIMUM_DEVIATION_REASON = 'この材質では直接透過しないため無効です。';
 
 /**
+ * 「合わせる」ボタン（入射角 θ₁ 側）の `aria-label`/`title`（TASKS 7-15）。
+ *
+ * TASKS 7-1 で「最小偏角に合わせる」から「合わせる」へ短縮した見出し文言そのもの。
+ * TASKS 7-15 でボタンをアイコンのみへ変えたため、短縮前の文言をここへ退避し、
+ * 読み上げ名（`aria-label`）とホバー時のツールチップ（`title`）の両方に使う。
+ */
+const MINIMUM_DEVIATION_ACTION_LABEL = '最小偏角に合わせる';
+
+/** 「合わせる」ボタン（スクリーン距離側）の `aria-label`/`title`。上と同じ理由・同じ流儀。 */
+const FOCUS_SCREEN_ACTION_LABEL = '光路に合わせる';
+
+/**
+ * グロートグルの `title`（TASKS 7-16）。
+ *
+ * 「合わせる」と違い、これは瞬間の操作ではなく ON/OFF を持つトグルなので、
+ * `aria-label` は名前（「グロー」）のまま、説明はホバー時のツールチップ（`title`）
+ * にだけ持たせる——状態は `aria-pressed` が既に伝えている。
+ */
+const GLOW_DESCRIPTION =
+  'グロー（光線のにじみ）の表示を切り替えます。見た目のみで、計算には影響しません。';
+
+/**
  * 一時表示（`showSourceAngleNotice`）を掲げておく時間 [ms]。
  *
  * 押した瞬間にしか出さないので、**毎フレーム出し直して点滅させない**。時間で自然に消し、
@@ -72,8 +97,16 @@ const NO_MINIMUM_DEVIATION_REASON = 'この材質では直接透過しないた�
  */
 const NOTICE_DURATION_MS = 6000;
 
-/** 共有セクションの平常時の案内。コピーの結果を出したあとはここへ戻る。 */
-const SHARE_STATUS_IDLE = 'アドレスバーの URL には今の状態が入っています。';
+/**
+ * 共有結果のメッセージ（`setShareStatus`）を掲げておく時間 [ms]（TASKS 7-4）。
+ *
+ * `NOTICE_DURATION_MS` とは独立の値——どちらか一方だけを後から変える依頼が来ても、
+ * もう一方に影響しない。実際に共有結果の側だけ 10 秒→6 秒→3 秒と調整された経緯がある。
+ * 押した直後だけ結果を見せ、時間が来たら `hidden` で消す——`sourceAngleNotice` と
+ * 同じ「時間で自然に消す」流儀だが、こちらは常時表示の代替文言へは戻さない
+ * （ボタンの直下という目立つ位置に居座り続けないようにする、というユーザー指定の挙動）。
+ */
+const SHARE_STATUS_DURATION_MS = 3000;
 
 /**
  * スペクトル表示モードの選択肢（TASKS 4-3）。
@@ -103,6 +136,17 @@ const SPECTRUM_MODE_OPTIONS: ReadonlyArray<{
  * 実際の読み書きは `onRotationInput` / `setRotationDeg` を通じて配線側に委ねる。
  *
  * 計算結果の数値表示は持たない。そちらは `InfoOverlay`（情報バー）の責務。
+ *
+ * **断面図トグル・数値表示トグル・初期状態に戻す・URL をコピー・PNG を保存の5つは、
+ * 構築直後は `this.element` 直下に仮置きされる**（TASKS 7-1・7-2）。断面図・数値表示は
+ * ウィンドウ（断面図パネル／情報バー）に紐づく性質の切替、残る3つはどの1カテゴリにも
+ * 閉じない「全体操作」であり、実運用では `main.ts` が構築直後に
+ * `sectionToggleElement`/`numbersToggleElement`/`resetButtonElement`/
+ * `shareUrlButtonElement`/`savePngButtonElement`/`shareStatusElement` 経由で取り出し、
+ * ビューポート側へ `appendChild`（＝再配置）する。`appendChild` は既存ノードを移動させる
+ * だけなので、要素の参照・イベントリスナーはそのまま保たれる。`aria-pressed` の状態機械・
+ * 購読者配列・`onToggleSection`/`setSectionPressed`/`onReset`/`setShareStatus` 等の
+ * 公開契約は一切変えていない——変わるのは最終的な DOM 上の置き場所だけである。
  */
 export default class ControlPanel {
   /** パネルのルート要素。 */
@@ -131,6 +175,9 @@ export default class ControlPanel {
   private readonly sectionToggle: HTMLButtonElement;
   private readonly glowToggle: HTMLButtonElement;
   private readonly numbersToggle: HTMLButtonElement;
+  private readonly resetButton: HTMLButtonElement;
+  private readonly shareUrlButton: HTMLButtonElement;
+  private readonly savePngButton: HTMLButtonElement;
   private readonly shareStatus: HTMLElement;
 
   /** 姿勢スライダーが動かされたときに呼ぶ購読者。 */
@@ -205,14 +252,67 @@ export default class ControlPanel {
     heading.textContent = 'プリズム分光シミュレータ';
     this.element.appendChild(heading);
 
-    const section = document.createElement('section');
-    section.className = 'control-panel__section';
+    // 光路セクション（TASKS 7-1：光源／材質／プリズムの3見出しを統合）。
+    // 「計算に効く入力」という性質で束ねる——入射角・材質・姿勢のどれも
+    // traceSpectrum の入力そのものであり、見た目だけの切替（表現セクション）とは分ける
+    const pathSection = document.createElement('section');
+    pathSection.className = 'control-panel__section';
 
-    const legend = document.createElement('h2');
-    legend.className = 'control-panel__legend';
-    legend.textContent = '光源';
-    section.appendChild(legend);
+    // 見出しのアイコンはヘルプガイドの同名カテゴリ（HelpModal.ts）と揃える（TASKS 7-15）
+    const pathLegend = document.createElement('h2');
+    pathLegend.className = 'control-panel__legend';
+    pathLegend.append(createMdiIcon(mdiTriangleOutline), document.createTextNode('光路'));
+    pathSection.appendChild(pathLegend);
 
+    // 材質（4-2）。選択肢は ALL_MATERIALS から生やすので追記漏れが起きない。
+    // 並び順は「ガラスの種類 → 最小偏角 δ_min → 入射角 θ₁」（TASKS 7-11）——
+    // δ_min は材質だけで決まる値なので、材質のすぐ下に置くと「この材質を選ぶと
+    // 目指せる最小偏角はこれ」という依存関係が視覚的な並びと一致する
+    const materialLabel = document.createElement('label');
+    materialLabel.className = 'control-panel__row';
+    materialLabel.htmlFor = 'material';
+    materialLabel.textContent = 'ガラスの種類';
+
+    this.materialSelect = document.createElement('select');
+    this.materialSelect.id = 'material';
+    this.materialSelect.className = 'control-panel__select';
+
+    for (const material of ALL_MATERIALS) {
+      const option = document.createElement('option');
+      option.value = material.name;
+      option.textContent = `${material.name}（n_d = ${material.catalogNd.toFixed(3)}）`;
+      this.materialSelect.appendChild(option);
+    }
+
+    this.materialSelect.addEventListener('change', () => {
+      store.update({ material: toMaterialName(this.materialSelect.value) });
+    });
+
+    this.materialWarning = document.createElement('p');
+    this.materialWarning.className = 'control-panel__warning';
+    this.materialWarning.hidden = true;
+    this.materialWarning.textContent = NO_DISPERSION_WARNING;
+
+    pathSection.append(materialLabel, this.materialSelect, this.materialWarning);
+
+    // 最小偏角（TASKS 6-2）。ここは**読むだけ**の行にする（TASKS 7-11）——
+    // 「合わせる」ボタンは実際には入射角 θ₁ を書き換える操作なので、効き先である
+    // θ₁ スライダーの隣に置く。ここは目標値（δ_min とそこへ至る θ₁_min）を
+    // 先に見せるだけの読み取り専用行として残す
+    const minimumReadout = document.createElement('p');
+    minimumReadout.className = 'control-panel__readout';
+
+    const minimumLabel = document.createElement('span');
+    minimumLabel.textContent = '最小偏角 δ_min';
+
+    this.minimumValue = document.createElement('span');
+    this.minimumValue.className = 'control-panel__value';
+
+    minimumReadout.append(minimumLabel, this.minimumValue);
+    pathSection.appendChild(minimumReadout);
+
+    // 入射角 θ₁。スライダーの右に「合わせる」ボタンをインライン化する（TASKS 7-11）——
+    // ボタンは実際にこのスライダーの値を書き換えるので、効き先の隣に置くのが自然
     const label = document.createElement('label');
     label.className = 'control-panel__row';
     label.htmlFor = 'source-angle';
@@ -243,10 +343,191 @@ export default class ControlPanel {
       store.update({ sourceAngleDeg: Number(this.angleSlider.value) });
     });
 
+    // アイコンのみのボタンにする（TASKS 7-15）。読み上げ用の名前とホバー時のツールチップは
+    // 短縮前の文言（「合わせる」に短縮する前の TASKS 7-1 裁定を参照）をそのまま使う——
+    // アイコンだけでは何をするボタンか伝わらないため、`aria-label`/`title` で補う
+    this.minimumButton = document.createElement('button');
+    this.minimumButton.type = 'button';
+    this.minimumButton.className =
+      'control-panel__button control-panel__inline-button control-panel__icon-button';
+    this.minimumButton.setAttribute('aria-label', MINIMUM_DEVIATION_ACTION_LABEL);
+    this.minimumButton.title = MINIMUM_DEVIATION_ACTION_LABEL;
+    this.minimumButton.appendChild(createMdiIcon(mdiTarget));
+    this.minimumButton.addEventListener('click', () => {
+      for (const subscriber of this.applyMinimumSubscribers) {
+        subscriber();
+      }
+    });
+
+    const angleRow = document.createElement('div');
+    angleRow.className = 'control-panel__slider-row';
+    angleRow.append(this.angleSlider, this.minimumButton);
+
     const angleHint = document.createElement('p');
     angleHint.className = 'control-panel__hint';
     angleHint.textContent =
       'スライダーは「既定姿勢での入射角」です。プリズムを回すと実測 θ₁（下の情報バー）と乖離します。';
+
+    // ボタンを無効にした理由。押せない場所のすぐ下に短く置く
+    this.minimumWarning = document.createElement('p');
+    this.minimumWarning.className = 'control-panel__warning';
+    this.minimumWarning.hidden = true;
+    this.minimumWarning.textContent = NO_MINIMUM_DEVIATION_REASON;
+
+    // 押した瞬間にだけ出る案内（スライダーの可動域を外れたとき）。
+    // aria-live で読み上げにも届かせる（4-7 の方針）
+    this.sourceAngleNotice = document.createElement('p');
+    this.sourceAngleNotice.className = 'control-panel__warning';
+    this.sourceAngleNotice.hidden = true;
+    this.sourceAngleNotice.setAttribute('aria-live', 'polite');
+
+    pathSection.append(label, angleRow, angleHint, this.minimumWarning, this.sourceAngleNotice);
+
+    // 姿勢。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
+    const poseLabel = document.createElement('label');
+    poseLabel.className = 'control-panel__row';
+    poseLabel.htmlFor = 'prism-rotation';
+
+    const poseLabelText = document.createElement('span');
+    poseLabelText.textContent = 'Z 軸回転';
+
+    this.rotationValue = document.createElement('span');
+    this.rotationValue.className = 'control-panel__value';
+
+    poseLabel.append(poseLabelText, this.rotationValue);
+
+    this.rotationSlider = document.createElement('input');
+    this.rotationSlider.type = 'range';
+    this.rotationSlider.id = 'prism-rotation';
+    this.rotationSlider.className = 'control-panel__slider';
+    this.rotationSlider.min = String(ROTATION_MIN_DEG);
+    this.rotationSlider.max = String(ROTATION_MAX_DEG);
+    this.rotationSlider.step = '0.5';
+
+    this.rotationSlider.addEventListener('input', () => {
+      const angleDeg = Number(this.rotationSlider.value);
+      this.rotationValue.textContent = `${angleDeg.toFixed(1)}°`;
+
+      for (const subscriber of this.rotationSubscribers) {
+        subscriber(angleDeg);
+      }
+    });
+
+    pathSection.append(poseLabel, this.rotationSlider);
+
+    // X/Y 位置スライダー（TASKS 4-8）。#prism-rotation をそのまま鏡写しする——
+    // ネイティブ range・label[for]・非発火の表示専用 setter を持つ 1 自由度の対
+    const positionXLabel = document.createElement('label');
+    positionXLabel.className = 'control-panel__row';
+    positionXLabel.htmlFor = 'prism-position-x';
+
+    const positionXLabelText = document.createElement('span');
+    positionXLabelText.textContent = 'X 位置';
+
+    this.positionXValue = document.createElement('span');
+    this.positionXValue.className = 'control-panel__value';
+
+    positionXLabel.append(positionXLabelText, this.positionXValue);
+
+    this.positionXSlider = document.createElement('input');
+    this.positionXSlider.type = 'range';
+    this.positionXSlider.id = 'prism-position-x';
+    this.positionXSlider.className = 'control-panel__slider';
+    this.positionXSlider.min = String(POSITION_MIN);
+    this.positionXSlider.max = String(POSITION_MAX);
+    this.positionXSlider.step = '0.05';
+
+    this.positionXSlider.addEventListener('input', () => {
+      const x = Number(this.positionXSlider.value);
+
+      this.positionXValue.textContent = x.toFixed(2);
+
+      for (const subscriber of this.positionXSubscribers) {
+        subscriber(x);
+      }
+    });
+
+    pathSection.append(positionXLabel, this.positionXSlider);
+
+    const positionYLabel = document.createElement('label');
+    positionYLabel.className = 'control-panel__row';
+    positionYLabel.htmlFor = 'prism-position-y';
+
+    const positionYLabelText = document.createElement('span');
+    positionYLabelText.textContent = 'Y 位置';
+
+    this.positionYValue = document.createElement('span');
+    this.positionYValue.className = 'control-panel__value';
+
+    positionYLabel.append(positionYLabelText, this.positionYValue);
+
+    this.positionYSlider = document.createElement('input');
+    this.positionYSlider.type = 'range';
+    this.positionYSlider.id = 'prism-position-y';
+    this.positionYSlider.className = 'control-panel__slider';
+    this.positionYSlider.min = String(POSITION_MIN);
+    this.positionYSlider.max = String(POSITION_MAX);
+    this.positionYSlider.step = '0.05';
+
+    this.positionYSlider.addEventListener('input', () => {
+      const y = Number(this.positionYSlider.value);
+
+      this.positionYValue.textContent = y.toFixed(2);
+
+      for (const subscriber of this.positionYSubscribers) {
+        subscriber(y);
+      }
+    });
+
+    pathSection.append(positionYLabel, this.positionYSlider);
+
+    // 明示的に既定値を書く。range 入力は value 属性を省くと min/max の中点になる仕様だが、
+    // jsdom はこれを再計算しない（テストで実際に判明した）。ブラウザ差に
+    // 依存させず、ここで DEFAULT_PRISM_X/Y をそのまま書き込んでおくのが確実
+    this.setPositionX(DEFAULT_PRISM_X);
+    this.setPositionY(DEFAULT_PRISM_Y);
+
+    const poseHint = document.createElement('p');
+    poseHint.className = 'control-panel__hint';
+    poseHint.textContent = 'R: 回転ギズモ / G: 移動ギズモ / Esc: カメラ操作';
+    pathSection.appendChild(poseHint);
+
+    this.element.appendChild(pathSection);
+
+    // 初期状態に戻すボタン（TASKS 7-2）。光路（入射角・材質・姿勢）だけでなく
+    // store.reset() 経由で表現（分散の誇張・スペクトルモード）・スクリーン（距離）も
+    // まとめてリセットする「全体操作」なので、単一カテゴリの節には置かない。
+    // sectionToggle 等と同じ仮置きの流儀——構築直後は `this.element` 直下に置き、
+    // 最終的な置き場所（ビューポート右上、共有ボタン・ヘルプの並び）は
+    // `resetButtonElement` 経由で配線側（main.ts）に委ねる
+    this.resetButton = document.createElement('button');
+    this.resetButton.type = 'button';
+    this.resetButton.className = 'control-panel__button';
+    this.resetButton.textContent = '初期状態に戻す';
+    this.resetButton.addEventListener('click', () => {
+      for (const subscriber of this.resetSubscribers) {
+        subscriber();
+      }
+    });
+    this.element.appendChild(this.resetButton);
+
+    // 表現セクション（TASKS 7-1）。「見え方・見せ方」という性質で束ねる——
+    // グロー・ビーム幅・分散の誇張・スペクトル表示モードはいずれも光路の幾何入力ではなく、
+    // 同じ光路をどう描く／どう強調するかという表現側の選択である。
+    //
+    // **ただし内部での性質は一様ではない。** グロー・ビーム幅は本当に描画だけの切り替えで、
+    // 光路の計算に一切影響しない。対してスペクトル表示モードは `traceSpectrum` に渡す
+    // 波長列そのものを変える＝**計算の入力**なので、store の第 5 項目として持ち、
+    // `subscribe` → `markDirty` → 再追跡の一方向に乗せている（TASKS 4-3 の裁定③）。
+    // 分散の誇張も同様に `traceSpectrum` の `exaggeration` 引数（store 経由）である。
+    // どちらも「ユーザーから見た性質（見え方の強調）」でこのセクションに置く。
+    const expressionSection = document.createElement('section');
+    expressionSection.className = 'control-panel__section';
+
+    const expressionLegend = document.createElement('h2');
+    expressionLegend.className = 'control-panel__legend';
+    expressionLegend.append(createMdiIcon(mdiPaletteOutline), document.createTextNode('表現'));
+    expressionSection.appendChild(expressionLegend);
 
     // ビーム幅（TASKS 4-5）。表示専用（4-5 裁定）なので store には触れず、position/rotation
     // と同じ独立の購読者配列で通知する
@@ -285,91 +566,34 @@ export default class ControlPanel {
     // 中点ですらなく `50` に落ちることを確認済み——テストで実際に判明済み）
     this.setBeamWidth(DEFAULT_BEAM_WIDTH_PX);
 
-    // 最小偏角（TASKS 6-2）。目標を先に読ませ、その下のボタンで合わせる、という順に並べる。
-    // δ_min は 6 項目の情報バーには入れない。目標値は操作の直前に見えているのが自然で、
-    // 結果（実測 θ₁・偏角 δ）を情報バーで確かめる、という流れになる（案 b）
-    const minimumReadout = document.createElement('p');
-    minimumReadout.className = 'control-panel__readout';
+    // グロートグル（TASKS 4-7）。断面図・数値表示と違い特定のウィンドウに紐づかないため
+    // サイドバーに残すが、ビーム幅スライダーの行にインライン化する（TASKS 7-2 裁定）——
+    // 「距離＋合わせる」（TASKS 7-1）と同じ、スライダー行にワンショット系の操作を
+    // 添えるパターンをトグルボタンにも広げた形。アイコンのみの表示にする（TASKS 7-16）
+    this.glowToggle = document.createElement('button');
+    this.glowToggle.type = 'button';
+    this.glowToggle.id = 'glow-toggle';
+    this.glowToggle.className =
+      'control-panel__button control-panel__inline-button control-panel__icon-button';
+    this.glowToggle.setAttribute('aria-label', 'グロー');
+    this.glowToggle.title = GLOW_DESCRIPTION;
+    this.glowToggle.appendChild(createMdiIcon(mdiShimmer));
+    this.glowToggle.setAttribute('aria-pressed', 'true');
+    this.glowToggle.addEventListener('click', () => {
+      const next = this.glowToggle.getAttribute('aria-pressed') !== 'true';
 
-    const minimumLabel = document.createElement('span');
-    minimumLabel.textContent = '最小偏角 δ_min';
+      this.glowToggle.setAttribute('aria-pressed', String(next));
 
-    this.minimumValue = document.createElement('span');
-    this.minimumValue.className = 'control-panel__value';
-
-    minimumReadout.append(minimumLabel, this.minimumValue);
-
-    this.minimumButton = document.createElement('button');
-    this.minimumButton.type = 'button';
-    this.minimumButton.className = 'control-panel__button';
-    this.minimumButton.textContent = '最小偏角に合わせる';
-    this.minimumButton.addEventListener('click', () => {
-      for (const subscriber of this.applyMinimumSubscribers) {
-        subscriber();
+      for (const subscriber of this.glowToggleSubscribers) {
+        subscriber(next);
       }
     });
 
-    // ボタンを無効にした理由。押せない場所のすぐ下に短く置く
-    this.minimumWarning = document.createElement('p');
-    this.minimumWarning.className = 'control-panel__warning';
-    this.minimumWarning.hidden = true;
-    this.minimumWarning.textContent = NO_MINIMUM_DEVIATION_REASON;
+    const beamWidthRow = document.createElement('div');
+    beamWidthRow.className = 'control-panel__slider-row';
+    beamWidthRow.append(this.beamWidthSlider, this.glowToggle);
 
-    // 押した瞬間にだけ出る案内（スライダーの可動域を外れたとき）。
-    // aria-live で読み上げにも届かせる（4-7 の方針）
-    this.sourceAngleNotice = document.createElement('p');
-    this.sourceAngleNotice.className = 'control-panel__warning';
-    this.sourceAngleNotice.hidden = true;
-    this.sourceAngleNotice.setAttribute('aria-live', 'polite');
-
-    section.append(
-      label,
-      this.angleSlider,
-      angleHint,
-      beamWidthLabel,
-      this.beamWidthSlider,
-      minimumReadout,
-      this.minimumButton,
-      this.minimumWarning,
-      this.sourceAngleNotice
-    );
-    this.element.appendChild(section);
-
-    // 材質セクション（4-2）。選択肢は ALL_MATERIALS から生やすので追記漏れが起きない
-    const materialSection = document.createElement('section');
-    materialSection.className = 'control-panel__section';
-
-    const materialLegend = document.createElement('h2');
-    materialLegend.className = 'control-panel__legend';
-    materialLegend.textContent = '材質';
-    materialSection.appendChild(materialLegend);
-
-    const materialLabel = document.createElement('label');
-    materialLabel.className = 'control-panel__row';
-    materialLabel.htmlFor = 'material';
-    materialLabel.textContent = 'ガラスの種類';
-
-    this.materialSelect = document.createElement('select');
-    this.materialSelect.id = 'material';
-    this.materialSelect.className = 'control-panel__select';
-
-    for (const material of ALL_MATERIALS) {
-      const option = document.createElement('option');
-      option.value = material.name;
-      option.textContent = `${material.name}（n_d = ${material.catalogNd.toFixed(3)}）`;
-      this.materialSelect.appendChild(option);
-    }
-
-    this.materialSelect.addEventListener('change', () => {
-      store.update({ material: toMaterialName(this.materialSelect.value) });
-    });
-
-    this.materialWarning = document.createElement('p');
-    this.materialWarning.className = 'control-panel__warning';
-    this.materialWarning.hidden = true;
-    this.materialWarning.textContent = NO_DISPERSION_WARNING;
-
-    materialSection.append(materialLabel, this.materialSelect, this.materialWarning);
+    expressionSection.append(beamWidthLabel, beamWidthRow);
 
     // 分散誇張（4-4）。m=1 が実物理で、上げるほど教育用に分離を強調する
     const exaggerationLabel = document.createElement('label');
@@ -400,17 +624,69 @@ export default class ControlPanel {
     exaggerationHint.className = 'control-panel__hint';
     exaggerationHint.textContent = '×1 が実際の物理。上げるほど七色の広がりを強調します。';
 
-    materialSection.append(exaggerationLabel, this.exaggerationSlider, exaggerationHint);
-    this.element.appendChild(materialSection);
+    expressionSection.append(exaggerationLabel, this.exaggerationSlider, exaggerationHint);
+
+    // スペクトル表示モード（TASKS 4-3）。パネルで唯一のラジオなので、
+    // `fieldset` + `legend` で群を明示したうえで `role="radiogroup"` も添える
+    const spectrumGroup = document.createElement('fieldset');
+    spectrumGroup.className = 'control-panel__radiogroup';
+    spectrumGroup.setAttribute('role', 'radiogroup');
+
+    const spectrumLegend = document.createElement('legend');
+    spectrumLegend.className = 'control-panel__radiolegend';
+    spectrumLegend.textContent = 'スペクトル';
+    spectrumGroup.appendChild(spectrumLegend);
+
+    // 選択肢だけを横並びの行にまとめる（TASKS 7-10）。legend は fieldset 直下の
+    // ブロックのまま残し、選択肢はこの内側のラッパーで横に並べる
+    const spectrumOptions = document.createElement('div');
+    spectrumOptions.className = 'control-panel__radiooptions';
+
+    this.spectrumRadios = SPECTRUM_MODE_OPTIONS.map(({ mode, label: optionLabel, id }) => {
+      const option = document.createElement('label');
+      option.className = 'control-panel__radio';
+      option.htmlFor = id;
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.id = id;
+      input.name = 'spectrum-mode';
+      input.value = mode;
+      input.className = 'control-panel__radioinput';
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          store.update({ spectrumMode: mode });
+        }
+      });
+
+      const text = document.createElement('span');
+      text.textContent = optionLabel;
+
+      option.append(input, text);
+      spectrumOptions.appendChild(option);
+
+      return input;
+    });
+
+    spectrumGroup.appendChild(spectrumOptions);
+
+    const spectrumHint = document.createElement('p');
+    spectrumHint.className = 'control-panel__hint';
+    spectrumHint.textContent =
+      '7 色は代表 7 波長だけを追跡します。見せ方の選択ですが、光路は選んだ波長で計算し直します。';
+
+    expressionSection.append(spectrumGroup, spectrumHint);
+    this.element.appendChild(expressionSection);
 
     // スクリーンのセクション（TASKS 6-3）。距離は凍結アンカー上を滑るだけで、
-    // 向きはボタンを押したときにしか変わらない（案 C）
+    // 向きはボタンを押したときにしか変わらない（案 C）。
+    // 距離スライダーと「合わせる」ボタンは1行にインライン化する（TASKS 7-1）
     const screenSection = document.createElement('section');
     screenSection.className = 'control-panel__section';
 
     const screenLegend = document.createElement('h2');
     screenLegend.className = 'control-panel__legend';
-    screenLegend.textContent = 'スクリーン';
+    screenLegend.append(createMdiIcon(mdiMonitor), document.createTextNode('スクリーン'));
     screenSection.appendChild(screenLegend);
 
     const distanceLabel = document.createElement('label');
@@ -437,86 +713,38 @@ export default class ControlPanel {
       store.update({ screenDistance: Number(this.screenDistanceSlider.value) });
     });
 
+    // アイコンのみのボタンにする（TASKS 7-15）。minimumButton と同じ理由・同じ流儀
     const focusButton = document.createElement('button');
     focusButton.type = 'button';
-    focusButton.className = 'control-panel__button';
-    focusButton.textContent = '光路に合わせる';
+    focusButton.className =
+      'control-panel__button control-panel__inline-button control-panel__icon-button';
+    focusButton.setAttribute('aria-label', FOCUS_SCREEN_ACTION_LABEL);
+    focusButton.title = FOCUS_SCREEN_ACTION_LABEL;
+    focusButton.appendChild(createMdiIcon(mdiTarget));
     focusButton.addEventListener('click', () => {
       for (const subscriber of this.focusScreenSubscribers) {
         subscriber();
       }
     });
 
+    const distanceRow = document.createElement('div');
+    distanceRow.className = 'control-panel__slider-row';
+    distanceRow.append(this.screenDistanceSlider, focusButton);
+
     const screenHint = document.createElement('p');
     screenHint.className = 'control-panel__hint';
     screenHint.textContent =
       'スクリーンは置いた位置に留まります。材質を変えて光が外れたら、ボタンで捕まえ直します。';
 
-    screenSection.append(distanceLabel, this.screenDistanceSlider, screenHint, focusButton);
+    screenSection.append(distanceLabel, distanceRow, screenHint);
     this.element.appendChild(screenSection);
 
-    // 表示セクション（SPEC.md「画面構成」の 表示）。ユーザーから見て「見せ方の選択」に
-    // あたるものを置く。
-    //
-    // **ただし内部での性質は一様ではない。** 断面図トグルは本当に描画だけの切り替えで、
-    // 光路の計算に一切影響しないので store を通さず `aria-pressed` が状態を持てる。
-    // 対してスペクトル表示モードは `traceSpectrum` に渡す波長列そのものを変える＝
-    // **計算の入力**なので、store の第 5 項目として持ち、`subscribe` → `markDirty` →
-    // 再追跡の一方向に乗せている（TASKS 4-3 の裁定③）。
-    const viewSection = document.createElement('section');
-    viewSection.className = 'control-panel__section';
-
-    const viewLegend = document.createElement('h2');
-    viewLegend.className = 'control-panel__legend';
-    viewLegend.textContent = '表示';
-    viewSection.appendChild(viewLegend);
-
-    // スペクトル表示モード（TASKS 4-3）。パネルで唯一のラジオなので、
-    // `fieldset` + `legend` で群を明示したうえで `role="radiogroup"` も添える
-    const spectrumGroup = document.createElement('fieldset');
-    spectrumGroup.className = 'control-panel__radiogroup';
-    spectrumGroup.setAttribute('role', 'radiogroup');
-
-    const spectrumLegend = document.createElement('legend');
-    spectrumLegend.className = 'control-panel__radiolegend';
-    spectrumLegend.textContent = 'スペクトル';
-    spectrumGroup.appendChild(spectrumLegend);
-
-    this.spectrumRadios = SPECTRUM_MODE_OPTIONS.map(({ mode, label, id }) => {
-      const option = document.createElement('label');
-      option.className = 'control-panel__radio';
-      option.htmlFor = id;
-
-      const input = document.createElement('input');
-      input.type = 'radio';
-      input.id = id;
-      input.name = 'spectrum-mode';
-      input.value = mode;
-      input.className = 'control-panel__radioinput';
-      input.addEventListener('change', () => {
-        if (input.checked) {
-          store.update({ spectrumMode: mode });
-        }
-      });
-
-      const text = document.createElement('span');
-      text.textContent = label;
-
-      option.append(input, text);
-      spectrumGroup.appendChild(option);
-
-      return input;
-    });
-
-    const spectrumHint = document.createElement('p');
-    spectrumHint.className = 'control-panel__hint';
-    spectrumHint.textContent =
-      '7 色は代表 7 波長だけを追跡します。見せ方の選択ですが、光路は選んだ波長で計算し直します。';
-
-    viewSection.append(spectrumGroup, spectrumHint);
-
-    // トグルボタン。押されている状態は aria-pressed が持ち、見た目はそれに従う
-    // （状態を色だけで伝えると読み上げに届かない）
+    // 断面図トグル（TASKS 6-1）。生成と状態機械（aria-pressed・購読者配列）はここで持つが、
+    // **最終的な置き場所は `sectionToggleElement` 経由で配線側（main.ts）が決める**
+    // （TASKS 7-1：実際の位置は断面図パネルのすぐ上、ビューポート左上）。
+    // 構築直後はいったん `this.element` の末尾に置く——`main.ts` は構築直後の同期処理で
+    // 必ず移すので画面には出ないが、`main.ts` を経由しない場面（テスト等）でも
+    // `parent` の子孫であることが保証され、要素の参照・リスナーは移動しても保持される
     this.sectionToggle = document.createElement('button');
     this.sectionToggle.type = 'button';
     this.sectionToggle.className = 'control-panel__button';
@@ -531,31 +759,11 @@ export default class ControlPanel {
         subscriber(next);
       }
     });
+    this.element.appendChild(this.sectionToggle);
 
-    const viewHint = document.createElement('p');
-    viewHint.className = 'control-panel__hint';
-    viewHint.textContent =
-      '主断面を真横から見た図を左上に重ねます。プリズムを回しても図の向きは変わりません。';
-
-    // グロー・数値表示トグル（TASKS 4-7）。断面図と同じくどちらも描画専用の切り替えで
-    // 光路の計算に一切影響しないので、store を通さず aria-pressed が状態を持つ。
-    // ただし断面図と違い既定は ON（押された状態）
-    this.glowToggle = document.createElement('button');
-    this.glowToggle.type = 'button';
-    this.glowToggle.id = 'glow-toggle';
-    this.glowToggle.className = 'control-panel__button';
-    this.glowToggle.textContent = 'グロー';
-    this.glowToggle.setAttribute('aria-pressed', 'true');
-    this.glowToggle.addEventListener('click', () => {
-      const next = this.glowToggle.getAttribute('aria-pressed') !== 'true';
-
-      this.glowToggle.setAttribute('aria-pressed', String(next));
-
-      for (const subscriber of this.glowToggleSubscribers) {
-        subscriber(next);
-      }
-    });
-
+    // 数値表示トグル（TASKS 4-7）。断面図と同じ流儀——既定は ON（押された状態）。
+    // 最終的な置き場所は `numbersToggleElement` 経由で配線側に委ねる
+    // （TASKS 7-1：実際の位置は情報バーの隣）
     this.numbersToggle = document.createElement('button');
     this.numbersToggle.type = 'button';
     this.numbersToggle.id = 'numbers-toggle';
@@ -571,180 +779,45 @@ export default class ControlPanel {
         subscriber(next);
       }
     });
+    this.element.appendChild(this.numbersToggle);
 
-    viewSection.append(this.sectionToggle, viewHint, this.glowToggle, this.numbersToggle);
-    this.element.appendChild(viewSection);
-
-    // 姿勢セクション。ギズモと同じ 1 自由度（Z 軸まわり）を扱う
-    const poseSection = document.createElement('section');
-    poseSection.className = 'control-panel__section';
-
-    const poseLegend = document.createElement('h2');
-    poseLegend.className = 'control-panel__legend';
-    poseLegend.textContent = 'プリズム';
-    poseSection.appendChild(poseLegend);
-
-    const poseLabel = document.createElement('label');
-    poseLabel.className = 'control-panel__row';
-    poseLabel.htmlFor = 'prism-rotation';
-
-    const poseLabelText = document.createElement('span');
-    poseLabelText.textContent = 'Z 軸回転';
-
-    this.rotationValue = document.createElement('span');
-    this.rotationValue.className = 'control-panel__value';
-
-    poseLabel.append(poseLabelText, this.rotationValue);
-
-    this.rotationSlider = document.createElement('input');
-    this.rotationSlider.type = 'range';
-    this.rotationSlider.id = 'prism-rotation';
-    this.rotationSlider.className = 'control-panel__slider';
-    this.rotationSlider.min = String(ROTATION_MIN_DEG);
-    this.rotationSlider.max = String(ROTATION_MAX_DEG);
-    this.rotationSlider.step = '0.5';
-
-    this.rotationSlider.addEventListener('input', () => {
-      const angleDeg = Number(this.rotationSlider.value);
-      this.rotationValue.textContent = `${angleDeg.toFixed(1)}°`;
-
-      for (const subscriber of this.rotationSubscribers) {
-        subscriber(angleDeg);
-      }
-    });
-
-    poseSection.append(poseLabel, this.rotationSlider);
-
-    // X/Y 位置スライダー（TASKS 4-8）。#prism-rotation をそのまま鏡写しする——
-    // ネイティブ range・label[for]・非発火の表示専用 setter を持つ 1 自由度の対
-    const positionXLabel = document.createElement('label');
-    positionXLabel.className = 'control-panel__row';
-    positionXLabel.htmlFor = 'prism-position-x';
-
-    const positionXLabelText = document.createElement('span');
-    positionXLabelText.textContent = 'X 位置';
-
-    this.positionXValue = document.createElement('span');
-    this.positionXValue.className = 'control-panel__value';
-
-    positionXLabel.append(positionXLabelText, this.positionXValue);
-
-    this.positionXSlider = document.createElement('input');
-    this.positionXSlider.type = 'range';
-    this.positionXSlider.id = 'prism-position-x';
-    this.positionXSlider.className = 'control-panel__slider';
-    this.positionXSlider.min = String(POSITION_MIN);
-    this.positionXSlider.max = String(POSITION_MAX);
-    this.positionXSlider.step = '0.05';
-
-    this.positionXSlider.addEventListener('input', () => {
-      const x = Number(this.positionXSlider.value);
-
-      this.positionXValue.textContent = x.toFixed(2);
-
-      for (const subscriber of this.positionXSubscribers) {
-        subscriber(x);
-      }
-    });
-
-    poseSection.append(positionXLabel, this.positionXSlider);
-
-    const positionYLabel = document.createElement('label');
-    positionYLabel.className = 'control-panel__row';
-    positionYLabel.htmlFor = 'prism-position-y';
-
-    const positionYLabelText = document.createElement('span');
-    positionYLabelText.textContent = 'Y 位置';
-
-    this.positionYValue = document.createElement('span');
-    this.positionYValue.className = 'control-panel__value';
-
-    positionYLabel.append(positionYLabelText, this.positionYValue);
-
-    this.positionYSlider = document.createElement('input');
-    this.positionYSlider.type = 'range';
-    this.positionYSlider.id = 'prism-position-y';
-    this.positionYSlider.className = 'control-panel__slider';
-    this.positionYSlider.min = String(POSITION_MIN);
-    this.positionYSlider.max = String(POSITION_MAX);
-    this.positionYSlider.step = '0.05';
-
-    this.positionYSlider.addEventListener('input', () => {
-      const y = Number(this.positionYSlider.value);
-
-      this.positionYValue.textContent = y.toFixed(2);
-
-      for (const subscriber of this.positionYSubscribers) {
-        subscriber(y);
-      }
-    });
-
-    poseSection.append(positionYLabel, this.positionYSlider);
-
-    // 明示的に既定値を書く。range 入力は value 属性を省くと min/max の中点になる
-    // 仕様だが、jsdom はこれを再計算しない（テストで実際に判明した）。ブラウザ差に
-    // 依存させず、ここで DEFAULT_PRISM_X/Y をそのまま書き込んでおくのが確実
-    this.setPositionX(DEFAULT_PRISM_X);
-    this.setPositionY(DEFAULT_PRISM_Y);
-
-    const hint = document.createElement('p');
-    hint.className = 'control-panel__hint';
-    hint.textContent = 'R: 回転ギズモ / G: 移動ギズモ / Esc: カメラ操作';
-    poseSection.appendChild(hint);
-
-    const resetButton = document.createElement('button');
-    resetButton.type = 'button';
-    resetButton.className = 'control-panel__button';
-    resetButton.textContent = '初期状態に戻す';
-    resetButton.addEventListener('click', () => {
-      for (const subscriber of this.resetSubscribers) {
-        subscriber();
-      }
-    });
-    poseSection.appendChild(resetButton);
-
-    this.element.appendChild(poseSection);
-
-    // 共有セクション（TASKS 6-6 段階4）。今の状態を映した URL をクリップボードへ渡す
-    const shareSection = document.createElement('section');
-    shareSection.className = 'control-panel__section';
-
-    const shareLegend = document.createElement('h2');
-    shareLegend.className = 'control-panel__legend';
-    shareLegend.textContent = '共有';
-    shareSection.appendChild(shareLegend);
-
-    const shareButton = document.createElement('button');
-    shareButton.type = 'button';
-    shareButton.className = 'control-panel__button';
-    shareButton.textContent = 'URL をコピー';
-    shareButton.addEventListener('click', () => {
+    // 共有ボタン群（TASKS 6-6 段階4／TASKS 7-2）。今の状態を映した URL をクリップボードへ
+    // 渡す・PNG を書き出す、という「全体操作」で、初期状態に戻す・ヘルプと同じ性質のため
+    // 単一カテゴリの節には置かない。sectionToggle 等と同じ仮置きの流儀——構築直後は
+    // `this.element` 直下に置き、最終的な置き場所は各 `...Element` ゲッター経由で
+    // 配線側（main.ts）に委ねる（ビューポート右上、初期状態に戻す・ヘルプの並び）
+    this.shareUrlButton = document.createElement('button');
+    this.shareUrlButton.type = 'button';
+    this.shareUrlButton.className = 'control-panel__button';
+    this.shareUrlButton.textContent = 'URL をコピー';
+    this.shareUrlButton.addEventListener('click', () => {
       for (const subscriber of this.copyShareUrlSubscribers) {
         subscriber();
       }
     });
+    this.element.appendChild(this.shareUrlButton);
+
+    // 保存ボタン（TASKS 6-6 段階5, PNG-1）。書き出しは配線側が
+    // 「同一同期タスクで描画 → 読み出し」で行う（SceneManager.captureDataUrl 参照）
+    this.savePngButton = document.createElement('button');
+    this.savePngButton.type = 'button';
+    this.savePngButton.className = 'control-panel__button';
+    this.savePngButton.textContent = 'PNG を保存';
+    this.savePngButton.addEventListener('click', () => {
+      for (const subscriber of this.savePngSubscribers) {
+        subscriber();
+      }
+    });
+    this.element.appendChild(this.savePngButton);
 
     // 結果は**ボタンのラベルを書き換えずに**別行へ出す。ラベルが入れ替わると
     // 読み上げの利用者にはボタンそのものが変わったように聞こえる
     this.shareStatus = document.createElement('p');
     this.shareStatus.className = 'control-panel__hint';
     this.shareStatus.setAttribute('aria-live', 'polite');
-    this.shareStatus.textContent = SHARE_STATUS_IDLE;
-
-    // 保存ボタン（TASKS 6-6 段階5, PNG-1）。書き出しは配線側が
-    // 「同一同期タスクで描画 → 読み出し」で行う（SceneManager.captureDataUrl 参照）
-    const saveButton = document.createElement('button');
-    saveButton.type = 'button';
-    saveButton.className = 'control-panel__button';
-    saveButton.textContent = 'PNG を保存';
-    saveButton.addEventListener('click', () => {
-      for (const subscriber of this.savePngSubscribers) {
-        subscriber();
-      }
-    });
-
-    shareSection.append(shareButton, saveButton, this.shareStatus);
-    this.element.appendChild(shareSection);
+    // 押すまでは何も掲げない（TASKS 7-4）。常時表示の案内文は持たず、結果が出たときだけ現れる
+    this.shareStatus.hidden = true;
+    this.element.appendChild(this.shareStatus);
 
     parent.appendChild(this.element);
 
@@ -752,6 +825,67 @@ export default class ControlPanel {
       this.render(state);
     });
     this.render(store.getState());
+  }
+
+  /**
+   * 断面図トグルの DOM 要素（TASKS 7-1）。
+   *
+   * `main.ts` が断面図パネルの近くへ `appendChild` するために公開する。要素そのものは
+   * このクラスが生成・保持し続けており、イベントリスナーや `aria-pressed` の状態機械は
+   * 移動しても変わらない。
+   */
+  get sectionToggleElement(): HTMLButtonElement {
+    return this.sectionToggle;
+  }
+
+  /**
+   * 数値表示トグルの DOM 要素（TASKS 7-1）。
+   *
+   * `main.ts` が情報バーの隣へ `appendChild` するために公開する。`sectionToggleElement` と
+   * 同じ理由・同じ流儀。
+   */
+  get numbersToggleElement(): HTMLButtonElement {
+    return this.numbersToggle;
+  }
+
+  /**
+   * 「初期状態に戻す」ボタンの DOM 要素（TASKS 7-2）。
+   *
+   * `main.ts` がビューポート右上（共有ボタン・ヘルプの並び）へ `appendChild` するために
+   * 公開する。`sectionToggleElement` と同じ理由・同じ流儀。
+   */
+  get resetButtonElement(): HTMLButtonElement {
+    return this.resetButton;
+  }
+
+  /**
+   * 「URL をコピー」ボタンの DOM 要素（TASKS 7-2）。
+   *
+   * `main.ts` がビューポート右上へ `appendChild` するために公開する。`sectionToggleElement`
+   * と同じ理由・同じ流儀。
+   */
+  get shareUrlButtonElement(): HTMLButtonElement {
+    return this.shareUrlButton;
+  }
+
+  /**
+   * 「PNG を保存」ボタンの DOM 要素（TASKS 7-2）。
+   *
+   * `main.ts` がビューポート右上へ `appendChild` するために公開する。`sectionToggleElement`
+   * と同じ理由・同じ流儀。
+   */
+  get savePngButtonElement(): HTMLButtonElement {
+    return this.savePngButton;
+  }
+
+  /**
+   * 共有結果の案内文（`p[aria-live="polite"]`）の DOM 要素（TASKS 7-2）。
+   *
+   * `main.ts` が共有ボタンと同じ場所（ビューポート右上）へ `appendChild` するために公開する。
+   * `setShareStatus()` が書き込む対象そのものであり、移動しても中身・`aria-live` は変わらない。
+   */
+  get shareStatusElement(): HTMLElement {
+    return this.shareStatus;
   }
 
   /**
@@ -912,24 +1046,26 @@ export default class ControlPanel {
   }
 
   /**
-   * 共有の結果を一時的に表示する。
+   * 共有の結果を一時的に表示する（TASKS 7-4）。
    *
-   * 押下時にだけ呼ぶこと。時間が経てば案内文へ戻る（`setSourceAngleNotice` と同じ流儀で、
-   * 毎フレーム出し直して点滅させない）。
+   * 押下時にだけ呼ぶこと。`SHARE_STATUS_DURATION_MS`（3 秒）が経てば `hidden` で消える
+   * （`setSourceAngleNotice` と同じ流儀で、毎フレーム出し直して点滅させない）。
+   * 案内文へ戻すことはしない——ボタン直下という目立つ位置に居座り続けないための挙動。
    *
    * @param message 表示する文言
    */
   setShareStatus(message: string): void {
     this.shareStatus.textContent = message;
+    this.shareStatus.hidden = false;
 
     if (this.shareStatusTimer !== undefined) {
       window.clearTimeout(this.shareStatusTimer);
     }
 
     this.shareStatusTimer = window.setTimeout(() => {
-      this.shareStatus.textContent = SHARE_STATUS_IDLE;
+      this.shareStatus.hidden = true;
       this.shareStatusTimer = undefined;
-    }, NOTICE_DURATION_MS);
+    }, SHARE_STATUS_DURATION_MS);
   }
 
   /**

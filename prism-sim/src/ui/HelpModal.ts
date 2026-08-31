@@ -1,3 +1,13 @@
+import {
+  mdiKeyboardOutline,
+  mdiMonitor,
+  mdiMouseOutline,
+  mdiPaletteOutline,
+  mdiTriangleOutline,
+} from '@mdi/js';
+
+import { createMdiIcon } from './icon';
+
 /** モーダル本体（`role="dialog"`）の id。`aria-labelledby` の参照先を確立するのにも使う。 */
 const DIALOG_ID = 'help-modal';
 
@@ -59,9 +69,22 @@ export default class HelpModal {
   private readonly closeSubscribers: Array<() => void> = [];
 
   /**
+   * トリガーボタンの DOM 要素（TASKS 7-1）。
+   *
+   * `main.ts` がビューポート右上へ `appendChild` するために公開する。要素そのものは
+   * このクラスが生成・保持し続けており、開閉ロジックやフォーカス復帰先は移動しても変わらない。
+   */
+  get triggerButtonElement(): HTMLButtonElement {
+    return this.triggerButton;
+  }
+
+  /**
    * @param controlPanelElement トリガーボタンを差し込む先（`ControlPanel` のルート要素）。
    *   タイトル（`h1.control-panel__title`）の直後に置く（4-9 裁定②）。新設のヘッダーは
-   *   作らない
+   *   作らない。**構築直後の仮の置き場所であり、実運用では `main.ts` が
+   *   `triggerButtonElement` 経由で取り出しビューポート右上へ `appendChild`（＝再配置）する**
+   *   （TASKS 7-1）。`appendChild` は既存ノードを移動させるだけなので、挿入ロジック自体
+   *   （タイトル直後）は変えていない
    */
   constructor(controlPanelElement: HTMLElement) {
     this.triggerButton = document.createElement('button');
@@ -239,7 +262,18 @@ export default class HelpModal {
  *
  * **操作ガイドに限定する。** 物理モデルの散文は書かない（5-6 README の領分）。
  * キーボード操作の文言と分散誇張の一文は、`ControlPanel.ts` の既存ヒント文言と
- * 同一の表現を再利用する（新しい説明文を発明しない）。
+ * 同一の語句を再利用する（新しい説明文を発明しない。TASKS 7-14 で `<kbd>` タグを
+ * 足したのは装飾のみで、単語そのものは変えていない）。
+ *
+ * **カテゴリは2列レイアウトで並べる**（TASKS 7-13）。`h3`（カテゴリ名。左列）と
+ * `p`/`dl`（中身。右列）が `.help-modal__group`（`main.css` 側、`display: grid`）の
+ * 直接の子になっていれば自動でその2列に収まる——`createGroup()` へ `className` と
+ * 2つの子を渡すだけで、実際の並び方は CSS 側の責務にとどめる。
+ *
+ * **旧「スライダー」1カテゴリを、右サイドバーの3見出しに合わせて分割した**
+ * （TASKS 7-14）。「光路／表現／スクリーン」という区切りは `ControlPanel.ts` の
+ * セクション見出しと一字一句同じ——ガイドとサイドバーの対応が一目でわかることを
+ * 優先し、ここで独自の分類名を作らない。
  *
  * @returns 見出し・セクション群の並び
  */
@@ -249,45 +283,123 @@ function buildContent(): HTMLElement[] {
   heading.id = TITLE_ID;
   heading.textContent = '操作ガイド';
 
-  const keyboardSection = document.createElement('section');
-  const keyboardHeading = document.createElement('h3');
+  const keyboardGroup = createGroup(mdiKeyboardOutline, 'キーボード', buildKeyboardBody());
+  const mouseGroup = createGroup(mdiMouseOutline, 'マウス', buildMouseBody());
 
-  keyboardHeading.textContent = 'キーボード';
+  // 並びは右サイドバーの現在の並び順に合わせる（TASKS 7-12・7-14）。
+  // アイコンも ControlPanel.ts の同名セクション見出しと同じものを使う（TASKS 7-15）
+  const pathGroup = createGroup(
+    mdiTriangleOutline,
+    '光路',
+    buildTermsList([
+      ['ガラスの種類', 'プリズムの材質を切り替えます。'],
+      ['入射角 θ₁', '光源がプリズムへ入射する角度です。'],
+      ['Z 軸回転 / X 位置 / Y 位置', 'プリズムの姿勢と位置です。'],
+    ])
+  );
+  const expressionGroup = createGroup(
+    mdiPaletteOutline,
+    '表現',
+    buildTermsList([
+      ['ビーム幅', '光線の表示上の太さです（見た目のみで、計算には影響しません）。'],
+      // ControlPanel.ts の分散誇張ヒントと同一（正直さの一文。TASKS 4-9 裁定④）
+      ['分散の誇張', '×1 が実際の物理。上げるほど七色の広がりを強調します。'],
+    ])
+  );
+  const screenGroup = createGroup(
+    mdiMonitor,
+    'スクリーン',
+    buildTermsList([['距離', '射出光を映すスクリーンまでの距離です。']])
+  );
 
-  const keyboardText = document.createElement('p');
+  return [heading, keyboardGroup, mouseGroup, pathGroup, expressionGroup, screenGroup];
+}
 
-  // ControlPanel.ts の既存ヒント文言と同一（TASKS 4-8）
-  keyboardText.textContent = 'R: 回転ギズモ / G: 移動ギズモ / Esc: カメラ操作';
-  keyboardSection.append(keyboardHeading, keyboardText);
+/**
+ * カテゴリ1つぶんの `<section>` を組み立てる（TASKS 7-13・7-15）。
+ *
+ * @param iconPath `@mdi/js` から import した MDI のパスデータ。読み上げには乗せない
+ * @param label カテゴリ名（左列）
+ * @param body 中身（右列）。`p` か `dl`
+ * @returns 組み立てた `<section class="help-modal__group">`
+ */
+function createGroup(iconPath: string, label: string, body: HTMLElement): HTMLElement {
+  const section = document.createElement('section');
 
-  const mouseSection = document.createElement('section');
-  const mouseHeading = document.createElement('h3');
+  section.className = 'help-modal__group';
 
-  mouseHeading.textContent = 'マウス';
+  const heading = document.createElement('h3');
 
-  const mouseText = document.createElement('p');
+  heading.className = 'help-modal__group-title';
+  // createMdiIcon が aria-hidden 付きの <svg> を返すので、カテゴリ名は
+  // 後続のテキストノードだけが読み上げられる（二重に読まれないように）
+  heading.append(createMdiIcon(iconPath), document.createTextNode(label));
 
-  mouseText.textContent = 'ドラッグでカメラを周回できます。';
-  mouseSection.append(mouseHeading, mouseText);
+  body.classList.add('help-modal__group-body');
+  section.append(heading, body);
 
-  const slidersSection = document.createElement('section');
-  const slidersHeading = document.createElement('h3');
+  return section;
+}
 
-  slidersHeading.textContent = 'スライダー';
+/**
+ * キーボード節の中身を組み立てる（TASKS 7-14）。
+ *
+ * `ControlPanel.ts` の既存ヒント文言（`R: 回転ギズモ / G: 移動ギズモ / Esc: カメラ操作`）と
+ * 同じ語句を使うが、キー名だけ `<kbd>` で囲んで説明文と視覚的に区切る。
+ *
+ * @returns 組み立てた `<p>`
+ */
+function buildKeyboardBody(): HTMLParagraphElement {
+  const paragraph = document.createElement('p');
 
+  appendKey(paragraph, 'R');
+  paragraph.append(' 回転ギズモ　/　');
+  appendKey(paragraph, 'G');
+  paragraph.append(' 移動ギズモ　/　');
+  appendKey(paragraph, 'Esc');
+  paragraph.append(' カメラ操作');
+
+  return paragraph;
+}
+
+/**
+ * `<kbd>` を1つ足す。
+ *
+ * @param paragraph 差し込み先
+ * @param key キー名（例 `R`、`Esc`）
+ */
+function appendKey(paragraph: HTMLElement, key: string): void {
+  const kbd = document.createElement('kbd');
+
+  kbd.textContent = key;
+  paragraph.appendChild(kbd);
+}
+
+/** マウス節の中身を組み立てる。 */
+function buildMouseBody(): HTMLParagraphElement {
+  const paragraph = document.createElement('p');
+
+  paragraph.textContent = 'ドラッグでカメラを周回できます。';
+
+  return paragraph;
+}
+
+/**
+ * 項目名・説明の組から `<dl>` を組み立てる（TASKS 7-14）。
+ *
+ * @param terms `[項目名, 説明]` の並び
+ * @returns 組み立てた `<dl class="help-modal__terms">`
+ */
+function buildTermsList(terms: ReadonlyArray<readonly [string, string]>): HTMLDListElement {
   const list = document.createElement('dl');
 
-  appendTerm(list, '入射角 θ₁', '光源がプリズムへ入射する角度です。');
-  appendTerm(list, 'ビーム幅', '光線の表示上の太さです（見た目のみで、計算には影響しません）。');
-  appendTerm(list, 'ガラスの種類', 'プリズムの材質を切り替えます。');
-  // ControlPanel.ts の分散誇張ヒントと同一（正直さの一文。TASKS 4-9 裁定④）
-  appendTerm(list, '分散の誇張', '×1 が実際の物理。上げるほど七色の広がりを強調します。');
-  appendTerm(list, '距離', '射出光を映すスクリーンまでの距離です。');
-  appendTerm(list, 'Z 軸回転 / X 位置 / Y 位置', 'プリズムの姿勢と位置です。');
+  list.className = 'help-modal__terms';
 
-  slidersSection.append(slidersHeading, list);
+  for (const [term, description] of terms) {
+    appendTerm(list, term, description);
+  }
 
-  return [heading, keyboardSection, mouseSection, slidersSection];
+  return list;
 }
 
 /**

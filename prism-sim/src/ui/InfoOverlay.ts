@@ -2,6 +2,22 @@
 const UNAVAILABLE = '—';
 
 /**
+ * 非表示時に付けるクラス（TASKS 7-2、畳み方は TASKS 7-3 で幅→高さへ修正）。
+ *
+ * `display:none` ではなく `max-height`/`opacity`/`padding` の CSS トランジションで畳む
+ * （`main.css` 側）。バーは `.viewport-bottombar` の中で数値表示トグルボタンと横並びに
+ * なっており、`display:none` で瞬時に消すとレイアウトから抜けてボタンの位置が跳ぶ
+ * （TASKS 7-2 で報告された不具合）。
+ *
+ * **幅ではなく高さを畳む。** 当初は `max-width` を 0 へ縮めていたが、`.info-overlay` は
+ * `flex-wrap: wrap` で 6 項目を折り返す構造のため、幅を 0 に近づけるほど各項目が
+ * 個別に折り返されて**縦に積み上がり、かえって高さが膨らむ**（TASKS 7-3 で報告された
+ * 「OFF の方が上に来る」不具合の直接原因）。高さを直接 `max-height: 0` へ畳めば
+ * 折り返しは起きず、単純にバーが薄くなるだけで済む。
+ */
+const COLLAPSED_CLASS = 'info-overlay--collapsed';
+
+/**
  * 情報バーに出す数値一式（SPEC.md「画面構成」の下段）。
  *
  * 表示専用の受け取り口であり、計算はしない。**どれも「頑健な源」から導いた値を渡すこと**。
@@ -121,15 +137,16 @@ export default class InfoOverlay {
   }
 
   /**
-   * バー全体の表示・非表示を切り替える（TASKS 4-7）。
+   * バー全体の表示・非表示を切り替える（TASKS 4-7、畳み方は TASKS 7-2）。
    *
-   * CSS の `display` だけを操作する。数値の計算・`update()` の呼び出し自体は止めない
+   * クラスの付け外しだけを行い、実際の畳み方（`max-width`/`opacity` のトランジション）は
+   * `main.css` 側に委ねる。数値の計算・`update()` の呼び出し自体は止めない
    * （簡素優先。非表示中も裏で値は更新され続けるが、コストは無視できる）。
    *
    * @param visible true で表示する
    */
   setVisible(visible: boolean): void {
-    this.element.style.display = visible ? '' : 'none';
+    this.element.classList.toggle(COLLAPSED_CLASS, !visible);
   }
 
   /**

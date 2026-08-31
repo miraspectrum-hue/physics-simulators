@@ -602,9 +602,36 @@ function main(): void {
   let wavelengths = wavelengthsForMode(store.getState().spectrumMode);
 
   const panel = new ControlPanel(document.body, store);
-  // トリガーは control-panel 上部（タイトル直後）に置く。新設ヘッダーは作らない（TASKS 4-9 裁定②）
+  // トリガーは構築時こそ control-panel 上部（タイトル直後）に置くが（TASKS 4-9 裁定②）、
+  // 直後にビューポート右上へ appendChild で再配置する（TASKS 7-1。挿入ロジック自体は不変）
   const helpModal = new HelpModal(panel.element);
-  const overlay = new InfoOverlay(container);
+
+  // 右上の全体操作ツールバー（TASKS 7-2）。初期状態に戻す・URL をコピー・PNG を保存・
+  // ヘルプは、どれも単一カテゴリに閉じない「全体操作」という共通の性質を持つ。
+  // 4つとも ControlPanel/HelpModal が生成した既存ノードをそのまま appendChild で移す
+  // （参照・リスナーは不変）。ボタン列の下に共有結果の案内文を右寄せで添える
+  const topRightToolbar = document.createElement('div');
+  topRightToolbar.className = 'viewport-topright';
+  container.appendChild(topRightToolbar);
+
+  const topRightActions = document.createElement('div');
+  topRightActions.className = 'viewport-topright__actions';
+  topRightActions.append(
+    panel.resetButtonElement,
+    panel.shareUrlButtonElement,
+    panel.savePngButtonElement,
+    helpModal.triggerButtonElement
+  );
+  topRightToolbar.appendChild(topRightActions);
+  topRightToolbar.appendChild(panel.shareStatusElement);
+
+  // 情報バー＋数値表示トグルの横並びラッパー（TASKS 7-1）。数値表示トグルは
+  // ControlPanel が生成した既存ノードをそのまま appendChild で移す（参照・リスナーは不変）
+  const bottomBar = document.createElement('div');
+  bottomBar.className = 'viewport-bottombar';
+  container.appendChild(bottomBar);
+  const overlay = new InfoOverlay(bottomBar);
+  bottomBar.appendChild(panel.numbersToggleElement);
 
   // 波長ごとの基準色はここで一度だけ決まる。実際に描く明るさは
   // 「基準色 × 区間の強度」で毎フレーム決まる（TASKS 6-5a）
@@ -711,11 +738,20 @@ function main(): void {
   const sectionWorldVertices = (): readonly Vec3[] =>
     sectionLocalVertices.map((vertex) => toWorldPoint(vertex, localToWorld));
 
+  // 断面図トグル＋断面図パネルの縦積みラッパー（TASKS 7-1）。トグルは ControlPanel が
+  // 生成した既存ノードをそのまま appendChild で移す（参照・リスナーは不変）。ボタンの
+  // 直後に SectionView を構築すると、その内部の `parent.appendChild(this.element)` で
+  // パネルがボタンのすぐ下に並ぶ
+  const topLeftToolbar = document.createElement('div');
+  topLeftToolbar.className = 'viewport-topleft';
+  container.appendChild(topLeftToolbar);
+  topLeftToolbar.appendChild(panel.sectionToggleElement);
+
   // 断面 2D ビュー（TASKS 6-1）。既定は非表示で、隠れている間は update が即座に戻る。
   // **ビューポートはここで一度だけ決まる。** プリズム断面は姿勢に依らず一定なので、
   // 起動時の範囲を凍結してよく、以後は光線がどれだけ動いても図が拡縮しない
   const sectionView = new SectionView(
-    container,
+    topLeftToolbar,
     wavelengths,
     uvBoundsOf(
       sectionWorldVertices().map((vertex) =>
