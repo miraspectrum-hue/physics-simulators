@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig({
+// GitHub Pages はリポジトリ名のサブパス配下（/physics-simulators/）で配信されるため、
+// ビルド時のみ base を合わせる（開発サーバはルート直下のままでよい）。
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/physics-simulators/' : '/',
   server: {
     port: 5173,
   },
@@ -8,4 +11,4 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     environment: 'node',
   },
-});
+}));
