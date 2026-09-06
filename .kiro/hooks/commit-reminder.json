@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Commit Reminder",
+      "trigger": "PostFileSave",
+      "matcher": "\\.kiro/reviews/.*-review\\.md$",
+      "description": "レビューファイル保存時に、Gitコミットが必要か判定し、必要ならコミット提案を表示する。",
+      "action": {
+        "type": "agent",
+        "prompt": "レビューファイルが保存されました。CLAUDE.md を読んで、今がGitコミットのタイミングか判定してください。\n\n判定手順:\n1. 保存されたファイルが `.kiro/reviews/*-review.md` かつ判定が ✅OK の場合 → コミット対象\n2. CLAUDE.md の「Gitコミット」セクションを確認（存在しない場合はコミット対象外）\n\nコミット対象の場合、以下の形式で提案を表示してください（git add や git commit は実行しないこと）：\n\n---\n🔖 **Gitコミット提案**\n\n**変更ファイル**:\n```\ngit status --short の結果をここに表示\n```\n\n**コミットメッセージ案**:\n```\n（CLAUDE.mdのテンプレートから生成したメッセージ）\n```\n\n**コミットする場合は「コミット実行」と返信してください。**\n---\n\n該当しない場合は何も出力しないでください。\n\n重要: この時点では git add も git commit も実行しないでください。人間の「コミット実行」指示を待ってください。"
+      }
+    }
+  ]
+}

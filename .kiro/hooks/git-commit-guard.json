@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Git Commit Guard",
+      "trigger": "PreToolUse",
+      "description": "git commit コマンド実行前に人間の承認を求める。人間が明示的に「コミット実行」と指示した後でのみ実行を許可する。",
+      "matcher": "execute_pwsh",
+      "action": {
+        "type": "command",
+        "command": "powershell -Command \"$input = $input | ConvertFrom-Json; $cmd = $input.command; if ($cmd -match 'git\\s+commit') { Write-Error 'git commit コマンドの実行には人間の承認が必要です。'; exit 2 } else { exit 0 }\"",
+        "timeout": 10
+      }
+    }
+  ]
+}

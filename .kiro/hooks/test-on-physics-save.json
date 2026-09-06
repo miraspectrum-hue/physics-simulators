@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Test on Physics Save",
+      "trigger": "PostFileSave",
+      "description": "src/optics/ 配下のファイル保存時に optics テストを自動実行する。物理計算の回帰を即座に検出する。",
+      "matcher": "src/optics/",
+      "action": {
+        "type": "command",
+        "command": "cd \"c:\\Users\\miras\\Desktop\\AI-DevSample\\20260810_プリズム\\apps\\prism-sim\" && npx vitest run tests/optics 2>&1",
+        "timeout": 60
+      }
+    }
+  ]
+}

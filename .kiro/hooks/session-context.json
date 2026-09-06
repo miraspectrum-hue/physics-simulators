@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Session Context",
+      "trigger": "SessionStart",
+      "description": "セッション開始時に TASKS.md を読み、現在の進捗と次のタスクを把握して報告する。",
+      "action": {
+        "type": "agent",
+        "prompt": "セッション開始時の現状把握を行ってください。\n\n以下を順番に実行してください：\n\n1. `apps/prism-sim/TASKS.md` を読み、完了済み・進行中・未着手のタスクを把握する\n2. 現在の進捗を以下の形式で報告する：\n\n---\n## 現在の進捗\n\n**完了済みフェーズ**: （例: Phase 0〜4）\n**進行中のタスク**: （タスクIDと名称）\n**次に着手すべきタスク**: （タスクIDと名称）\n\n**今回のセッションで使うべきエージェント**:\n- （タスク種別に応じて PhysicsAgent / UIAgent / ReviewerAgent を案内）\n- （使用すべきモデルも明示する）\n---"
+      }
+    }
+  ]
+}
