@@ -26,7 +26,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # package-lock.json は Windows 開発機で生成されており、rolldown（Vite 8 が使う
+      # ネイティブバイナリ）の Linux 向けエントリを含まない（npm/cli#4828）。
+      # npm ci はロックを厳密に信頼して失敗するため、npm install で実行環境向けに解決し直す。
+      - run: npm install
       - run: npm run build --workspace=apps/prism-sim
       - uses: actions/upload-pages-artifact@v3
         with:
