@@ -6,7 +6,7 @@
 ## シミュレータ一覧
 
 - [プリズム分光シミュレータ（prism-sim）](./apps/prism-sim/README.md) — 正三角柱プリズムによる白色光の分散を3Dで可視化
-  - 公開URL: https://miraspectrum-hue.github.io/physics-simulators/（GitHub Pagesで自動デプロイ、`main`への変更を反映）
+  - 公開URL: <https://miraspectrum-hue.github.io/physics-simulators/> （GitHub Pagesで自動デプロイ、`main`への変更を反映）
 
 ## 構成
 
