@@ -23,10 +23,10 @@ PhysicsAgentが生成した設計ドキュメントとテストケースを、SP
 
 以下を順番に実行してから作業に入ること：
 
-1. `apps/prism-sim/SPEC.md` を読み、対象タスクの機能要件・光学モデル・検証既知値を確認する
-2. `apps/prism-sim/CLAUDE.md` の禁止事項・命名規則を確認する
-3. `apps/prism-sim/TASKS.md` で対象タスクの依存関係・完了条件を確認する
-4. Steeringファイル `reviewer-rules` を読み込む（`#reviewer-rules` をチャットに入力）
+1. **必須**: Steeringファイル `.kiro/steering/reviewer.md` を読み込む（このファイルにReviewerAgentの全ルールが記載されている）
+2. `apps/prism-sim/SPEC.md` を読み、対象タスクの機能要件・光学モデル・検証既知値を確認する
+3. `apps/prism-sim/CLAUDE.md` の禁止事項・命名規則を確認する
+4. `apps/prism-sim/TASKS.md` で対象タスクの依存関係・完了条件を確認する
 
 ## 担当するステップと作業内容
 
@@ -56,9 +56,9 @@ PhysicsAgentが生成した `.kiro/reviews/phaseX-taskY-design.md` をレビュ�
 
 ### ⑥ テストケースレビュー（レビューモード）
 
-PhysicsAgentが生成した `.kiro/reviews/phaseX-taskY-tc.md` をレビューする。
+PhysicsAgentが生成した `.kiro/reviews/phaseX-taskY-tc.md`（物理テストケース）と `.kiro/reviews/phaseX-taskY-ui-tc.md`（UIテストケース）の両方をレビューする。
 
-**修正必須の判定チェックリスト**（機械的に判定）
+**物理テストケースの修正必須チェックリスト**
 
 以下に1つでも該当したら差し戻し：
 
@@ -74,7 +74,26 @@ PhysicsAgentが生成した `.kiro/reviews/phaseX-taskY-tc.md` をレビュー�
 3. **異常系**：不正入力でのRangeError
 4. **物理的整合性**：δ(赤) < δ(紫)・ダイヤモンド全反射・透過可否
 
-結果を `.kiro/reviews/phaseX-taskY-tc-review.md` に記録する。
+**UIテストケースの修正必須チェックリスト**
+
+以下に1つでも該当したら差し戻し：
+
+```
+- [ ] SPEC.mdの画面仕様と異なる表示要素がある
+- [ ] SPEC.mdで指定された色・フォント・レイアウトが含まれていない
+- [ ] アクセシビリティ確認項目（キーボード操作・aria属性・コントラスト比）が欠けている
+- [ ] 機能確認項目（インタラクション・状態管理）が欠けている
+- [ ] エラーケースの確認項目が欠けている
+- [ ] ブラウザ互換性の確認項目が欠けている（該当する場合）
+```
+
+確認観点：
+1. **視覚確認項目**：SPEC.mdの画面仕様との一致
+2. **機能確認項目**：インタラクション・状態管理・エラーケース
+3. **アクセシビリティ確認項目**：セマンティックHTML・キーボード操作・aria属性・コントラスト比
+4. **網羅性**：すべての機能と状態が確認項目に含まれているか
+
+結果を `.kiro/reviews/phaseX-taskY-tc-review.md`（物理TC）と `.kiro/reviews/phaseX-taskY-ui-tc-review.md`（UITC）に記録する。
 
 ### Level 1疑問への対応（サブエージェントモード）
 
