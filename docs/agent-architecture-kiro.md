@@ -1,8 +1,8 @@
-# AIエージェント構成設計
+# AIエージェント構成設計（Kiro専用）
 
 ## 概要
 
-このドキュメントはKiro IDE上でのAIエージェントを使ったアプリ開発における構成設計を記録したものです。
+このドキュメントは**Kiro IDE専用**の、AIエージェントを使ったアプリ開発における構成設計を記録したものです。Codex向けの設計は `docs/agent-architecture-codex.md` を参照してください。
 **案B（タスクループ型）にoptics層とui層でエージェントを分ける**構成を採用します。
 
 ---
@@ -90,7 +90,7 @@ PhysicsAgent が疑問を持つ
 ### PhysicsAgent（物理実装エージェント）
 
 **使用モデル**：Flagship（GPT-5.6 Sol / Opus 5等）  
-**担当ステップ**：③設計 → ⑤テストケース作成 → ⑦テストコード作成 → ⑧実装（optics/・scene/計算層） → ⑨テスト実行
+**担当ステップ**：③設計 → ⑤テストケース作成（物理・UI両方） → ⑦テストコード作成 → ⑧実装（optics/・scene/計算層） → ⑨テスト実行
 
 **担当ファイル層（明確な境界）**
 
@@ -118,6 +118,8 @@ src/scene/           ← コメント境界外のビジュアル設定
 
 **責務**
 - TASKS.mdの該当タスクを読み、設計ドキュメント（タスク単位）を `.kiro/reviews/phaseX-taskY-design.md` に生成する
+- **物理テストケース**を `.kiro/reviews/phaseX-taskY-tc.md` に生成する
+- **UIテストケース**を `.kiro/reviews/phaseX-taskY-ui-tc.md` に生成する（SPEC.mdの画面仕様から網羅的に抽出）
 - テストケース → テストコード → 実装の順で進める（TDD厳守）
 - **Level 1疑問（ロジック）**: `invoke_sub_agent` で ReviewerAgent を呼んで自己解決
 - **Level 2疑問（仕様変更）**: 中断して人間に報告
@@ -135,7 +137,7 @@ src/scene/           ← コメント境界外のビジュアル設定
 ### UIAgent（UI実装エージェント）
 
 **使用モデル**：MiniMax M2.5  
-**担当ステップ**：⑧実装（ui/・styles/・scene/ビジュアル層） → ⑩画面UIの確認（案の生成）
+**担当ステップ**：⑧実装（ui/・styles/・scene/ビジュアル層）のみ
 
 **担当ファイル層（明確な境界）**
 
@@ -161,8 +163,10 @@ src/scene/           ← コメント境界外の計算ロジック
 ```
 
 **責務**
+- PhysicsAgentが作成した**UIテストケース**（`.kiro/reviews/phaseX-taskY-ui-tc.md`）を参照して実装する
 - PhysicsAgentが確定した計算層のインターフェースに合わせてUIを実装する
 - デザイン案を複数提示してから実装に入る
+- UIテストケースの各項目が満たされるように実装する
 - `prizm.png`のダークテーマを基準に実装する
 - アクセシビリティ（キーボード到達・aria属性）を必ず確認する
 - **Level 1疑問（ロジック）**: PhysicsAgentに委譲（人間経由）
@@ -177,17 +181,17 @@ src/scene/           ← コメント境界外の計算ロジック
 ### ReviewerAgent（レビュアーエージェント）
 
 **使用モデル**：Flagship  
-**担当ステップ**：④設計レビュー → ⑥テストケースレビュー + PhysicsAgentからのLevel 1疑問対応
+**担当ステップ**：④設計レビュー → ⑥テストケースレビュー（物理・UI両方） + PhysicsAgentからのLevel 1疑問対応
 
 **責務**
-- **④⑥レビュー時**: SPEC.mdとの整合性チェック・物理的妥当性チェック・テストの網羅性チェック
+- **④⑥レビュー時**: SPEC.mdとの整合性チェック・物理的妥当性チェック・テストの網羅性チェック（物理テストケース・UIテストケース両方）
 - **サブエージェントとして呼ばれた時**: PhysicsAgentのLevel 1疑問に対し、SPEC.md・CLAUDE.mdを参照して判断を返す
-- レビュー結果を `.kiro/reviews/phaseX-taskY-[design|tc]-review.md` に記録する
+- レビュー結果を `.kiro/reviews/phaseX-taskY-[design|tc|ui-tc]-review.md` に記録する
 - 判定は機械的チェックリストに基づく（主観を排除）
 
 **修正必須の判定チェックリスト**
 
-以下に1つでも該当したら差し戻し：
+**物理テストケース**の場合：
 
 ```
 - [ ] SPEC.mdの数式と異なる式を使っている
@@ -197,6 +201,17 @@ src/scene/           ← コメント境界外の計算ロジック
 - [ ] テストケースに境界値（臨界角・±89°・波長端）が含まれていない
 - [ ] 単位のサフィックス（Deg/Rad/Nm）が欠けている変数がある
 - [ ] 異常系テストケースに RangeError 検証がない
+```
+
+**UIテストケース**の場合：
+
+```
+- [ ] SPEC.mdの画面仕様と異なる表示要素がある
+- [ ] SPEC.mdで指定された色・フォント・レイアウトが含まれていない
+- [ ] アクセシビリティ確認項目（キーボード操作・aria属性・コントラスト比）が欠けている
+- [ ] 機能確認項目（インタラクション・状態管理）が欠けている
+- [ ] エラーケースの確認項目が欠けている
+- [ ] ブラウザ互換性の確認項目が欠けている（該当する場合）
 ```
 
 **サブエージェント応答形式**
@@ -229,13 +244,14 @@ PhysicsAgentから `invoke_sub_agent` で呼ばれた場合は以下の形式で
 ②環境構築    → PhysicsAgent（package.json・tsconfig等）
 ③設計        → PhysicsAgent（タスク単位の設計docを .kiro/reviews/ に生成）
 ④設計レビュー → ReviewerAgent → 結果を .kiro/reviews/ に記録
-⑤TCケース作成 → PhysicsAgent（.kiro/reviews/ のOKファイルを確認してから開始）
-⑥TCレビュー  → ReviewerAgent → 結果を .kiro/reviews/ に記録
+⑤物理TCケース作成 → PhysicsAgent（.kiro/reviews/ のOKファイルを確認してから開始）
+⑤-UITCケース作成  → PhysicsAgent（.kiro/reviews/ のOKファイルを確認してから開始）
+⑥TCレビュー（物理・UI） → ReviewerAgent → 結果を .kiro/reviews/ に記録
 ⑦テストコード → PhysicsAgent（.kiro/reviews/ のOKファイルを確認してから開始）
 ⑧実装（物理） → PhysicsAgent（optics/・scene/計算層）
-⑧実装（UI）  → UIAgent（ui/・styles/・scene/ビジュアル）
+⑧実装（UI）  → UIAgent（ui/・styles/・scene/ビジュアル）※UIテストケースを参照
 ⑨テスト実行  → PhysicsAgent（npm run test実行・失敗時は3分類して3回まで自己修正）
-⑩UI確認     → 人間（ブラウザで目視）→ UIAgentへフィードバック
+⑩UI確認     → 人間（UIテストケースに基づいて目視確認）→ UIAgentへフィードバック
 ```
 
 ### レビュー結果ファイルの命名規則
@@ -244,8 +260,10 @@ PhysicsAgentから `invoke_sub_agent` で呼ばれた場合は以下の形式で
 .kiro/reviews/
   ├── phase1-task1-design.md           # ③で生成
   ├── phase1-task1-design-review.md    # ④で生成（判定: ✅OK / 差し戻し）
-  ├── phase1-task1-tc.md               # ⑤で生成
-  ├── phase1-task1-tc-review.md        # ⑥で生成（判定: ✅OK / 差し戻し）
+  ├── phase1-task1-tc.md               # ⑤で生成（物理テストケース）
+  ├── phase1-task1-ui-tc.md            # ⑤-UIで生成（UIテストケース）
+  ├── phase1-task1-tc-review.md        # ⑥で生成（物理TCレビュー）
+  ├── phase1-task1-ui-tc-review.md     # ⑥で生成（UITCレビュー）
   └── phase1-task1-question-log.md     # Level 1疑問のログ（任意）
 ```
 
@@ -285,18 +303,31 @@ ReviewerAgent:
 
 PhysicsAgent:
   7. .kiro/reviews/phase1-task1-2-1-design-review.md が✅OKであることを確認
-  8. テストケース生成 → .kiro/reviews/phase1-task1-2-1-tc.md
-  9. 中断してレビュー依頼
+  8. 物理テストケース生成 → .kiro/reviews/phase1-task1-2-1-tc.md
+  9. UIテストケース生成 → .kiro/reviews/phase1-task1-2-1-ui-tc.md
+  10. 中断してレビュー依頼
 
-  ↓ ReviewerAgent → ✅OK
+  ↓ ReviewerAgent → 物理TC・UITC両方レビュー → ✅OK
 
 PhysicsAgent:
-  10. テストコード作成 → Red確認 → 「Gitコミットをお願いします」
-  11. 実装
-  12. npm run test 実行
+  11. テストコード作成 → Red確認 → 「Gitコミットをお願いします」
+  12. 実装（物理層）
+  13. npm run test 実行
       → Green → 「Gitコミットをお願いします」
       → Red → 原因分類（実装バグ/テストミス/設計ミス）→ 3回まで自己修正
-  13. TASKS.mdの [x] 更新 → 完了報告
+
+  ↓ 人間がUIAgentに切替（MiniMax M2.5）
+
+UIAgent:
+  14. .kiro/reviews/phase1-task1-2-1-ui-tc.md を参照
+  15. UIテストケースの各項目を満たすように実装
+  16. 完了報告 → 「⑩UI確認をお願いします」
+
+  ↓ 人間がUIテストケースに基づいて目視確認
+
+人間:
+  17. UI確認OK → TASKS.mdの [x] 更新 → 「Gitコミットをお願いします」
+      UI確認NG → UIAgentにフィードバック → 修正
 ```
 
 ### Level 1疑問が発生したフロー

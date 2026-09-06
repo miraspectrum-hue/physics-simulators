@@ -1,0 +1,18 @@
+{
+  "description": "Deterministic Git safety checks for the Codex simulator workflow.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking Git safety policy"
+          }
+        ]
+      }
+    ]
+  }
+}

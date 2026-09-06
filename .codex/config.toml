@@ -1,0 +1,19 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+interrupt_message = true
+
+[agents.architect_physics]
+description = "Designs simulator tasks and test cases, and implements physical or numerical domain logic."
+config_file = "./agents/architect-physics.toml"
+
+[agents.reviewer]
+description = "Performs independent read-only reviews at design, test-case, test-code, and implementation gates."
+config_file = "./agents/reviewer.toml"
+
+[agents.delivery_builder]
+description = "Implements test code, non-physical application logic, UI, configuration, and deterministic verification."
+config_file = "./agents/delivery-builder.toml"

@@ -6,6 +6,10 @@
     "apps/*"
   ],
   "scripts": {
+    "agent:validate": "node scripts/validate-agent-foundation.mjs",
+    "architecture:check": "node scripts/check-architecture.mjs",
+    "verify:fast": "node scripts/verify-fast.mjs",
+    "verify": "node scripts/verify.mjs",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present"
   }
