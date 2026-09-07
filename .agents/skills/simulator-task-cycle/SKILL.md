@@ -11,8 +11,9 @@ delegates stage-specific work to the configured custom agents.
 ## Start
 
 1. Read the repository and nearest app `AGENTS.md` files.
-2. Read `docs/agent-architecture-codex.md`, `docs/tasks-authoring-rules.md`, the
-   simulator `SPEC.md`, `DESIGN-OUTLINE.md` when present, and its `TASKS.md`.
+2. Read `docs/agent-architecture-codex.md`, `docs/tasks-authoring-rules.md`, and
+   `docs/simulators/<simulator-id>/SPEC.md`, `DESIGN-OUTLINE.md` when present,
+   and `TASKS.md`.
 3. Identify the requested task ID, dependencies, execution profile, UI impact,
    acceptance conditions, allowed change boundary, and artifact directory.
 4. If the task is missing a profile or required field, update `TASKS.md` using
@@ -21,9 +22,9 @@ delegates stage-specific work to the configured custom agents.
 5. Read [references/gates.md](references/gates.md) and apply only the gates for
    the selected profile.
 
-For an existing simulator that stores `SPEC.md` and `TASKS.md` in its app root,
-preserve that layout unless the user requests migration. For new simulators use
-the paths defined by the scaffold skill.
+Use `docs/simulators/<simulator-id>/` for simulator planning artifacts. The app
+directory under `apps/<simulator-id>/` contains implementation code and its local
+`AGENTS.md`, not the simulator's `SPEC.md` or `TASKS.md`.
 
 ## Invariants
 

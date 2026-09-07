@@ -1,9 +1,11 @@
 # prism-sim instructions
 
 This app is a Vite 8 + TypeScript 5.9 + Three.js 0.185 simulator tested with
-Vitest. Read `SPEC.md` and `TASKS.md` before changes. The current `TASKS.md` is a
-legacy record; create new tasks using `../../docs/tasks-authoring-rules.md` rather
-than copying its historical phase format.
+Vitest. Before changes, read
+`../../docs/simulators/prism-sim/SPEC.md` and
+`../../docs/simulators/prism-sim/TASKS.md`. The current `TASKS.md` is a legacy
+record; create new tasks using `../../docs/tasks-authoring-rules.md` rather than
+copying its historical phase format.
 
 ## Boundaries
 
@@ -16,7 +18,7 @@ than copying its historical phase format.
 - Wavelengths use nanometers except for documented local conversions required by
   a physical formula.
 - Do not change material constants without a cited source and validation against
-  the reference values in `SPEC.md`.
+  the reference values in `../../docs/simulators/prism-sim/SPEC.md`.
 - Never fake dispersion with fixed decorative colors; rendered separation must
   follow wavelength-dependent optical calculations.
 

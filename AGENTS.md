@@ -3,8 +3,10 @@
 ## Purpose and authoritative sources
 
 This repository contains independent physical-simulator web apps under `apps/`.
-Before changing a simulator, read the nearest `AGENTS.md`, its `SPEC.md`, its
-`TASKS.md`, and any task artifacts referenced by `TASKS.md`.
+Before changing simulator `<simulator-id>`, read the nearest `AGENTS.md`,
+`docs/simulators/<simulator-id>/SPEC.md`,
+`docs/simulators/<simulator-id>/TASKS.md`, and any task artifacts referenced by
+that `TASKS.md`.
 
 Use these project-wide references:
 

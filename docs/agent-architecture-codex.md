@@ -418,6 +418,25 @@ scripts/
 
 役割固有の詳細、チェックリスト、成果物テンプレートは `AGENTS.md` ではなくエージェント定義と Skill に置く。
 
+### AGENTS.md と CLAUDE.md の配置
+
+このワークスペースでは Codex と Claude Code を併用する。両者の指示ファイルは、同じシミュレータの実装ディレクトリに併存させる。
+
+```text
+AGENTS.md                           Codex のプロジェクト共通指示
+apps/<simulator-id>/
+  AGENTS.md                         Codex のシミュレータ固有指示
+  CLAUDE.md                         Claude Code のシミュレータ固有指示
+docs/simulators/<simulator-id>/
+  SPEC.md                           両ツールが参照する仕様・受入基準
+  DESIGN-OUTLINE.md                 両ツールが参照する全体設計
+  TASKS.md                          両ツールが参照するタスク一覧
+```
+
+`AGENTS.md` は Codex に、`CLAUDE.md` は Claude Code に対する指示ファイルであり、ファイル名だけを機械的に置換した同一文書ではない。Codex 固有の役割分担、Skills、Hooks、コミットProposalの規約は `AGENTS.md` と本設計書に置く。Claude Code 固有の操作や設定は `CLAUDE.md` に置く。
+
+物理計算、実装境界、テスト方針など両ツールで守る技術規約は、必要な範囲で両方の指示ファイルに同期し、仕様・受入基準・数式・タスク進捗は重複させず `docs/simulators/<simulator-id>/` の成果物を正とする。両方の指示が仕様と矛盾する場合は、`SPEC.md` を優先してから指示ファイルを更新する。通常のタスク実行で片方の指示ファイルを削除・移動・上書きしてはならない。
+
 ### Skills
 
 Skills は、モデルの役割を決めるものではなく、反復する作業手順を一貫して実行するために使う。各 Skill の `description` には、起動条件と対象外を明記する。

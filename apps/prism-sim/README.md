@@ -35,7 +35,7 @@ npm run typecheck # 型チェックのみ
 
 屈折率はガラスの分散を表す **Cauchy の分散式** `n(λ) = A + B / λ²`（λ は µm）で波長ごとに求め、スネル則で屈折・全反射を計算しています。頂角 60° の正三角柱プリズムに対し、最小偏角 δ_min（`δ_min = 2·asin(n_d · sin(A/2)) - A`）となる入射角へ自動で遷移させる機能もあります。「分散の誇張」スライダーは ×1 のとき常に物理的に正しい値になり、それより上げた分は見やすさのための誇張表示です。
 
-材質定数の出典・臨界角・全反射条件など計算仕様の詳細は [SPEC.md](./SPEC.md) の「光学モデル」節を参照してください。
+材質定数の出典・臨界角・全反射条件など計算仕様の詳細は [SPEC.md](../../docs/simulators/prism-sim/SPEC.md) の「光学モデル」節を参照してください。
 
 ## 対応環境
 
@@ -44,5 +44,6 @@ npm run typecheck # 型チェックのみ
 
 ## 関連ドキュメント
 
-- [SPEC.md](./SPEC.md) — 機能仕様・光学モデル・UI/UX 要件
-- [CLAUDE.md](./CLAUDE.md) — 開発規約・コーディング規約・テスト方針
+- [SPEC.md](../../docs/simulators/prism-sim/SPEC.md) — 機能仕様・光学モデル・UI/UX 要件
+- [TASKS.md](../../docs/simulators/prism-sim/TASKS.md) — 実装タスク一覧・進捗管理
+- [AGENTS.md](./AGENTS.md) — Codex 向け開発規約・コーディング規約・テスト方針
