@@ -189,6 +189,7 @@ docs/simulators/<id>/
     DESIGN.md             タスク設計
     TESTCASES.md          承認対象のテストケース
     REVIEW.md             Reviewer の判断と指摘
+    REMEDIATION.md         自動差し戻しの対象、試行、変更範囲、再確認結果
     EVIDENCE.md           baseline、Red、Green、最終検証の証跡
     DECISIONS.md          人間確認が必要だった事項と決定
 ```
@@ -247,6 +248,21 @@ SPEC.md > DESIGN-OUTLINE.md > DESIGN.md > TESTCASES.md > 実装
 設計に問題が見つかった場合は③へ戻る。テストケースの問題は⑤へ、テストコードへの変換の問題は⑦へ、物理計算実装の問題は⑧の物理計算実装へ、非物理ロジックや UI の問題は⑧の DeliveryBuilder 担当へ戻る。上位成果物へ戻った時点で、変更の影響を受ける下位のレビュー承認、Red、Green、コミット候補を失効させる。仕様やデザインに関わる判断が必要なら、Coordinator が人間に確認する。
 
 同一原因による修正は最大3回まで試みる。3回で解消しない場合、Coordinator は原因、試行内容、次の選択肢を `DECISIONS.md` に記録して人間に確認する。
+
+### 自動差し戻し・再レビュー
+
+Reviewer が `changes-requested` を返したとき、Coordinator は人間の転記指示を待たず、次の条件を**すべて**満たす場合だけ差し戻しから再レビューまでを自動で進める。
+
+- 各 finding に具体的な `required_change` と `rollback_to` がある。
+- 修正は当該タスクの変更境界内に収まり、上位成果物の要求を変更しない。
+- 要件、受入基準、UI 設計、物理式、単位、近似、数値手法、または人間が決める未決定事項を変更しない。
+- 同じ根本原因への試行が3回未満である。
+
+Coordinator は Reviewer の YAML を編集せず `REVIEW.md` へ追記し、`REMEDIATION.md` にレビュー種別、finding ID、差し戻し先、試行回数、許可された変更境界、変更ファイル、決定的検証、再レビュー結果を記録する。`rollback_to` に対応する新しい担当エージェントだけが修正し、さらに新しい Reviewer が再レビューする。修正担当が自分の差分をレビューしてはならない。
+
+`needs-human`、変更境界外の修正、保護対象の判断を伴う修正、同一原因の3回目の不成立、または人間が停止を指定した場合は自動化を停止する。Coordinator は `DECISIONS.md` に試行と選択肢を記録し、人間へ確認する。
+
+再レビューで `approved` になった場合だけ、該当工程から再開する。修正された入力に紐づく以前の承認、Red / Green 証跡、コミット候補は失効させる。自動差し戻しはコミット候補の作成、コミット、人間 UI 受入を自動化しない。
 
 ## コミット手順
 
@@ -443,7 +459,7 @@ Skills は、モデルの役割を決めるものではなく、反復する作�
 
 | Skill | 起動する場面 | 主な利用者 | 内容 |
 |---|---|---|---|
-| `simulator-task-cycle` | 既存シミュレータのタスクを選択した実行プロファイルで進める時 | Coordinator | タスク分類、プロファイル選択、工程ゲート、成果物の生成順、差し戻し、停止・人間確認の手順 |
+| `simulator-task-cycle` | 既存シミュレータのタスクを選択した実行プロファイルで進める時 | Coordinator | タスク分類、プロファイル選択、工程ゲート、成果物の生成順、変更境界内の自動差し戻し・再レビュー、停止・人間確認の手順 |
 | `simulator-review` | 設計・テストケース・実装差分をレビューする時 | Reviewer | レビュー観点、重大度、差し戻し先、定型出力、成果物への記録方法 |
 | `physics-validation` | 物理式、定数、近似、数値計算、物理的期待値を設計・レビューする時 | ArchitectPhysics、Reviewer | 出典、適用範囲、単位、次元、既知値、性質、独立参照計算、許容誤差、再現性の確認 |
 | `simulator-scaffold` | 新しい物理シミュレータを追加する時 | Coordinator、ArchitectPhysics、DeliveryBuilder | `SPEC.md`、全体設計、タスク一覧、登録、画面、テストの雛形 |

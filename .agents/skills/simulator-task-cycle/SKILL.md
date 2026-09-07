@@ -46,6 +46,34 @@ Use `$physics-validation` for any physical model or numerical work,
 `$simulator-review` at every review gate, `$ui-acceptance` for UI-impacting
 tasks, and `$commit-proposal` at commit gates.
 
+## Automatic remediation and re-review
+
+When a Reviewer returns `status: changes-requested`, the Coordinator continues
+without asking the human only when every finding has a concrete
+`required_change`, the change stays within the current task's documented
+boundary, and it does not change a requirement, acceptance criterion, UI
+design, physical equation, unit, approximation, numerical method, or other
+human-owned decision.
+
+1. Append the Reviewer YAML unchanged to `REVIEW.md`. Create or update
+   `REMEDIATION.md` with the source review, finding IDs, rollback target,
+   attempt number, allowed boundary, changed paths, and deterministic checks.
+   Use `assets/task/REMEDIATION.template.md` when creating the file.
+2. Invalidate the rejected approval and send a fresh writer for the
+   `rollback_to` stage. Give it only the authoritative artifacts, the Reviewer
+   findings, and the documented boundary. It must not review its own change.
+3. Run the applicable deterministic checks, then send a fresh Reviewer the
+   updated artifacts. Append its result unchanged to `REVIEW.md`.
+4. Resume only on `status: approved`. A changed input invalidates the earlier
+   record; do not overwrite the review history or treat an old approval as
+   current.
+
+Stop and request human direction instead when the review returns `needs-human`,
+the remediation would cross the task boundary or alter a protected decision,
+the same root cause reaches three attempts, or the user asks to pause. Never
+create a commit proposal or perform a commit automatically as part of this
+loop.
+
 ## Finish
 
 Run the appropriate repository verification helper and task-state validator.
