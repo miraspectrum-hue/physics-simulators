@@ -4,6 +4,7 @@
 
 # npm workspaces（ルートで `npm install` すると依存がここへホイストされる）
 node_modules/
+apps/*/dist/
 *.local
 .DS_Store
 

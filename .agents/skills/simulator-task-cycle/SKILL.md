@@ -57,7 +57,8 @@ human-owned decision.
 
 1. Append the Reviewer YAML unchanged to `REVIEW.md`. Create or update
    `REMEDIATION.md` with the source review, finding IDs, rollback target,
-   attempt number, allowed boundary, changed paths, and deterministic checks.
+   root-cause key, attempt number, allowed boundary, changed paths, and
+   deterministic checks.
    Use `assets/task/REMEDIATION.template.md` when creating the file.
 2. Invalidate the rejected approval and send a fresh writer for the
    `rollback_to` stage. Give it only the authoritative artifacts, the Reviewer
@@ -72,7 +73,8 @@ Stop and request human direction instead when the review returns `needs-human`,
 the remediation would cross the task boundary or alter a protected decision,
 the same root cause reaches three attempts, or the user asks to pause. Never
 create a commit proposal or perform a commit automatically as part of this
-loop.
+loop. When stopping after repeated attempts, record the unchanged root-cause
+key, all attempts, the stop reason, and human options in `DECISIONS.md`.
 
 ## Finish
 
