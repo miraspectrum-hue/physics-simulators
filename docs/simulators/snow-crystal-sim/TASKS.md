@@ -57,7 +57,7 @@
 - 依存: T0-2
 - 変更境界: `apps/snow-crystal-sim/src/`
 - 成果物: ディレクトリ雛形、`tasks/T0-3/REVIEW.md`、`tasks/T0-3/EVIDENCE.md`
-- 状態: 未着手
+- 状態: 完了
 
 ## P1: 成長コア
 
