@@ -44,7 +44,7 @@
 - 変更境界: `apps/snow-crystal-sim/`（`package.json` / `tsconfig.json` / `vite.config.ts` /
   `index.html`）とルート `README.md` のシミュレータ一覧。既存アプリを変更しない。
 - 成果物: 設定ファイル、`README.md` 追記、`tasks/T0-2/REVIEW.md`、`tasks/T0-2/EVIDENCE.md`
-- 状態: 未着手
+- 状態: 完了
 
 ### T0-3: 層ディレクトリの雛形
 

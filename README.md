@@ -7,6 +7,7 @@
 
 - [プリズム分光シミュレータ（prism-sim）](./apps/prism-sim/README.md) — 正三角柱プリズムによる白色光の分散を3Dで可視化
   - 公開URL: <https://miraspectrum-hue.github.io/physics-simulators/> （GitHub Pagesで自動デプロイ、`main`への変更を反映）
+- [雪の結晶シミュレータ（snow-crystal-sim）](./apps/snow-crystal-sim/) — 温度と過飽和度による雪の結晶の成長を3Dで可視化
 
 ## 構成
 
