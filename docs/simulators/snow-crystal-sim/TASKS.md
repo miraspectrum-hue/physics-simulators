@@ -73,14 +73,18 @@
   性能測定条件、形態・対称性の判定量が `DESIGN.md` と `DECISIONS.md` に記録される。各数値には
   恒久 URL と論文版・頁または図表番号を含む出典があり、`SPEC.md` と `DESIGN-OUTLINE.md` の
   更新が物理レビューで `status: approved` になる。
-- 実行プロファイル: `full`
+- 実行プロファイル: `lightweight`
 - UI影響: なし
 - 担当分類: 設計、公開 API、型の契約、数式、単位、境界条件（ArchitectPhysics）
 - 依存: T0-3
 - 変更境界: `docs/simulators/snow-crystal-sim/` と `tasks/T1-0/`。`apps/` のコードを変更しない。
 - 成果物: `tasks/T1-0/DESIGN.md`、`tasks/T1-0/TESTCASES.md`、`tasks/T1-0/REVIEW.md`、
   `tasks/T1-0/EVIDENCE.md`、`tasks/T1-0/DECISIONS.md`、`SPEC.md`、`DESIGN-OUTLINE.md`
-- 状態: 未着手
+- 省略工程と代替検証: 文書だけで物理・数値契約を確定し、実行コードを変更しないため、
+  テストコード、Red、Green は実装対象を持つ T1-1、T1-2、T1-3、T2-4、T2-5、T4-2 へ移管する。
+  T1-0 では設計・テストケースの物理レビュー、成果物ハッシュ、差分検査、全ワークスペース検証、
+  文書差分の独立レビューを代替検証とする。
+- 状態: 完了
 
 ### T1-1: 六角格子・型・座標変換
 
