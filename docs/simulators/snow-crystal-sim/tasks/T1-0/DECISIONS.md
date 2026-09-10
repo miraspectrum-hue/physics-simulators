@@ -1,0 +1,45 @@
+# T1-0 決定記録
+
+## 決定一覧
+
+| ID | 決定 | 根拠 | 影響 |
+|---|---|---|---|
+| D-01 | 基底面 CA は Reiter (2005) の標準 `α=1` 二次元モデルを採用し、原著の Figure 3 の範囲 `0<=β<=0.95, 0<=γ<=1` に限定する | DOI 10.1016/j.chaos.2004.06.071、著者版 pp. 4–7。軽量で、履歴途中のパラメータ変更も著者版 Figure 7 に実例がある | 物理秒を予測せず、柱状は別層で表す |
+| D-02 | 過飽和度は `σ∞=(c∞-csat)/csat`、API/UI 単位は %、範囲は `[0,30]`。0 % は `β=γ=0` | Libbrecht et al. arXiv:0811.2994v1, 式 (1), pp. 3–4、Abstract の 0.5–30 % 測定範囲。Libbrecht arXiv:2306.13087v1, 式 (1), p. 4。Reiter 著者版 p. 6 の無成長ケース | 密度の絶対超過量ではなく無次元相対量になる。有限範囲外はクランプ |
+| D-03 | `dtCa` は物理秒でなく CA step、`0<dtCa<=1`、標準 1 | Reiter 著者版 pp. 6–7 の離散更新。`α=1` なら係数非負条件 `α dt<=2` を満たす | UI 速度は wall-clock 呼出し間隔だけを変える |
+| D-04 | 各 step はその条件の `β` を受け取り、開始時に外周 ring だけを置換して拡散し、終端でも同値へ固定する。内部場・既存氷は再スケールしない。開始時と終端の交換を reservoir 台帳へ、`γ` を面外入力台帳へ記録する | Reiter 著者版 pp. 4–5 の固定背景境界、p. 4 の面外水供給、Figure 7 の途中パラメータ変更 | AC-02 の履歴成長と AC-07 の監査を同じ step 契約で再現できる。再現キーへ各 step の条件・較正 ID・実パラメータを保存する |
+| D-05 | 状態は Float64 の正規化 CA 水量、氷フラグ、固定 noise を持つ。MassLedger の各総和は固定セル順の Neumaier compensated sum、独立 `vaporBudget` は別実装の Kahan sum とする | Reiter の非負実数セルと閾値 1。Higham 2nd ed. Ch. 2,4 | kg への換算はしない。項数依存の通常加算誤差を避け、同じ集計バグを独立オラクルへ複製しない |
+| D-06 | seed は作者参照実装 xoshiro128** version 1.1 の 4×uint32 state をそのまま公開し、`s[1]` の出力式・状態遷移・既知ベクトルを固定する | Blackman–Vigna DOI 10.1145/3460772、作者 `xoshiro128starstar.c` version 1.1。`[1,2,3,4]` の先頭出力は `11520` | `modelVersion=reiter-alpha1-xoshiro128ss-1.1-v1`。旧 1.0 の `s[0]` scrambler を排除し、bit-for-bit 再現を契約化 |
+| D-07 | 「ほぼ揃う」は腕長 CV と腕質量 CV がともに 0.15 以下 | AC-05 を機械判定する工学的許容値。物理観測値ではない | 見た目と不整合なら P2 の人間受入から仕様へ差し戻す |
+| D-08 | 200×200 相当を半径 115 = 40,021 セルとして測る | `SPEC.md` の 200×200、20 step/s、60 fps。完全六角格子セル数 `1+3R(R+1)` | T2-4 の benchmark 条件を固定 |
+| D-09 | `morphologyMetrics` の `aspectRatio` は `number \| null` とし、厚み省略または基底面直径 0 なら `null`、正の直径と厚み 0 なら 0 とする | 正常な中心 seed 状態は直径 0。`SPEC.md` は NaN/Infinity を禁止する | T1-4 未実装時とゼロ除算を区別せず安全に表現し、形態判定は `null` を未成立として扱う |
+| D-10 | 原著の等 Euclidean 距離境界を axial 六角 ring で近似するが、production 半径 115 について境界距離 2 倍・同セル数 Euclidean 境界との感度と 60° 回転共変性を T1-3 承認前に検査する。比較専用の単一 master field から `H_R`・`H_2R`・`E_R` を作り、共有座標の `waterMass`・`ice`・`noise` を bit-for-bit 同一にする。通常の `createLattice` の再現契約は変えない | Reiter 著者版 pp. 4–5。六角 ring は格納と高速化には適するが原著境界と同値ではない。格子別の通常 PRNG 列挙では同一 seed でも共有座標の noise が異なり、境界差とゆらぎ実現が交絡するため、`H_R` を基準に共通場を生成・注入する | 比較開始前の共通場一致検査と全 checkpoint までの同一 control prefix 検査を必須とし、追加セルは同じ master field 規則で初期化する。境界形状・距離以外の入力差、または設計書の感度上限違反が一つでもあれば `β` 等を再較正せず、Euclidean 境界へ差し戻す |
+
+## 較正と第一原理の境界
+
+次は本タスクで決めていない。
+
+- `(temperatureC, supersaturationPct) -> (β, γ, noiseAmplitude, c/a thickness)` の値
+- `compactness`、`tipDensity`、`aspectRatio` による形態クラスの閾値
+- ゆらぎ振幅の既定値
+
+これらは Libbrecht 2023 Figure 2 の観測に合わせる **経験的較正**であり、T1-3/T1-4 と
+P2 の人間受入に残す。Reiter の `β`、`γ` は温度または過飽和度そのものではない。
+
+## 代替案と棄却理由
+
+- Gravner–Griffeath の多パラメータモデル: T1-0 では採用しない。現在の必須範囲は Reiter の
+  二次元成長と別の c 軸幾何で分離でき、より多い自由パラメータを T1-3 で較正する根拠がない。
+- Reiter の単一 scalar を物理 kg/m³ と解釈する案: 棄却。原著自身が informal な water amount
+  とし、物理方程式への fit ではない。
+- 30 % を自然界の絶対上限とする案: 棄却。これは参照実験の有限入力上限であり、普遍的上限
+  ではない。
+- `γ` を保存則から隠す案: 棄却。面外入力を独立に記録しなければ AC-07 の収支を監査できない。
+- 60° sector の複製: `SPEC.md` と AC-05 に反するため禁止。
+
+## 人間判断の要否
+
+T1-0 の範囲には未解消 blocker はない。D-01〜D-10 は `SPEC.md` が T1-0 の
+ArchitectPhysics に委任した決定である。今後、較正で Reiter CA が AC-03/AC-04 を満たせない
+場合のモデル切替、または P2 の見た目と D-07 の閾値が衝突する場合は、プロダクト挙動を変える
+ため人間判断へ戻す。
