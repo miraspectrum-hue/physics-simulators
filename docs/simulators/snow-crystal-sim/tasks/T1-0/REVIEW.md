@@ -185,3 +185,47 @@ conditions: []
 rollback_to: none
 summary: "前回承認対象の TASKS.md を T1-0 の状態だけ「完了」から「レビュー待ち」へメモリ上で戻すと、SHA-256 は前回 implementation review の承認ハッシュ 4c9331e4d1802d206d8cc98163752b1c48ca9fd79c2ed1012bfdbf344a003742 と完全一致した。したがって承認後の変更は、最終検証と implementation review 承認後に行う機械的な完了状態遷移だけである。lightweight へのユーザー承認済み是正、文書専用の変更境界、テストコード・Red・Green の省略理由、T1-1・T1-2・T1-3・T2-4・T2-5・T4-2 へのケース別移管、各後続タスクでの baseline・Red・Green・最終検証の追跡条件は維持されている。TESTCASES.md と EVIDENCE.md は前回承認ハッシュから不変であり、REVIEW.md の設計・テストケース・実装承認記録とも整合する。さらに SPEC.md、DESIGN-OUTLINE.md、DESIGN.md、DECISIONS.md の現ハッシュは最新の design approved 記録と一致し、Reiter alpha=1、CA水量・CA step の単位、beta/gamma、reservoir収支、xoshiro128** 1.1、独立オラクル、境界感度の適用範囲と許容値を含む物理・数値契約に変更はない。git diff --check も成功しており、T1-0 を完了とする状態遷移は妥当である。"
 ```
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/TESTCASES.md
+    hash: sha256:3aa2d71902d74e478b81e3e6dd5a68730648a04f218c8457009421c0a5f343d7
+findings: []
+conditions: []
+rollback_to: none
+summary: "限定修正は上位契約および T1-1 設計レビュー R-002/R-003 の要求と整合する。TC-RNG-002A は createLattice の列挙順・固定 noise・初期 seed・modelVersion を T1-1 に残し、TC-RNG-002B は step の PRNG 非消費、noise/seed 不変、checkpoint 再現を T1-2 へ具体的な対象ファイル付きで移管しており、未作成 step API を T1-1 の Red に混入させない。TC-HEX-003 は safe-neighbor 上限 (M-1,0)、直外 (M,0)、大規模往復、有限極大 Cartesian の変換 overflow を独立式と明示的 RangeError で拘束する。独立再計算では (M-1,0) の全6近傍の q・r・q+r が safe integer、(24149949,-48187277) の往復誤差が q=-3.725290298461914e-9、r=7.450580596923828e-9 で 16ε 規模比例許容差内、Number.MAX_VALUE の逆変換が Infinity/-Infinity/NaN を生じるため拒否対象となることを確認した。xoshiro128** 1.1 の19番目出力 3571406116 と消費後 state も独立再計算で一致する。物理式、CA水量・CA step の単位、適用範囲、境界近似、質量オラクルには変更がなく、承認済み上位成果物のハッシュも維持されている。"
+```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:2e92c5691fe07d10bc5387f92acad05763fec4ec476a4a5e5ac871b0db6bec90
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/TESTCASES.md
+    hash: sha256:3aa2d71902d74e478b81e3e6dd5a68730648a04f218c8457009421c0a5f343d7
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/EVIDENCE.md
+    hash: sha256:9774bf473e64ab6856ecfb1caaf374f843167ff97315c432e468c7510e914aee
+findings: []
+conditions: []
+rollback_to: none
+summary: "限定訂正は T1-1 設計レビューの要求へ追跡可能である。TC-RNG-002A は createLattice 初期化を T1-1 に残し、TC-RNG-002B は step の PRNG 非消費を T1-2 へ具体的なテストパス付きで移管している。TC-HEX-003 は safe-neighbor 境界、大規模座標の規模比例誤差、有限極大 Cartesian の overflow 拒否を追加し、T1-1 の変更境界には domain テスト収集用 vite.config.ts だけが追加された。TESTCASES.md の現ハッシュは最新 approved 記録と一致し、T1-1 DESIGN.md の現ハッシュも最新 design approved 記録と一致する。SPEC.md、DESIGN-OUTLINE.md、T1-0 DESIGN.md、DECISIONS.md の承認ハッシュは不変であり、Reiter alpha=1、CA 水量・CA step の単位、beta/gamma 範囲、reservoir 収支、xoshiro128** 1.1、独立 Kahan/Neumaier オラクル、境界感度契約に変更はない。独立再計算では最大有効座標の全6近傍が安全整数であり、大規模往復誤差は16ε規模比例許容差内、極大 Cartesian は非有限中間値を生じて拒否対象、PRNG の19番目出力と消費後 state は記録値と一致した。全ワークスペース検証は architecture、lint、typecheck、937 tests、両 build を含め成功した。旧 implementation 承認が現ハッシュに対して stale と判定されるため、T1-0 の状態を「レビュー待ち」として本レビューを要求する遷移は妥当である。"
+```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:746029582cbe80696edf1400012fe6f9eddf4da1bcbdd7cf6e795d1571eab4a8
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/TESTCASES.md
+    hash: sha256:3aa2d71902d74e478b81e3e6dd5a68730648a04f218c8457009421c0a5f343d7
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/EVIDENCE.md
+    hash: sha256:9774bf473e64ab6856ecfb1caaf374f843167ff97315c432e468c7510e914aee
+findings: []
+conditions: []
+rollback_to: none
+summary: "現 TASKS.md の T1-0 節にある唯一の「状態: 完了」をメモリ上で「状態: レビュー待ち」へ戻した SHA-256 は 2e92c5691fe07d10bc5387f92acad05763fec4ec476a4a5e5ac871b0db6bec90 となり、直前の implementation approved が記録した対象ハッシュと完全一致した。したがって承認後の reviewed target 変更は T1-0 の機械的な完了状態遷移だけである。TESTCASES.md と EVIDENCE.md は直前承認ハッシュから不変で、TC-RNG-002A/B の T1-1/T1-2 分割、TC-HEX-003 の安全整数境界・規模比例許容差・有限極大入力の overflow 拒否、後続タスクへの baseline・expected Red・Green・最終検証の移管、および lightweight の代替証跡を維持している。独立再計算でも最大有効 axial 座標の全6近傍は安全整数、大規模往復誤差は許容差内、極大 Cartesian の逆変換は非有限となり拒否対象、xoshiro128** 1.1 の19番目出力 3571406116 と消費後 state は記録値に一致した。SPEC.md、DESIGN-OUTLINE.md、T1-0 DESIGN.md、DECISIONS.md は最新 design approved の各ハッシュと一致し、Reiter alpha=1、CA水量・CA step の単位、beta/gamma 範囲、reservoir 収支、固定 noise と PRNG 版、独立 Kahan/Neumaier オラクル、境界感度の適用範囲・許容値を含む物理・数値契約に変更はない。REVIEW.md の最新承認記録とも整合し、git diff --check は成功した。"
+```

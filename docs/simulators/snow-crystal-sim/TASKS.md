@@ -95,9 +95,10 @@
 - UI影響: なし
 - 担当分類: 設計、公開 API、型の契約、数式、単位、境界条件（ArchitectPhysics）
 - 依存: T1-0
-- 変更境界: `src/simulators/snow-crystal-sim/domain/`。他層を変更しない。
+- 変更境界: `src/simulators/snow-crystal-sim/domain/` と、domain 配下のテストを収集対象へ
+  追加するための `vite.config.ts`。他層を変更しない。
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
-- 状態: 未着手
+- 状態: 進行中
 
 ### T1-2: 成長セルオートマトン
 

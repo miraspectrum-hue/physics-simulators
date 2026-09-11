@@ -35,8 +35,12 @@ T2-5、T4-2 がそれぞれ baseline Green、テストコードレビュー、ex
 
 - 設計レビュー: `approved`。対象ハッシュは `REVIEW.md` の最新 `review_type: design` を正とする。
 - テストケースレビュー: `approved`。`TESTCASES.md` の SHA-256 は
-  `f7ee452a47c5f4ea15df5258d81e79aeeb278a86bd44e106083c0c42f61b0aae`。
+  `3aa2d71902d74e478b81e3e6dd5a68730648a04f218c8457009421c0a5f343d7`。
 - テストコード不要理由と代替検証: lightweight 実装レビューで独立確認する。
+
+2026-09-11 の T1-1 設計レビューを受け、`TC-RNG-002` を T1-1 の初期化検査と T1-2 の
+`step` PRNG 非消費検査へ分割し、座標 API の安全域を検査する `TC-HEX-003` を追加した。
+独立再レビューは `approved` であり、物理式、単位、モデル版、較正、許容範囲は変更していない。
 
 ## 決定的検証
 

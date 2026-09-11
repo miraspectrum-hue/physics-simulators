@@ -15,8 +15,8 @@ T1-0 中に未作成の production module へ import して Red にしてはな�
 
 | ケース群 | 実装する後続タスク | 主な候補ファイル |
 |---|---|---|
-| TC-NORM、TC-HEX、TC-RNG、TC-CREATE | T1-1 | `src/simulators/snow-crystal-sim/domain/__tests__/conditions.test.ts`、`hex-lattice.test.ts`、`prng.test.ts`、`lattice.test.ts` |
-| TC-DIFF、TC-BETA、TC-GAMMA、TC-FREEZE、TC-MASS、TC-INVARIANT、TC-STOP、TC-REPLAY | T1-2 | `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`、`mass-conservation.test.ts`、`replay.test.ts` |
+| TC-NORM、TC-HEX、TC-RNG-001、TC-RNG-002A、TC-CREATE | T1-1 | `src/simulators/snow-crystal-sim/domain/__tests__/conditions.test.ts`、`hex-lattice.test.ts`、`prng.test.ts`、`lattice.test.ts` |
+| TC-DIFF、TC-BETA、TC-GAMMA、TC-FREEZE、TC-MASS、TC-INVARIANT、TC-STOP、TC-REPLAY、TC-RNG-002B | T1-2 | `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`、`mass-conservation.test.ts`、`replay.test.ts` |
 | TC-MORPH、TC-ROT、TC-SENS | T1-3 | `src/simulators/snow-crystal-sim/domain/__tests__/morphology-metrics.test.ts`、`boundary-sensitivity.test.ts` |
 | TC-SYMMETRY | T2-5 | `src/simulators/snow-crystal-sim/domain/__tests__/symmetry.acceptance.test.ts` |
 | TC-PERF | T2-4 | `src/simulators/snow-crystal-sim/app/__benchmarks__/domain-step.bench.ts`、`app` 層のブラウザ性能 harness |
@@ -48,7 +48,8 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 - 整数、boolean、列挙座標、`ice`、uint32 output/state、seed/replay の bit pattern は完全一致。
 - IEEE 754 bit-for-bit は `DataView` で binary64 の上位・下位 32 bit を比較する。`Object.is`
   を併用し、`+0` と `-0` の取り違えも許さない。
-- 正規化・座標往復は絶対誤差 `1e-12`。
+- 正規化は絶対誤差 `1e-12`。座標往復は `eps=Number.EPSILON` とし、成分ごとに
+  `16*eps*max(1,abs(expected),abs(actual))` の規模比例許容差とする。
 - 局所更新既知値は
   `tauLocal=32*Number.EPSILON*max(1,abs(expected))`。
 - 収支は独立参照計算から
@@ -76,7 +77,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
   `T2=30*x-30`、`sigmaPct2=30*y` を使う。
 - **期待値**: 順に `(x,y)=(0,0),(0.5,0.5),(1,1)`、返した物理値は入力と同じ、
   `clamped=false`。逆変換は元のクランプ後値へ戻る。
-- **許容誤差**: 座標と往復値の絶対誤差 `<=1e-12`。`clamped` は完全一致。
+- **許容誤差**: 正規化座標と往復値の絶対誤差 `<=1e-12`。`clamped` は完全一致。
 - **失敗意味**: UI 座標の単位、符号、閉区間、または % と無次元比の取り違え。
 
 ### TC-NORM-002: 有限範囲外のクランプと非有限拒否
@@ -101,8 +102,25 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 - **期待値**: 中心近傍の集合は
   `{(1,0),(1,-1),(0,-1),(-1,0),(-1,1),(0,1)}` で重複なし。
   `(2,-1)` は `(x,z)=(1.5,-sqrt(3)/2)` となり、逆変換で `(2,-1)`。
-- **許容誤差**: 座標集合は完全一致、直交座標と往復は絶対 `1e-12`。
+- **許容誤差**: 座標集合は完全一致、直交座標と往復は 2.2 節の規模比例許容差。
 - **失敗意味**: axial 規約、XZ 平面の向き、近傍接続、または格子間隔の不一致。
+
+### TC-HEX-003: safe-neighbor 境界、規模比例誤差、変換 overflow
+
+- **対象 / 候補**: T1-1 / `src/simulators/snow-crystal-sim/domain/__tests__/hex-lattice.test.ts`
+- **前提入力**: `M=Number.MAX_SAFE_INTEGER`、最大有効 axial `(M-1,0)`、その直外
+  `(M,0)`、大規模 axial `(24149949,-48187277)`、極大 Cartesian
+  `(Number.MAX_VALUE,Number.MAX_VALUE)`。
+- **独立オラクル**: テスト内 literal の 6 近傍差分を `(M-1,0)` へ直接加算し、各
+  `q`、`r`、`q+r` を `Number.isSafeInteger` で判定する。座標は 2 基底からテスト内に
+  直接書いた行列と逆行列で往復し、production helper を期待値生成に使わない。
+- **期待値**: `(M-1,0)` は受理され、座標変換結果は有限、往復は 2.2 節の許容差内。
+  その 6 近傍はすべて safe integer。`(M,0)` はその `(+1,0)` 近傍が unsafe になるため
+  `RangeError`。`(24149949,-48187277)` も往復許容差内。極大 Cartesian 入力は
+  fractional axial 成分の overflow を検出して `RangeError` とし、非有限値を返さない。
+- **許容誤差**: 安全整数性と例外 class は完全一致。座標往復は 2.2 節の規模比例許容差。
+- **失敗意味**: 近傍加算が unsafe integer を公開する、固定絶対誤差が入力規模と整合しない、
+  または有限入力から NaN/Infinity を公開する。
 
 ### TC-HEX-002: 半径 2 の全格子と reservoir ring
 
@@ -329,20 +347,35 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 - **許容誤差**: output/state は完全一致、noise は binary64 bit-for-bit。
 - **失敗意味**: 旧 version 1.0 の `s[0]` scrambler、符号付き乗算、回転、unsigned 化の誤り。
 
-### TC-RNG-002: seed、列挙順、モデル版の決定性
+### TC-RNG-002A: createLattice の seed、列挙順、noise、モデル版の決定性
 
-- **対象 / 候補**: T1-1 / `lattice.test.ts`
+- **対象 / 候補**: T1-1 / `src/simulators/snow-crystal-sim/domain/__tests__/lattice.test.ts`
 - **前提入力**: 同じ入力
   `radius=2,seed=[1,2,3,4],beta=0.2,e=0.3` を 2 回、seed だけ
   `[1,2,3,5]` に変えたものを 1 回。
 - **独立オラクル**: TC-HEX-002 の 19 座標順で 1 セル 1 output、計 19 output を消費する
   という回数を spy ではなく、先頭既知 noise、19 個目の output `3571406116`、消費後 state
   `[2456999277,4279822836,334074982,4097125698]` の test literal で同定する。
-- **期待値**: 同じ入力の全配列、metadata、seed は bit-for-bit 一致。1 bit 違う seed は
-  noise 配列が少なくとも 1 要素異なる。いずれも固定 `modelVersion`。`step` 中の PRNG
-  呼出し回数は 0。
+- **期待値**: 同じ入力の全配列、metadata、保存された初期 seed は bit-for-bit 一致。
+  TC-HEX-002 の列挙順と同じ index に対応する noise が一致し、1 bit 違う seed は noise 配列が
+  少なくとも 1 要素異なる。いずれも固定 `modelVersion`。
 - **許容誤差**: bit-for-bit。
 - **失敗意味**: 座標列挙・消費回数の揺れ、global random の利用、seed 無視、版識別不足。
+
+### TC-RNG-002B: step の PRNG 非消費
+
+- **対象 / 候補**: T1-2 / `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`
+- **前提入力**: TC-RNG-002A と同じ初期 seed から生成した固定格子を複製し、一方に複数 step の
+  固定 control 列を適用する。
+- **独立オラクル**: `prng.ts` の `nextXoshiro128ss` を実処理へ委譲するテスト用 wrapper で計数し、
+  `createLattice` による初期化後、最初の `step` 直前にカウンタを 0 へ戻す。全 `step` 完了後も呼出し数が
+  0 であることを検査する。加えて保存初期 seed と noise 配列の
+  bit pattern が不変で、同じ初期状態と control 列の再実行が各 checkpoint で bit-for-bit 一致
+  することを比較する。T1-1 の `createLattice` 以外の初期化経路は使わない。
+- **期待値**: `step` 中の `nextXoshiro128ss` 呼出し回数は 0。保存初期 seed と固定 noise 配列を
+  変更しない。
+- **許容誤差**: seed、noise、全 checkpoint は bit-for-bit。
+- **失敗意味**: step が暗黙の乱数、新しい PRNG 消費、または noise 再生成に依存し、再現性を破る。
 
 ### TC-REPLAY-001: 動的 control 列の完全再生
 
