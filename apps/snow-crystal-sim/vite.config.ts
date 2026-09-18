@@ -6,7 +6,10 @@ export default defineConfig(({ command }) => ({
     port: 5174,
   },
   test: {
-    include: ['tests/**/*.test.ts'],
+    include: [
+      'tests/**/*.test.ts',
+      'src/simulators/snow-crystal-sim/domain/__tests__/**/*.test.ts',
+    ],
     environment: 'node',
     passWithNoTests: true,
   },
