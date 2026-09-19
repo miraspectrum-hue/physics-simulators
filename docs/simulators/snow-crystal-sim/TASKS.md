@@ -98,7 +98,7 @@
 - 変更境界: `src/simulators/snow-crystal-sim/domain/` と、domain 配下のテストを収集対象へ
   追加するための `vite.config.ts`。他層を変更しない。
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
-- 状態: 進行中
+- 状態: 完了
 
 ### T1-2: 成長セルオートマトン
 

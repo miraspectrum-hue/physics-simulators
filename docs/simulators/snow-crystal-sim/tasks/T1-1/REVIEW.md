@@ -377,3 +377,73 @@ conditions: []
 rollback_to: none
 summary: "R-008〜R-011の解消とtest-code全体を再確認した。条件正規化は独立期待値への絶対誤差比較と2返値の完全な値一致を併用し、非原点・平行移動後・safe-neighbor最大境界の近傍は固定6差分literalで検査する。uint32ToNoise(3571406116)は独立値0.6630655694752932およびbinary64 bit pattern 0x3fe537d549000000に一致し、(1,0)を含む座標比較は承認済み16 epsilon許容差を用いる。seed境界、検証順、BigIntセル数境界、所有権、公開型、半径2の固定列挙、19段PRNG列にも退行はない。独立再計算でPRNG既知値・noise bit pattern・セル数境界を確認し、静的typecheckとarchitecture boundary checkも成功した。既存の期待したRedは再実行していない。全11対象のハッシュを再取得し、index.tsの正しいSHA-256を記録した。"
 ```
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/types.ts
+    hash: sha256:d7d5b2e99d50f14bb25a49a33546a443640634e4a7cf6e283a802d26514c4352
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/conditions.ts
+    hash: sha256:64b3fa5045438fa1ddaf4dc46566b2469410434ac112adbde7861c6eedab2ead
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/hex-lattice.ts
+    hash: sha256:6486ec84df7372a8d0966c272f6a970eb9eb29c7e6c398bcc66c7797bfcdf98b
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/prng.ts
+    hash: sha256:fd83c3f0604de3184122104c817dcac5a3086919e5bd2a79752b0a094edccc80
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/lattice.ts
+    hash: sha256:54a228448499faeda2d12b1ddb32326fb47c6adc645b1404ad3d4bfe65b31633
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/index.ts
+    hash: sha256:73f134fb2dbebf3327b9e1efe21b6d79c1b26c02b55b83c27fdcef14ae32aca9
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/hex-lattice.ts:55
+    problem: "有効な最大格子半径付近で正の r の行開始 index が丸められ、axialIndex と axialAtIndex の厳密な対応が壊れる。"
+    evidence: "radius=54794157 は latticeCellCount が受理し、N=9007199088404419 も安全整数である。最終行 r=radius の正しい開始 index は BigInt による独立和 N-(radius+1)=9007199033610261 だが、現行式は加算途中で Number.MAX_SAFE_INTEGER を超えてから減算するため 9007199033610262 を返す。その結果 axialIndex(radius,-radius,radius) は1大きくなり、axialAtIndex(radius,9007199033610261) は格子外の {q:2,r:54794156} を返す。承認済み契約の全有効 radius における列挙・index 双方向一致に違反する。"
+    required_change: "rowStartIndex の正の r 分岐を、中間値を含め安全整数性を保つ等価な計算へ修正し、radius=54794157 の最終行開始・末尾 index で axialIndex と axialAtIndex が独立整数オラクルと厳密に一致することを確認する。"
+conditions: []
+rollback_to: implementation
+summary: "24件の承認済みテスト、TypeScript型検査、architecture boundary checkは成功した。座標基底、近傍順、条件正規化、入力検証順、所有権、公開API、xoshiro128** 1.1のs[1] scrambler・19出力列・noise写像は一次資料および独立再計算と一致した。ただしテスト未捕捉の最大有効半径境界でindex写像が破綻するため、実装ゲートは承認できない。"
+```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/types.ts
+    hash: sha256:d7d5b2e99d50f14bb25a49a33546a443640634e4a7cf6e283a802d26514c4352
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/conditions.ts
+    hash: sha256:64b3fa5045438fa1ddaf4dc46566b2469410434ac112adbde7861c6eedab2ead
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/hex-lattice.ts
+    hash: sha256:e9f4c2b84a3e1cb7effafda2e05bcaa7aa7f049352231122263343d6df1e14a8
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/prng.ts
+    hash: sha256:fd83c3f0604de3184122104c817dcac5a3086919e5bd2a79752b0a094edccc80
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/lattice.ts
+    hash: sha256:54a228448499faeda2d12b1ddb32326fb47c6adc645b1404ad3d4bfe65b31633
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/index.ts
+    hash: sha256:73f134fb2dbebf3327b9e1efe21b6d79c1b26c02b55b83c27fdcef14ae32aca9
+findings: []
+conditions: []
+rollback_to: none
+summary: "前回R-001は解消された。radius=54794157を独立BigIntオラクルで再計算し、セル数9007199088404419、正の最終行開始9007199033610261、末尾9007199088404418、および両境界のaxialIndex/axialAtIndex双方向一致を確認した。修正式の最大中間値は負側・正側とも4503599489408052以下で、セル数を含む全Number整数中間値がNumber.MAX_SAFE_INTEGER以内である。小半径の全行と大半径の代表境界を含む66095組も独立行開始式と一致した。条件正規化、座標式と境界検証、xoshiro128** 1.1、決定性・所有権、公開API、依存境界に未解決不整合はなく、4ファイル24テストとverify-fastが成功した。"
+```
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/vite.config.ts
+    hash: sha256:a06135bc67da69da9d0a0bc6c04a20a1f414a5e39a3cd96c6f8a73e10195d3aa
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/conditions.test.ts
+    hash: sha256:c49bdb89923f0d949c93afd184c3e49732a48735e0a89d6a6929d507a8e922f8
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/prng.test.ts
+    hash: sha256:c222b297b46cae504accc6628eeee3145eb64df78a51563531a5c9f4b8947cb1
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/hex-lattice.test.ts
+    hash: sha256:d3c5a3a9f518a228631a83e2df0d6f30d2e22a3bd3b4f41b6f0d34186fd822cb
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/lattice.test.ts
+    hash: sha256:091412c5eafb62b2a0c1e2b9e3a38f3eb1ed23f225b71b2c70e254926dd83e82
+findings: []
+conditions: []
+rollback_to: none
+summary: "承認済みTESTCASESに対する5ファイルの最終再レビューを実施した。exact収集globを維持し、skip・todo・onlyはなく、TC-NORM、TC-RNG、TC-HEX、TC-CREATEの正常系、境界、例外分類、検証順、純粋性、所有権、決定性を公開API経由で検査している。PRNGの19出力と最終state、noise値、最大有効半径のセル数と最終行indexを独立再計算し、テストliteralと一致した。座標許容差は16 epsilonの規模比例、整数・PRNG・noise・状態は完全一致またはbinary64 bit比較を用い、独立oracleの弱化や対象外のT1-2契約混入はない。"
+```

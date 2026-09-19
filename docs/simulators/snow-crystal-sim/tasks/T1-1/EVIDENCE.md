@@ -3,8 +3,8 @@
 ```yaml
 baseline_status: green
 red_status: expected-failure
-green_status: pending
-final_status: pending
+green_status: green
+final_status: passed
 ui_acceptance: not-required
 ```
 
@@ -40,3 +40,34 @@ the existing `tests/**/*.test.ts` glob.
 - Representative failures included the condition-normalization tolerance,
   published PRNG vector, fixed axial radius, and initial lattice metadata
   assertions. This is the intended Red before physical implementation.
+
+## Green and final verification
+
+- Date: 2026-09-19.
+- Approved test files remained byte-for-byte unchanged from the approved
+  test-code review.
+- `npm.cmd test -- --reporter=verbose src/simulators/snow-crystal-sim/domain/__tests__`
+  from `apps/snow-crystal-sim`: passed, `4` files and `24` tests.
+- `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`: passed;
+  architecture boundary check, TypeScript typecheck, and all `24` domain tests
+  succeeded.
+- `node scripts/verify.mjs`: passed for the complete workspace. The prism app
+  passed `33` files / `937` tests; the snow-crystal app passed `4` files / `24`
+  tests; both workspace builds succeeded. The prism build retained its existing
+  non-failing chunk-size advisory.
+- `git diff --check`: passed.
+
+## Post-review remediation verification
+
+- The first implementation review found a safe-integer rounding defect in the
+  positive-`r` row-start calculation at the maximum accepted radius.
+- `rowStartIndex` was corrected without changing approved tests or contracts.
+- Independent BigInt oracle at `radius=54794157`: cell count
+  `9007199088404419`, final-row start `9007199033610261`, and final index
+  `9007199088404418`; both boundary coordinates round-trip exactly through
+  `axialIndex` and `axialAtIndex`.
+- After the correction, the targeted `4` files / `24` tests, `verify-fast`,
+  `git diff --check`, and full `node scripts/verify.mjs` all passed again.
+- The full verification again passed prism `937` tests and snow-crystal `24`
+  tests, plus both builds. Generated `apps/snow-crystal-sim/dist/` output was
+  removed after verification and is not part of the task diff.
