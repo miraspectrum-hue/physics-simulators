@@ -112,7 +112,7 @@
 - 依存: T1-1
 - 変更境界: `src/simulators/snow-crystal-sim/domain/`
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
-- 状態: 未着手
+- 状態: 進行中
 - 備考: ベースモデル、状態量、境界流量は T1-0 の承認済み決定に従う。
 
 ### T1-3: 形態写像の較正
