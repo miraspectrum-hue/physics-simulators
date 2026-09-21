@@ -7,3 +7,4 @@ export interface NormalizedConditions { readonly temperatureC: number; readonly 
 export interface CreateLatticeInput { readonly radius: number; readonly seed: Seed128; readonly beta: number; readonly noiseAmplitude: number; }
 export interface LatticeState { readonly radius: number; readonly waterMass: Float64Array; readonly ice: Uint8Array; readonly noise: Float64Array; readonly stepIndex: number; readonly elapsedCa: number; readonly stopped: boolean; readonly beta: number; readonly noiseAmplitude: number; readonly seed: Seed128; readonly modelVersion: ModelVersion; }
 export interface Xoshiro128ssResult { readonly output: number; readonly state: Seed128; }
+export interface VaporBudget { readonly mobileVapor: number; readonly depositedWater: number; readonly totalWater: number; readonly iceCellCount: number; }
