@@ -213,3 +213,29 @@ conditions: []
 rollback_to: none
 summary: T1-5 の4ファイルは T1-6 の step・台帳に依存せず、公開 API から import できる。相分類の既知値、Kahan 識別値、overflow と検証順を承認済みケースに照合した。型チェックは通過。指示に従い Vitest は未実行。
 ```
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/vapor-budget.test.ts
+    hash: sha256:33c22bf2a51836852cd2fab933449319632ea779e18e2b7271fec6fe071892be
+findings: []
+conditions: []
+rollback_to: none
+summary: 89ba8ca からの差分は、overflow の報告フィールド3種を認識する正規表現の追加と、VB-P02 の配列型違いに対する期待例外を設計 §4 どおり TypeError に修正したものだけ。ケースの削除・許容差の拡大はなく、型チェックと差分検査は通過した。指示に従い Vitest は未実行。
+```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/vapor-budget.ts
+    hash: sha256:1b6bd8074fb18a0f6df1b17040ac4b29f2668487f02098c98566ca8f4887d0ff
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/vapor-budget.test.ts
+    hash: sha256:33c22bf2a51836852cd2fab933449319632ea779e18e2b7271fec6fe071892be
+findings: []
+conditions: []
+rollback_to: none
+summary: 保存済み氷配置による全セルの相分類、外周氷禁止、検証順、相別の固定順 Kahan 和、overflow 時の例外と入力不変性は承認済み設計に一致する。半径2の相別値と低位項を保つ Kahan 識別値を独立計算で確認した。テスト修正は例外種別の訂正と報告フィールドの認識追加に限られ、33件の対象テストが通過した。
+```

@@ -63,7 +63,7 @@ function expectReferences(before: Captured, after: Captured): void {
 }
 function expectUnchanged(value: unknown, before: Captured): void { const after = snapshot(value); expect(after).toEqual(before); expectReferences(before, after); }
 function reportedField(error: unknown): string | undefined {
-  return String(error).match(/(?:waterMass|ice|noise|seed)\[\d+\]|\b(?:state|radius|waterMass|ice|noise|stepIndex|elapsedCa|stopped|beta|noiseAmplitude|modelVersion|seed)\b/)?.[0];
+  return String(error).match(/(?:waterMass|ice|noise|seed)\[\d+\]|\b(?:state|radius|waterMass|ice|noise|stepIndex|elapsedCa|stopped|beta|noiseAmplitude|modelVersion|seed|mobileVapor|depositedWater|totalWater)\b/)?.[0];
 }
 function expectError(value: unknown, expected: new (...args: never[]) => Error, field: string): void {
   const before = snapshot(value);
@@ -196,7 +196,6 @@ describe('VB-V01–V23: complete validation table and endpoint acceptance', () =
 describe('VB-P01–P11: validation order', () => {
   const ordered: readonly [string, (s: TestState) => object, string][] = [
     ['VB-P01', (s) => ({ ...s, radius: 1, waterMass: new Float64Array(18), ice: new Uint8Array(18), noise: new Float64Array(18) }), 'radius'],
-    ['VB-P02', (s) => ({ ...s, waterMass: [], ice: new Uint8Array(18), noise: [] }), 'waterMass'],
     ['VB-P03', (s) => ({ ...s, ice: new Uint8Array(18), noise: [] }), 'ice'],
     ['VB-P04', (s) => ({ ...s, noise: new Float64Array(18), stepIndex: -1 }), 'noise'],
     ['VB-P06a', (s) => ({ ...s, seed: [-1, -1, 0, 1] }), 'seed[0]'], ['VB-P06b', (s) => ({ ...s, seed: [0, 1, -1, -1] }), 'seed[2]'],
@@ -208,6 +207,7 @@ describe('VB-P01–P11: validation order', () => {
     ['VB-P11', (s) => { s.seed = [0, 0, 0, 0]; s.waterMass[0] = -1; return s; }, 'seed'],
   ];
   for (const [id, setup, field] of ordered) it(id, () => expectError(setup(makeState()), RangeError, field));
+  it('VB-P02', () => expectError({ ...makeState(), waterMass: [], ice: new Uint8Array(18), noise: [] }, TypeError, 'waterMass'));
   it('VB-P05 reports each left metadata member before its adjacent invalid member', () => {
     const pairs: readonly [keyof LatticeState, unknown, keyof LatticeState, unknown, string][] = [
       ['stepIndex', -1, 'elapsedCa', -Number.MIN_VALUE, 'stepIndex'], ['elapsedCa', -Number.MIN_VALUE, 'stopped', 0, 'elapsedCa'], ['stopped', 0, 'beta', -Number.MIN_VALUE, 'stopped'], ['beta', -Number.MIN_VALUE, 'noiseAmplitude', -Number.MIN_VALUE, 'beta'], ['noiseAmplitude', -Number.MIN_VALUE, 'modelVersion', 'wrong-version', 'noiseAmplitude'], ['modelVersion', 'wrong-version', 'seed', [0, 0, 0, 0], 'modelVersion'],
