@@ -453,3 +453,19 @@ conditions: []
 rollback_to: none
 summary: replay の変更は台帳の6 readonly項目を明示する補助型への限定修正で、任意 string index signature のみを除去している。ledgerFields、own-property・finite検査、bit replay、assertion、期待値は不変。独立再計算で半径2の19セル・42辺・ring-to-inner 18辺、代表収支 41/5→44/5、閾値3点のbinary64値を確認し、targeted verificationも8ファイル77テストすべてGreen。
 ```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/reiter-step.ts
+    hash: sha256:ee567db46f460b026b608de167d39158527e90fd766015a1b93f1cd537940559
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/types.ts
+    hash: sha256:b51e3109cae53710a2a5dd5b72393ecbbebda7367747aebafcf2532212346693
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/index.ts
+    hash: sha256:4707236a2452264f0ea4d922c81fed8ddd01a4cef4984b3614fca92bdac33a23
+findings: []
+conditions: []
+rollback_to: none
+summary: "R-001 は解消した。MassLedger は設計で規定された6つの readonly フィールドだけを公開し、任意文字列の index signature は存在しない。reiter-step.ts と index.ts は前回レビュー時のハッシュから不変であり、同期更新、凸結合拡散、固定順 Neumaier 集計、前後 reservoir 交換、受容・添加・凍結・停止、検証順、純粋性、再現性、公開 API に回帰はない。現行ハッシュで architecture、typecheck、8ファイル77テストの targeted 検証を独立再実行して Green を確認し、記録済み full workspace 検証も prism-sim 937テスト、snow-crystal-sim 77テスト、両 build が Green である。"
+```

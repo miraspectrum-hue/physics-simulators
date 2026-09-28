@@ -14,7 +14,7 @@
 baseline_status: green
 red_status: expected-failure
 green_status: green
-final_status: pending
+final_status: passed
 ui_acceptance: not-required
 ```
 
@@ -116,5 +116,8 @@ ui_acceptance: not-required
   The export was restored immediately. Targeted verification with the export
   present had already passed all 77 tests.
 - Because the implementation type changed after the preceding full workspace
-  run, `final_status` is pending a repeated full verification and implementation
-  review.
+  run, targeted and full workspace verification were repeated. The targeted
+  run passed architecture, typecheck, and all 77 tests. The full run again
+  passed architecture, workspace typechecks, prism-sim 937 tests,
+  snow-crystal-sim 77 tests, and both builds. The regenerated untracked
+  snow-crystal-sim `dist` output was removed after verification.
