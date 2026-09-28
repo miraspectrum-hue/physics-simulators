@@ -399,3 +399,19 @@ conditions: []
 rollback_to: none
 summary: "ユーザー承認済みの4回目の限定修正を静的に再審査した。明示代入2箇所を元のcompound assignmentへ逆変換したファイルのSHA-256は、直前の承認済みhash 0a871124dfc98a60add8c5e9418739faff1767ed0265c903ccde6f4afe195fde と一致し、他の変更混入はない。明示代入は noUncheckedIndexedAccess のTS2532を解消し、同じbinary64加減算、セル順、方向順、flux適用順を保持する。型検査とテストは実行していない。"
 ```
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts
+    hash: sha256:d0a2c53f91ceb8efec589f8b837857769b283a53ddd0c0e175515d36f92d8142
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/mass-conservation.test.ts
+    hash: sha256:020bd902b0ca8599681e3f85ac7380c6dfad9d78b332cc2cd4ff1f92e5b2dd9d
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/replay.test.ts
+    hash: sha256:29dee0976d9f69930e16aaba32f56f9ebc0c6738aabd9235e75be45237e2451c
+findings: []
+conditions: []
+rollback_to: none
+summary: "限定差分は承認済みの局所実数許容差 32*Number.EPSILON*max(1,abs(expected)) を、binary64 の演算列で丸め差が生じる beforeTotal、afterTotal、reservoirExchange、TC-STEP-010 の waterMass、diffusionNet、residual に適用しただけである。期待値と許容差定義は不変で、外部流量の厳密な +0、ice 判定、TC-STEP-017 の閾値 bit 判定も維持されている。独立 pairwise-flux・Neumaier 台帳検査も変更されず、現状態で architecture、typecheck、8 files / 77 tests がすべて Green である。"
+```

@@ -70,3 +70,22 @@ ui_acceptance: not-required
 - Classification: expected assertion Red for the intentionally absent T1-6
   `step` export. The reviewed tests are now frozen; deletion, skip, tolerance
   broadening, or semantic weakening requires returning to test-case review.
+
+## Test-code tolerance correction and repeated Red
+
+- Date: 2026-09-28
+- Green exposed six assertions that used bit equality where the approved
+  `TESTCASES.md` requires the existing local real-number tolerance
+  `32 * Number.EPSILON * max(1, abs(expected))`.
+- The correction was limited to `beforeTotal`, `afterTotal`, signed
+  `reservoirExchange`, TC-STEP-010 cell water, `diffusionNet`, and `residual`.
+  Expected values and the tolerance definition were unchanged. Exact `+0`
+  checks for external inputs, exact ice checks, and threshold bit checks remain.
+- A fresh independent test-code review approved all three current test files.
+- To repeat Red without discarding the in-progress implementation, the public
+  `step` export alone was temporarily removed, then
+  `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim` was run.
+  Architecture and typecheck passed; the 58 pre-existing tests passed and all
+  19 T1-6 tests failed at the explicit missing-public-API assertion. The export
+  was restored immediately afterward. No implementation or test logic was
+  changed during this controlled Red check.

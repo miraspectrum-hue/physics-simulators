@@ -42,7 +42,7 @@ describe('TC-STEP-001–010: Reiter alpha=1 local rule and boundary literals', (
     eps(out.state.waterMass[center]!, 1);
     for (const [q, r] of cells(2).filter(([q, r]) => h(q, r) === 1)) eps(out.state.waterMass[at(2, q, r)]!, 1 / 2);
     for (const [q, r] of cells(2).filter(([q, r]) => h(q, r) === 2)) eps(out.state.waterMass[at(2, q, r)]!, 2 / 5);
-    expect(out.ledger.beforeTotal).toBe(41 / 5); expect(out.ledger.afterTotal).toBe(44 / 5); expect(out.ledger.outOfPlaneInput).toBe(+0); eps(out.ledger.reservoirExchange, 3 / 5);
+    eps(out.ledger.beforeTotal, 41 / 5); expect(out.ledger.afterTotal).toBe(44 / 5); expect(out.ledger.outOfPlaneInput).toBe(+0); eps(out.ledger.reservoirExchange, 3 / 5);
     expect(out.state.stepIndex).toBe(1); expect(out.state.elapsedCa).toBe(1); expect(out.state.stopped).toBe(false); expect(out.reachedEdge).toBe(false);
   });
 
@@ -63,7 +63,7 @@ describe('TC-STEP-001–010: Reiter alpha=1 local rule and boundary literals', (
       expect(out.reachedEdge).toBe(false); expect(out.state.stopped).toBe(false); zeroFixture = out.state;
     }
     const zero = call(s2(), params({ beta: 0 }));
-    expect(zero.ledger.beforeTotal).toBe(41 / 5); expect(zero.ledger.afterTotal).toBe(17 / 5); expect(zero.ledger.reservoirExchange).toBe(-24 / 5);
+    eps(zero.ledger.beforeTotal, 41 / 5); eps(zero.ledger.afterTotal, 17 / 5); eps(zero.ledger.reservoirExchange, -24 / 5);
     for (const [q, r] of cells(2).filter(([q, r]) => h(q, r) === 1)) eps(zero.state.waterMass[at(2, q, r)]!, 2 / 5);
     const high = call(s2(), params({ beta: 3 / 5 })); const low = call(s2(), params({ beta: 1 / 5 }));
     for (const [q, r] of cells(2).filter(([q, r]) => h(q, r) === 1)) { eps(high.state.waterMass[at(2, q, r)]!, 11 / 20); eps(low.state.waterMass[at(2, q, r)]!, 9 / 20); }
@@ -87,9 +87,9 @@ describe('TC-STEP-001–010: Reiter alpha=1 local rule and boundary literals', (
     let state = domain.createLattice({ radius: 3, seed: [1, 2, 3, 4], beta: 0, noiseAmplitude: 0 }); state = { ...state, waterMass: new Float64Array(state.waterMass), ice: new Uint8Array(state.ice) }; state.waterMass.fill(0); state.ice.fill(0); state.waterMass[at(3, 0, 0)] = 3 / 5;
     const out = call(state, params({ beta: 0 }));
     const neighbors = new Set(directions.map(([q, r]) => `${q},${r}`));
-    for (const [q, r] of cells(3)) { const i = at(3, q, r); const isCenter = q === 0 && r === 0; expect(out.state.waterMass[i]).toBe(isCenter ? 3 / 10 : neighbors.has(`${q},${r}`) ? 1 / 20 : 0); expect(out.state.ice[i]).toBe(0); }
+    for (const [q, r] of cells(3)) { const i = at(3, q, r); const isCenter = q === 0 && r === 0; eps(out.state.waterMass[i]!, isCenter ? 3 / 10 : neighbors.has(`${q},${r}`) ? 1 / 20 : 0); expect(out.state.ice[i]).toBe(0); }
     expect(out.ledger.beforeTotal).toBe(3 / 5); expect(out.ledger.afterTotal).toBe(3 / 5);
-    for (const value of [out.ledger.outOfPlaneInput, out.ledger.reservoirExchange, out.ledger.diffusionNet, out.ledger.residual]) expect(Object.is(value, +0)).toBe(true);
+    expect(Object.is(out.ledger.outOfPlaneInput, +0)).toBe(true); expect(Object.is(out.ledger.reservoirExchange, +0)).toBe(true); eps(out.ledger.diffusionNet, 0); eps(out.ledger.residual, 0);
   });
 
   it('TC-INVALID-001 to TC-INVALID-010 exhaustively cover validation order, boundaries, and immutability', () => {
