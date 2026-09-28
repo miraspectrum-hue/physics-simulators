@@ -415,3 +415,41 @@ conditions: []
 rollback_to: none
 summary: "限定差分は承認済みの局所実数許容差 32*Number.EPSILON*max(1,abs(expected)) を、binary64 の演算列で丸め差が生じる beforeTotal、afterTotal、reservoirExchange、TC-STEP-010 の waterMass、diffusionNet、residual に適用しただけである。期待値と許容差定義は不変で、外部流量の厳密な +0、ice 判定、TC-STEP-017 の閾値 bit 判定も維持されている。独立 pairwise-flux・Neumaier 台帳検査も変更されず、現状態で architecture、typecheck、8 files / 77 tests がすべて Green である。"
 ```
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/reiter-step.ts
+    hash: sha256:ee567db46f460b026b608de167d39158527e90fd766015a1b93f1cd537940559
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/types.ts
+    hash: sha256:d53dfe0ec2061681a6d94d0615e8e3d8314fd18302c2cd4c032f7fa88dde06b6
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/index.ts
+    hash: sha256:4707236a2452264f0ea4d922c81fed8ddd01a4cef4984b3614fca92bdac33a23
+findings:
+  - id: R-001
+    severity: medium
+    location: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/types.ts:12
+    problem: MassLedger に設計書にない文字列 index signature が追加され、存在しない任意の台帳フィールドを number として参照できる公開型になっている。
+    evidence: T1-6 DESIGN.md §3 は beforeTotal、afterTotal、diffusionNet、outOfPlaneInput、reservoirExchange、residual の6フィールドだけを持つ MassLedger を規定している。現在の readonly [field: string]: number は ledger.typo のような実行時 undefined の参照を型上 number と誤認させ、公開 API の安全性と規定されたフィールド集合を損なう。
+    required_change: MassLedger から readonly [field: string]: number を削除し、設計で規定された6つの readonly フィールドだけを公開する。
+conditions: []
+rollback_to: implementation
+summary: 同期更新、固定順 Neumaier 集計、前後の reservoir 交換、受容・添加・凍結・停止、検証順、非負性、純粋性、seed/noise 不変性、および公開 step export は設計と一致し、独立した半径2既知値・保存則・次元関係と targeted 77 tests Green でも確認できた。ただし MassLedger の未承認かつ不健全な公開 index signature が残るため実装ゲートは未承認。
+```
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts
+    hash: sha256:d0a2c53f91ceb8efec589f8b837857769b283a53ddd0c0e175515d36f92d8142
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/mass-conservation.test.ts
+    hash: sha256:020bd902b0ca8599681e3f85ac7380c6dfad9d78b332cc2cd4ff1f92e5b2dd9d
+  - path: apps/snow-crystal-sim/src/simulators/snow-crystal-sim/domain/__tests__/replay.test.ts
+    hash: sha256:cd1c63a6d269efcfe10da9c2770db57985745aa876933fffb1f33c89cdfb1efe
+findings: []
+conditions: []
+rollback_to: none
+summary: replay の変更は台帳の6 readonly項目を明示する補助型への限定修正で、任意 string index signature のみを除去している。ledgerFields、own-property・finite検査、bit replay、assertion、期待値は不変。独立再計算で半径2の19セル・42辺・ring-to-inner 18辺、代表収支 41/5→44/5、閾値3点のbinary64値を確認し、targeted verificationも8ファイル77テストすべてGreen。
+```

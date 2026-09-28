@@ -3,12 +3,13 @@ import * as domain from '../index';
 import type { LatticeState } from '../index';
 
 type Parameters = { readonly beta: number; readonly gamma: number; readonly noiseAmplitude: number; readonly dtCa: number };
-type Result = { readonly state: LatticeState; readonly ledger: Record<string, number>; readonly reachedEdge: boolean };
+type Ledger = { readonly beforeTotal: number; readonly afterTotal: number; readonly diffusionNet: number; readonly outOfPlaneInput: number; readonly reservoirExchange: number; readonly residual: number };
+type Result = { readonly state: LatticeState; readonly ledger: Ledger; readonly reachedEdge: boolean };
 const step = (domain as typeof domain & { step?: (state: LatticeState, p: Parameters) => Result }).step;
 const bits = (value: number) => { const view = new DataView(new ArrayBuffer(8)); view.setFloat64(0, value); return view.getBigUint64(0); };
 const stateBits = (state: LatticeState) => ({ water: Array.from(state.waterMass, bits), ice: Array.from(state.ice), noise: Array.from(state.noise, bits), seed: [...state.seed], fields: [state.radius, state.stepIndex, bits(state.elapsedCa), state.stopped, bits(state.beta), bits(state.noiseAmplitude), state.modelVersion] });
 const ledgerFields = ['beforeTotal', 'afterTotal', 'diffusionNet', 'outOfPlaneInput', 'reservoirExchange', 'residual'] as const;
-const ledgerBits = (ledger: Record<string, number>) => { for (const field of ledgerFields) { expect(Object.hasOwn(ledger, field)).toBe(true); expect(typeof ledger[field]).toBe('number'); expect(Number.isFinite(ledger[field]!)).toBe(true); } return { beforeTotal: bits(ledger.beforeTotal!), afterTotal: bits(ledger.afterTotal!), diffusionNet: bits(ledger.diffusionNet!), outOfPlaneInput: bits(ledger.outOfPlaneInput!), reservoirExchange: bits(ledger.reservoirExchange!), residual: bits(ledger.residual!) }; };
+const ledgerBits = (ledger: Ledger) => { for (const field of ledgerFields) { expect(Object.hasOwn(ledger, field)).toBe(true); expect(typeof ledger[field]).toBe('number'); expect(Number.isFinite(ledger[field]!)).toBe(true); } return { beforeTotal: bits(ledger.beforeTotal), afterTotal: bits(ledger.afterTotal), diffusionNet: bits(ledger.diffusionNet), outOfPlaneInput: bits(ledger.outOfPlaneInput), reservoirExchange: bits(ledger.reservoirExchange), residual: bits(ledger.residual) }; };
 const resultBits = (result: Result) => ({ state: stateBits(result.state), ledger: ledgerBits(result.ledger), reachedEdge: result.reachedEdge });
 const invoke = (s: LatticeState, p: Parameters) => { expect(step).toBeTypeOf('function'); return step!(s, p); };
 
