@@ -35,11 +35,11 @@ xoshiro128** version 1.1 の 4×uint32 state とし、初期化時に固定 nois
 | 契約 | 入力と単位 | 出力と単位 | エラーと境界 |
 |---|---|---|---|
 | `normalizeConditions(temperatureC, supersaturationPct)` | 温度 `[-30,0]` [°C]、遠方の氷に対する相対過飽和度 `[0,30]` [%] | クランプ後の条件、`x=(T+30)/30`、`y=σ%/30`、クランプ情報 | 有限な定義域外はクランプ。非有限は `TypeError` |
-| `morphologyAt(temperatureC, supersaturationPct)` | 上記の温度と過飽和度 | c/a 比、Reiter の `β`・`γ`・ゆらぎと較正 ID、クランプ情報 | **写像値は T1-3 の経験的較正で確定**。Reiter パラメータを物理量と同一視しない |
+| `morphologyAt(temperatureC, supersaturationPct)` | 上記の温度と過飽和度 | c/a 比、Reiter の `β`・`γ`・ゆらぎと較正 ID、クランプ情報 | **写像値は T1-8 の経験的較正で確定**。Reiter パラメータを物理量と同一視しない |
 | `createLattice({radius, seed, beta, noiseAmplitude})` | 六角格子半径 [セル]、xoshiro128** 1.1 の 4×uint32 state、初期の無次元 CA 値 | 中心 seed、初期 `β` reservoir ring、固定 noise を持つ初期状態 | `radius<2`、all-zero seed、パラメータ範囲外は `RangeError`。同一 seed で同一状態（AC-06） |
 | `step(lattice, {beta, gamma, noiseAmplitude, dtCa})` | 格子、その step の無次元 CA `β`・添加率 `γ`・ゆらぎ振幅、`dtCa` `(0,1]` [CA step] | 次状態、面外入力・reservoir exchange を分離した収支台帳、外縁到達フラグ | step 開始時に外周だけを `β` へ置換して拡散へ使い、終端でも固定する。内部場・既存氷を再スケールしない。純粋関数。停止後は固定点 |
 | `vaporBudget(lattice)` | 格子状態 | mobile vapor、deposited water、合計、氷セル数 | `step` の台帳と走査・集計コードを共有しない独立 compensated sum で収支検証（AC-07） |
-| `morphologyMetrics(lattice, thickness?)` | 格子、任意の有限・非負 c 軸厚み [セル] | 半径、周長、compactness、tip density、`number \| null` の aspect ratio、6 腕の長さ・質量 CV | 厚み省略または直径 0 なら aspect ratio は `null`。形態クラス閾値は T1-3/T1-4 で較正する |
+| `morphologyMetrics(lattice, thickness?)` | 格子、任意の有限・非負 c 軸厚み [セル] | 半径、周長、compactness、tip density、`number \| null` の aspect ratio、6 腕の長さ・質量 CV | 厚み省略または直径 0 なら aspect ratio は `null`。指標は T1-3、形態クラス閾値は T1-8/T1-4/T1-10 で確定する |
 | `columnThickness(morphology, cell)` | 形態パラメータ、セル | c軸方向の厚み [格子単位] | 板状で薄く、柱状で厚くなる。負にならない |
 | `latticeToInstances(lattice, thickness)` | 格子状態、厚み関数 | 描画用のインスタンス配列（位置・厚み・氷の濃度） | scene 層が消費する。Three.js 型を返さない |
 | `axialToCartesian(q, r)` | 六角格子の軸座標 | 直交座標 | 純粋な座標変換 |
@@ -82,8 +82,8 @@ xoshiro128** version 1.1 の 4×uint32 state とし、初期化時に固定 nois
      同セル数に最も近い Euclidean disk 境界と比較する。通常の `createLattice` の再現契約は
      変更せず、比較時だけ一つの master field から 3 格子へ初期状態を射影し、共有座標の
      `waterMass`・`ice`・`noise` を bit-for-bit 同一にする。比較開始前の一致検査と各 checkpoint
-     までの同一 control prefix 検査により、境界形状・距離以外の入力を固定する。T1-3 の代表
-     軌跡について形態指標の差と 60° 回転共変性が T1-0 設計書の基準内であることを較正承認前に
+     までの同一 control prefix 検査により、境界形状・距離以外の入力を固定する。T1-9 で
+     T1-8 の代表軌跡について形態指標の差と 60° 回転共変性が T1-0 設計書の基準内であることを
      確認し、失敗時は `β`・`γ` を調整せず Euclidean 境界へ差し戻す
 - **再現性**: 作者参照実装 xoshiro128** version 1.1、`modelVersion` の
   `reiter-alpha1-xoshiro128ss-1.1-v1`、セル列挙順を固定する。domain 層でグローバルな

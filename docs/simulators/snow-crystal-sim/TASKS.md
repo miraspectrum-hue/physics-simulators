@@ -30,7 +30,7 @@
 - 成果物: `tasks/T0-1/REVIEW.md`（レビュー対象の SHA-256 を記録）
 - 状態: 完了
 - 備考: レビューでは出典名だけでなく、実装に使う数値を追跡できる恒久 URL・版・頁または図表番号を
-  確認する。未決定事項は T1-0 と T1-3 の対象として明確に記録し、未承認のまま数値実装へ進まない。
+  確認する。未決定事項は T1-0、T1-7、T1-8 の対象として明確に記録し、未承認のまま数値実装へ進まない。
 
 ### T0-2: workspace の作成
 
@@ -81,7 +81,8 @@
 - 成果物: `tasks/T1-0/DESIGN.md`、`tasks/T1-0/TESTCASES.md`、`tasks/T1-0/REVIEW.md`、
   `tasks/T1-0/EVIDENCE.md`、`tasks/T1-0/DECISIONS.md`、`SPEC.md`、`DESIGN-OUTLINE.md`
 - 省略工程と代替検証: 文書だけで物理・数値契約を確定し、実行コードを変更しないため、
-  テストコード、Red、Green は実装対象を持つ T1-1、T1-2、T1-3、T2-4、T2-5、T4-2 へ移管する。
+  テストコード、Red、Green は実装対象を持つ T1-1、T1-5、T1-6、T1-3、T1-7、T1-8、
+  T1-9、T1-4、T1-10、T2-4、T2-5、T4-2 へ移管する。
   T1-0 では設計・テストケースの物理レビュー、成果物ハッシュ、差分検査、全ワークスペース検証、
   文書差分の独立レビューを代替検証とする。
 - 状態: 完了
@@ -100,7 +101,7 @@
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
 - 状態: 完了
 
-### T1-2: 成長セルオートマトン
+### T1-2: 成長セルオートマトン（分割前の履歴）
 
 - 目的: 水蒸気拡散と凍結判定による結晶成長を実装する。
 - 完了条件: AC-06（同一 seed・同一入力で完全一致）、AC-07（水蒸気の収支が閉じる）、
@@ -112,27 +113,110 @@
 - 依存: T1-1
 - 変更境界: `src/simulators/snow-crystal-sim/domain/`
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
-- 状態: 進行中
-- 備考: ベースモデル、状態量、境界流量は T1-0 の承認済み決定に従う。
+- 状態: stale
+- 備考: 2026-09-21 の人間判断で T1-5（独立収支監査）と T1-6（成長 step）へ分割。
+  本タスクの設計・テストケース・レビューは履歴として保持し、以後の承認根拠には使わない。
+  上位の T1-0 数値契約、`SPEC.md`、`DESIGN-OUTLINE.md` は変更しない。
 
-### T1-3: 形態写像の較正
+### T1-5: 独立した水量収支監査
 
-- 目的: `(温度, 過飽和度)` から成長パラメータへの写像を、観測される形態領域に合わせて
-  較正する。
-- 完了条件: AC-03（過飽和度を上げると枝分かれが増える）と AC-04（-2 / -6 / -15 °C 付近で
-  期待される形態）が、**成長コードとは独立に実装した形態指標関数**によるテストで確認できる。
-  較正手順・採用値・参照した観測点が `DESIGN.md` に記録されている。
+- 目的: 成長 step と独立した `vaporBudget(state)` で、水量の相分類と総量を検査できるようにする。
+- 完了条件: 氷・受容セルによる相分類、補償和、入力検証と overflow のテストが通り、
+  `step` の台帳・更新関数・集計 helper を期待値生成にも実装にも使わない。
 - 実行プロファイル: `full`
 - UI影響: なし
 - 担当分類: 物理計算の純粋関数、数値計算、アルゴリズム（ArchitectPhysics）
-- 依存: T1-2
-- 変更境界: `src/simulators/snow-crystal-sim/domain/`、および `SPEC.md`（過飽和度軸の
-  数値スケールの確定）
-- 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、`DECISIONS.md`、コード、テスト
+- 依存: T1-1
+- 変更境界: `src/simulators/snow-crystal-sim/domain/` の `vapor-budget.ts`、公開型・export、
+  対応テスト。`reiter-step.ts` と他層を変更しない。
+- 成果物: `tasks/T1-5/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
+- 状態: 完了
+- 備考: T1-2 の履歴を参照資料にできるが、新しい設計・テストケースは本タスクで独立に承認する。
+
+### T1-6: 成長 step と収支台帳
+
+- 目的: Reiter `alpha=1` の拡散・添加・凍結・停止を1 step の純粋関数として実装する。
+- 完了条件: AC-06、AC-07、AC-09 と外縁到達通知を、独立した参照計算・
+  収支監査・再生テストで確認できる。`vaporBudget` の実装経路を共有しない。
+- 実行プロファイル: `full`
+- UI影響: なし
+- 担当分類: 物理計算の純粋関数、数値計算、アルゴリズム（ArchitectPhysics）
+- 依存: T1-5
+- 変更境界: `src/simulators/snow-crystal-sim/domain/` の `reiter-step.ts`、公開型・export、
+  対応テスト。`vapor-budget.ts` と他層を変更しない。
+- 成果物: `tasks/T1-6/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
+- 状態: 完了
+- 備考: 境界交換・面外入力・台帳・入力不変・PRNG 非消費を含む。T1-0 契約を変更しない。
+
+### T1-3: 独立した形態指標
+
+- 目的: 成長実装と独立した `morphologyMetrics` で、基底面形状を定量比較できるようにする。
+- 完了条件: 半径・周長・compactness・tip density・6腕の長さと質量の CV が既知の人工格子で
+  独立計算と一致し、厚み未指定または基底面直径 0 の `aspectRatio` が `null` になる。
+- 実行プロファイル: `full`
+- UI影響: なし
+- 担当分類: 物理計算の純粋関数、数値計算、アルゴリズム（ArchitectPhysics）
+- 依存: T1-6
+- 変更境界: `src/simulators/snow-crystal-sim/domain/` の形態指標、公開型・export、対応テスト。
+  成長 step、較正値、描画層を変更しない。
+- 成果物: `tasks/T1-3/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
 - 状態: 未着手
-- 備考: **本アプリで最も誠実さを要するタスク。** この写像は第一原理からの導出ではなく
-  経験的較正である（`SPEC.md`「成長コア」節）。較正であることを隠す表現を用いてはならない。
-  過飽和度の数値スケールと較正値をここで決着させる。
+- 備考: production の成長コードや `morphologyAt` を期待値生成に使わない。
+
+### T1-7: 観測コーパスと較正プロトコル
+
+- 目的: Libbrecht (2023) Figure 2 の206観測点を追跡可能なデータとして固定し、再現可能な
+  較正手順を定義する。
+- 完了条件: 全観測点に出典内ID、温度、氷過飽和度、既知時刻、寸法、形態タグ、不確かさ、
+  転記根拠があり、原資料との照合・データハッシュ・学習/holdout分割・loss・探索順が再現できる。
+- 実行プロファイル: `full`
+- UI影響: なし
+- 担当分類: 物理データ、較正手順、再現性（ArchitectPhysics）
+- 依存: T1-3
+- 変更境界: `docs/simulators/snow-crystal-sim/tasks/T1-7/` と、較正用の静的データ・検証コード。
+  runtime の形態写像、成長 step、UI を変更しない。
+- 成果物: `tasks/T1-7/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、
+  `DECISIONS.md`、追跡可能な観測コーパス、検証テスト
+- 状態: 未着手
+- 備考: 206点すべてを収録する。物理時間と実寸は照合・報告するが、CA step に物理秒を
+  割り当てないため適合 loss の対象外とし、形態タグと無次元形状だけを較正対象にする。
+
+### T1-8: 経験的な形態写像
+
+- 目的: `(temperatureC, supersaturationPct)` から Reiter CA の `beta`、`gamma`、
+  `noiseAmplitude` 候補、c/a 比、`calibrationId` への経験的写像を実装する。
+- 完了条件: T1-7 の固定プロトコルで選んだ写像が holdout 基準を満たし、0 % で
+  `beta=gamma=0`、有限範囲外のクランプ、非有限入力拒否、補間の連続性、同一入力の決定性を
+  独立テストで確認できる。採用値と不採用候補を追跡できる。
+- 実行プロファイル: `full`
+- UI影響: なし
+- 担当分類: 物理計算の純粋関数、経験的較正、数値計算（ArchitectPhysics）
+- 依存: T1-7
+- 変更境界: `src/simulators/snow-crystal-sim/domain/` の `morphologyAt`、公開型・export、
+  対応テスト、および較正結果。成長 step、厚み実装、UI を変更しない。
+- 成果物: `tasks/T1-8/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、
+  `DECISIONS.md`、コード、テスト
+- 状態: 未着手
+- 備考: **第一原理による変換ではなく経験的較正である。** `noiseAmplitude` は T1-0 の
+  CV 自動基準を満たす候補として固定し、最終値は T2-5 の人間 UI 受け入れで確定する。
+
+### T1-9: 境界形状・距離の感度ゲート
+
+- 目的: production の六角 ring 境界近似が、較正結果を境界形状や距離へ過度に依存させない
+  ことを確認する。
+- 完了条件: T1-8 の全代表軌跡を、半径 `R=115` の六角格子、境界距離を倍にした六角格子、
+  同セル数に最も近い Euclidean disk 境界で共通 master field と同一 control prefix から実行し、
+  T1-0 の形態指標差・回転共変性基準を満たす。
+- 実行プロファイル: `full`
+- UI影響: なし
+- 担当分類: 物理・数値検証、境界近似の感度分析（ArchitectPhysics）
+- 依存: T1-8
+- 変更境界: `src/simulators/snow-crystal-sim/domain/` の比較専用境界・fixture・検証コードと
+  `tasks/T1-9/`。較正パラメータを感度試験へ合わせて調整しない。
+- 成果物: `tasks/T1-9/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、
+  `DECISIONS.md`、比較 harness、テスト
+- 状態: 未着手
+- 備考: 基準を満たさない場合は T1-8 を調整せず、T1-0 の決定どおり境界設計へ差し戻す。
 
 ### T1-4: c軸方向の厚み
 
@@ -142,11 +226,29 @@
 - 実行プロファイル: `full`
 - UI影響: なし
 - 担当分類: 物理計算の純粋関数、数値計算、アルゴリズム（ArchitectPhysics）
-- 依存: T1-3
+- 依存: T1-9
 - 変更境界: `src/simulators/snow-crystal-sim/domain/`
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
 - 状態: 未着手
 - 備考: 中空角柱の表現は `DESIGN-OUTLINE.md` の未決定事項5に従い、第一段階では扱わない。
+
+### T1-10: 形態較正の統合受入
+
+- 目的: 基底面の枝分かれ写像と c 軸厚みを統合し、代表条件で期待形態になることを
+  自動指標により確認する。
+- 完了条件: T1-3 の独立指標により、過飽和度上昇で枝分かれが増える AC-03 と、
+  `-2 °C` 付近で板状、`-6 °C` 付近で柱状、`-15 °C` 付近で薄い板状になる AC-04 の
+  自動基準を、T1-7 の holdout 観測を含む代表条件で満たす。
+- 実行プロファイル: `full`
+- UI影響: なし
+- 担当分類: 物理モデル統合、独立形態検証（ArchitectPhysics）
+- 依存: T1-4, T1-9
+- 変更境界: 既存の `step`、`morphologyMetrics`、`morphologyAt`、`columnThickness` を使う
+  統合 fixture・harness・テストと `tasks/T1-10/`。新しい公開 API、UI、描画を変更しない。
+- 成果物: `tasks/T1-10/DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、コード、テスト
+- 状態: 未着手
+- 備考: 最終的な見た目と `noiseAmplitude` は T2-5 で人間が受け入れる。自動基準の通過を
+  見た目の受け入れと同一視しない。
 
 ## P2: 最小可視化
 
@@ -201,12 +303,12 @@
 - 目的: 最小可視化の段階で AC-08 の実現可能性を確かめ、CPU/GPU と既定値を確定する。
 - 完了条件: 代表機で格子 200×200 相当、固定の成長履歴、カメラ操作中という測定条件を記録し、
   60 fps を満たすかを `EVIDENCE.md` に記録する。未決定事項3・6の結論を `DECISIONS.md` に
-  記録する。満たせない場合は P3 へ進まず、計算経路の見直しを T1-2 へ差し戻す。
+  記録する。満たせない場合は P3 へ進まず、計算経路の見直しを T1-6 へ差し戻す。
 - 実行プロファイル: `ui`
 - UI影響: あり
 - 担当分類: 環境、非物理ロジック、UI、検証実行（DeliveryBuilder）
 - 依存: T2-3
-- 変更境界: `src/simulators/snow-crystal-sim/{scene,app}/`。成長則を変更する場合は T1-2 へ差し戻す。
+- 変更境界: `src/simulators/snow-crystal-sim/{scene,app}/`。成長則を変更する場合は T1-6 へ差し戻す。
 - 成果物: `DESIGN.md`、`TESTCASES.md`、`REVIEW.md`、`EVIDENCE.md`、`DECISIONS.md`、コード、テスト
 - 状態: 未着手
 

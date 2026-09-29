@@ -229,3 +229,37 @@ conditions: []
 rollback_to: none
 summary: "現 TASKS.md の T1-0 節にある唯一の「状態: 完了」をメモリ上で「状態: レビュー待ち」へ戻した SHA-256 は 2e92c5691fe07d10bc5387f92acad05763fec4ec476a4a5e5ac871b0db6bec90 となり、直前の implementation approved が記録した対象ハッシュと完全一致した。したがって承認後の reviewed target 変更は T1-0 の機械的な完了状態遷移だけである。TESTCASES.md と EVIDENCE.md は直前承認ハッシュから不変で、TC-RNG-002A/B の T1-1/T1-2 分割、TC-HEX-003 の安全整数境界・規模比例許容差・有限極大入力の overflow 拒否、後続タスクへの baseline・expected Red・Green・最終検証の移管、および lightweight の代替証跡を維持している。独立再計算でも最大有効 axial 座標の全6近傍は安全整数、大規模往復誤差は許容差内、極大 Cartesian の逆変換は非有限となり拒否対象、xoshiro128** 1.1 の19番目出力 3571406116 と消費後 state は記録値に一致した。SPEC.md、DESIGN-OUTLINE.md、T1-0 DESIGN.md、DECISIONS.md は最新 design approved の各ハッシュと一致し、Reiter alpha=1、CA水量・CA step の単位、beta/gamma 範囲、reservoir 収支、固定 noise と PRNG 版、独立 Kahan/Neumaier オラクル、境界感度の適用範囲・許容値を含む物理・数値契約に変更はない。REVIEW.md の最新承認記録とも整合し、git diff --check は成功した。"
 ```
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/DESIGN.md
+    hash: sha256:c037ed8a7843f52eccc8911a36ebb29c05bbe13ec0049c0cebc68f71ba7e3b16
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/DECISIONS.md
+    hash: sha256:d39c5674506004e7c212d4e01e8710422b2a6c079de73e067ce736647f16cf92
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/EVIDENCE.md
+    hash: sha256:bfe192112c97ab329dc5a51215d40d2e76cb15aa0ffd4e6310debdff0e013c08
+findings: []
+conditions: []
+rollback_to: none
+summary: "過去の R-001〜R-004 はすべて解消された。旧 T1-3 の責務は、独立形態指標 T1-3、206点の追跡可能な観測コーパスと較正プロトコル T1-7、経験的写像 T1-8、境界感度ゲート T1-9、c軸厚み T1-4、既存APIだけを用いる AC-03/AC-04 統合受入 T1-10 へ一貫して再割当てされている。DAG は T1-6→T1-3→T1-7→T1-8→T1-9→T1-4→T1-10 と非循環で、各タスクの full・UI影響なし、変更境界、成果物も責務に対応する。SPEC は形態クラス閾値を T1-10 の承認ゲートへ明示的に残し、T1-10 は新しい公開APIを追加しない。206点の物理時間・実寸は照合・報告に限定され、CA step に物理秒を割り当てず、適合 loss は形態タグと無次元形状だけを対象とする。noiseAmplitude は T1-8 で自動基準を満たす候補を固定し、最終値を T2-5 の人間UI受入へ残す。境界感度不合格時は較正値を調整せず Euclidean 境界設計へ差し戻す。今回の限定修正により EVIDENCE の移管先一覧へ T1-7 が追加され、人間承認も DECISIONS に記録された。差分には既存の物理式、単位、数値範囲、較正値、許容差の変更がなく、git diff --check も成功した。"
+```
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-0/TESTCASES.md
+    hash: sha256:9b3c97ee8e0e760e8eddb718170b3181f89bbda8cb3a97b9f4ff84f899ebc46c
+findings: []
+conditions: []
+rollback_to: none
+summary: "差分は後続タスクの割当てと成果物参照の更新に限定され、ケース本文、期待値、物理式、単位、適用範囲、許容差は変更されていない。旧T1-2の独立vaporBudgetはT1-5、step台帳・拡散・凍結・再生はT1-6へ分離され、TC-MORPHはT1-3、T1-7の観測コーパスを上流とする代表軌跡・経験的写像はT1-8、TC-ROT/TC-SENSはT1-9、形態クラス閾値とAC-03/AC-04統合検証はT1-10、TC-SYMMETRYとnoiseAmplitude最終受入はT2-5へ整合している。独立再計算でも半径2の19セル・ring 12セル、半径115の40,021セル、H_230の159,391セル、E_105の40,015セル・境界726セル、compactness既知値、腕質量CV、動的beta台帳値、境界最小距離が記録値と一致した。"
+```

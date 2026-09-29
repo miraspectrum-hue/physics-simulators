@@ -16,14 +16,16 @@ T1-0 中に未作成の production module へ import して Red にしてはな�
 | ケース群 | 実装する後続タスク | 主な候補ファイル |
 |---|---|---|
 | TC-NORM、TC-HEX、TC-RNG-001、TC-RNG-002A、TC-CREATE | T1-1 | `src/simulators/snow-crystal-sim/domain/__tests__/conditions.test.ts`、`hex-lattice.test.ts`、`prng.test.ts`、`lattice.test.ts` |
-| TC-DIFF、TC-BETA、TC-GAMMA、TC-FREEZE、TC-MASS、TC-INVARIANT、TC-STOP、TC-REPLAY、TC-RNG-002B | T1-2 | `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`、`mass-conservation.test.ts`、`replay.test.ts` |
-| TC-MORPH、TC-ROT、TC-SENS | T1-3 | `src/simulators/snow-crystal-sim/domain/__tests__/morphology-metrics.test.ts`、`boundary-sensitivity.test.ts` |
+| TC-MASS の独立 `vaporBudget` | T1-5 | `src/simulators/snow-crystal-sim/domain/__tests__/vapor-budget.test.ts` |
+| TC-DIFF、TC-BETA、TC-GAMMA、TC-FREEZE、TC-MASS の step 台帳、TC-INVARIANT、TC-STOP、TC-REPLAY、TC-RNG-002B | T1-6 | `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`、`mass-conservation.test.ts`、`replay.test.ts` |
+| TC-MORPH | T1-3 | `src/simulators/snow-crystal-sim/domain/__tests__/morphology-metrics.test.ts` |
+| TC-ROT、TC-SENS | T1-9 | `src/simulators/snow-crystal-sim/domain/__tests__/boundary-sensitivity.test.ts` |
 | TC-SYMMETRY | T2-5 | `src/simulators/snow-crystal-sim/domain/__tests__/symmetry.acceptance.test.ts` |
 | TC-PERF | T2-4 | `src/simulators/snow-crystal-sim/app/__benchmarks__/domain-step.bench.ts`、`app` 層のブラウザ性能 harness |
 | TC-REPLAY-KEY | T4-2 | `src/simulators/snow-crystal-sim/app/__tests__/replay-url.test.ts`、`app/replay-url.ts` |
 
-T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌跡を本書では仮定しない。
-該当ケースは、T1-3 の承認済み成果物が列挙する**全代表軌跡**をパラメータ化入力として使う。
+T1-8 で確定する経験的写像候補と代表条件軌跡、T1-10 で検証する形態クラス閾値を本書では仮定しない。
+該当ケースは、T1-8 の承認済み成果物が列挙する**全代表軌跡**をパラメータ化入力として使う。
 
 ## 2. 共通オラクルと許容誤差
 
@@ -163,7 +165,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-DIFF-001: Reiter `alpha=1` の既知 impulse
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`
 - **前提入力**: 半径 3 以上のテスト fixture。全 `ice=0`、全水量 0 のうち中心だけ
   `waterMass=0.6`。`beta=0, gamma=0, noiseAmplitude=0, dtCa=1`。impulse と reservoir の間に
   1 セル以上の 0 領域を置く。
@@ -176,7 +178,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-DIFF-002: 一様な非受容場と平衡端点
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`
 - **前提入力**: (A) 全 `ice=0`、全 `waterMass=beta=0.4`、`gamma=0,e=0,dtCa=1`。
   (B) `createLattice(radius=5,beta=0,e=0)` を `beta=gamma=0,dtCa=1` で 64 step。
 - **独立オラクル**: (A) 各 edge で `u_j-u_i=0`。(B) 中心以外に移動・添加できる水が 0。
@@ -187,7 +189,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-BETA-001: 動的 beta の開始時・終了時 reservoir 台帳
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`、`mass-conservation.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`、`mass-conservation.test.ts`
 - **前提入力**: `createLattice(radius=2,beta=0.2,e=0)` へ
   `beta=0.4,gamma=0,e=0,dtCa=1` を 1 step 適用する。
 - **独立オラクル**: ring は 12 セルなので開始時交換は
@@ -204,7 +206,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-BETA-002: 内部場を beta 比で再スケールしない
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`
 - **前提入力**: `createLattice(radius=7,beta=0.2,e=0)` に対し、最初の control は
   `beta=0.2`、次を `beta=0.4` とし、両方 `gamma=0,e=0,dtCa=1`。第 2 step 開始直前の状態も
   保存する。`(q,r)=(4,0)`（`h=4`）から reservoir ring `h=7` までの最短 graph 距離は 3 で、
@@ -223,7 +225,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-GAMMA-001: 面外入力の既知値
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`、`mass-conservation.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`、`mass-conservation.test.ts`
 - **前提入力**: `createLattice(radius=2,beta=0,e=0)` へ
   `beta=0,gamma=0.25,noiseAmplitude=0,dtCa=0.5` を 1 step。
 - **独立オラクル**: 受容セルは中心と `h=1` の計 7。各添加は
@@ -237,7 +239,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-FREEZE-001: 閾値の包含と step 開始時 receptive mask の同期
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`
 - **前提入力**: `radius=4,beta=0,noiseAmplitude=0` の状態で、中心だけを既存氷とし、中心の
   最近傍 `A=(1,0)` を `ice=0,waterMass=0.5`、他の非中心セルを
   `ice=0,waterMass=0` とする。(A) `dtCa=1,e=0` で `gamma` を順に
@@ -259,7 +261,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-MASS-001: production と別経路の独立質量収支
 
-- **対象 / 候補**: T1-2 / `mass-conservation.test.ts`
+- **対象 / 候補**: T1-6 / `mass-conservation.test.ts`
 - **前提入力**: seeds `[1,2,3,4]`、`[0xffffffff,0x12345678,9,10]`、半径
   `2,3,5` の直積ごとに、`initialBeta=0.2,initialNoiseAmplitude=0.4` を明示して状態を作る。
   その各初期状態の fresh copy へ、端点を含む controls
@@ -283,7 +285,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-INVARIANT-001: 非負性、有限性、氷の不可逆性
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`
 - **前提入力**: TC-MASS-001 と同じ `initialBeta=0.2,initialNoiseAmplitude=0.4` の全 18 fixture
   について、割り当て済みの同じ control を初期状態から最大 32 step、または停止まで反復する。
 - **独立オラクル**: `0<dtCa<=1` では自己重み `1-dtCa/2>=1/2`、近傍重み
@@ -296,7 +298,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-INVARIANT-002: 不正 state/control を結果へ通さない
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`、T1-3 / `morphology-metrics.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`、T1-3 / `morphology-metrics.test.ts`
 - **前提入力**: `beta<0`、`beta>0.95`、`gamma<0`、`gamma>1`、`e<0`、`e>1`、
   `dtCa<=0`、`dtCa>1` の各有限値、各 scalar の NaN/±Infinity、配列長不一致、
   負または非有限の `waterMass`、`ice` が 0/1 以外、unsafe `stepIndex`、負/非有限
@@ -316,7 +318,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-STOP-001: 外縁到達と停止後固定点
 
-- **対象 / 候補**: T1-2 / `reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `reiter-step.test.ts`
 - **前提入力**: 半径 2 の有効 fixture で、成長領域外周 `h=1` の `(1,0)` を
   `ice=1,waterMass>=1` にした `stopped=false` 状態。任意の有効 control で 1 step し、
   返った状態へ別の有効 control をさらに 1 step。
@@ -364,7 +366,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-RNG-002B: step の PRNG 非消費
 
-- **対象 / 候補**: T1-2 / `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`
+- **対象 / 候補**: T1-6 / `src/simulators/snow-crystal-sim/domain/__tests__/reiter-step.test.ts`
 - **前提入力**: TC-RNG-002A と同じ初期 seed から生成した固定格子を複製し、一方に複数 step の
   固定 control 列を適用する。
 - **独立オラクル**: `prng.ts` の `nextXoshiro128ss` を実処理へ委譲するテスト用 wrapper で計数し、
@@ -379,7 +381,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-REPLAY-001: 動的 control 列の完全再生
 
-- **対象 / 候補**: T1-2 / `replay.test.ts`
+- **対象 / 候補**: T1-6 / `replay.test.ts`
 - **前提入力**: 同じ固定初期状態を 2 個作り、少なくとも
   `(beta,gamma,e,dtCa)=(0.2,0.1,0.3,1),(0.4,0.05,0.3,0.5),(0.1,0.2,0.1,1)`
   の 3 control を、有限範囲内の `temperatureC`、`supersaturationPct` と異なる
@@ -470,7 +472,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-ROT-001: 60° 回転共変性
 
-- **対象 / 候補**: T1-3 / `boundary-sensitivity.test.ts`
+- **対象 / 候補**: T1-9 / `boundary-sensitivity.test.ts`
 - **前提入力**: 境界から 2 セル以上離した非対称な非負 `waterMass`/`ice` fixture と
   `noiseAmplitude=0` の有効 control。同じ fixture を
   `Rot60(q,r)=(-r,q+r)` で回転したもの。
@@ -485,7 +487,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 ### TC-SYMMETRY-001: 「ほぼ揃うが完全複製でない」の受入
 
 - **対象 / 候補**: T2-5 / `symmetry.acceptance.test.ts`
-- **前提入力**: T1-3 で承認された一様条件の代表軌跡、承認済みの
+- **前提入力**: T1-8 で承認された一様条件の代表軌跡、承認済み候補の
   `noiseAmplitude>0`、固定 seed。全 6 腕に氷があり `basalRadiusCells>=10` の checkpoint。
 - **独立オラクル**: TC-MORPH-003 で検証済みの独立形態指標を成長実装とは別 module として
   適用する。コード構造レビューで全格子を持つことと sector 複製処理がないことも確認する。
@@ -498,7 +500,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-SENS-001: 比較格子の幾何と master field 初期化
 
-- **対象 / 候補**: T1-3 / `boundary-sensitivity.test.ts`
+- **対象 / 候補**: T1-9 / `boundary-sensitivity.test.ts`
 - **前提入力**: `R=115`、固定 seed、任意の承認済み代表軌跡の初期 beta と noise amplitude。
 - **独立オラクル**: テストだけの二重整数 loop で `H_R={h<=115}`、`H_2R={h<=230}`、
   `E_R={q^2+q*r+r^2<=105^2}` を列挙する。`E_R` の次の候補 shell は
@@ -516,8 +518,8 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 ### TC-SENS-002: 全代表軌跡・checkpoint の境界距離/形状感度
 
-- **対象 / 候補**: T1-3 / `boundary-sensitivity.test.ts`
-- **前提入力**: T1-3 が AC-03/AC-04 のために承認候補とする**全代表条件軌跡**。
+- **対象 / 候補**: T1-9 / `boundary-sensitivity.test.ts`
+- **前提入力**: T1-8 が候補とする**全代表条件軌跡**。
   TC-SENS-001 の単一 fixture から H_R、H_2R、E_R を開始し、同一 control prefix を実行する。
 - **独立オラクル**: 各 checkpoint 前に control の順序、全文字列、全数値 bit pattern、
   `stepIndex=k` を比較する。H_R reservoir ring の最小 Euclidean 中心距離は
@@ -537,7 +539,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 - **対象 / 候補**: T2-4 / `app/__benchmarks__/domain-step.bench.ts`。T2-4 の変更境界内である
   `app` 層の harness が公開 domain `step` を呼び、domain production code は変更しない。
-- **前提入力**: production build、`radius=115`（40,021 セル）、T1-3 の固定代表履歴から得た
+- **前提入力**: production build、`radius=115`（40,021 セル）、T1-8 の固定代表履歴から得た
   外縁到達前かつ氷占有率 10〜50 % の状態、`dtCa=1`。前景タブ、電源接続、DevTools 閉、
   1920×1080、devicePixelRatio 1。OS、CPU、GPU、RAM、Chrome version を記録する。
 - **独立オラクル**: 120 step warm-up 後の 600 step を monotonic high-resolution clock で
@@ -546,7 +548,7 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 - **期待値**: 各 run で p95 `<=50 ms` かつ平均 `<=50 ms`。全 3 run 合格。
 - **許容誤差**: 50 ms を inclusive に判定し、追加 tolerance を置かない。background tab、
   サーマルスロットリング、fixture の占有率/停止条件違反は無効測定として理由を記録し再実行。
-- **失敗意味**: 20 step/s の性能予算を満たさず、P3 前に計算経路を T1-2 へ差し戻す必要がある。
+- **失敗意味**: 20 step/s の性能予算を満たさず、P3 前に計算経路を T1-6 へ差し戻す必要がある。
 
 ### TC-PERF-002: growth と描画を同時実行した UI 性能
 
@@ -566,8 +568,8 @@ T1-3 で確定する経験的写像値、形態クラス閾値、代表条件軌
 
 - 各後続タスクは、自タスクに割り当てられたケース ID をその `TESTCASES.md` と実テスト名へ
   転記し、baseline、期待した Red、Green、最終検証を自タスクの `EVIDENCE.md` に記録する。
-- T1-3 の経験的較正が決まった時点で、TC-SENS-002 と TC-SYMMETRY-001 の入力に使う代表軌跡、
-  checkpoint、seed を T1-3 の承認済み成果物へ固定する。本書の許容差を不合格回避のために
+- T1-8 の経験的写像候補が決まった時点で、TC-SENS-002 と TC-SYMMETRY-001 の入力に使う代表軌跡、
+  checkpoint、seed を T1-8 の承認済み成果物へ固定する。本書の許容差を不合格回避のために
   広げない。
 - T2-4 は TC-PERF-001/002 の raw sample、集計結果、機器情報、無効 run の理由を保存する。
 - 60° sector の複製不存在は数値テストだけでは証明できないため、TC-ROT-001 と
