@@ -45,3 +45,28 @@ ui_acceptance: not-required
 - The revised design and decisions passed a fresh independent design review after the two-dimensional
   stratum order and the radius-115 boundary-distance derivation were corrected. Test cases, Red,
   implementation, Green, and final verification remain pending.
+
+## Test-case rollback and design revision
+
+- The first test-case review returned `changes-requested` with `rollback_to: design`. Its reviewed
+  `TESTCASES.md` hash and verbatim R-001 through R-003 remain in `REVIEW.md`. The previously approved design
+  review is stale because its reviewed `DESIGN.md` changed; the unapproved `TESTCASES.md` was not edited by
+  this design revision.
+- R-001 design response: `SplitV1` and `ProtocolV1` now define every required field, exact schema/version,
+  null and unknown-property behavior, fixed tuple/array order, all nine strata, group/partition/ID/hash
+  references, loss definitions, raster protocol, literal seed/checkpoint/max-step records, candidate-manifest
+  reference contract, and holdout-record contract. The calibration data directory is explicitly limited to
+  three JSON files plus `SHA256SUMS`, four files total.
+- Rasterizer selection was checked read-only on 2026-09-29. The workspace runtime reports Node `v24.14.1`.
+  The pinned renderer is `pdfjs-dist@6.3.289` with `@napi-rs/canvas@1.0.6`; the upstream PDF.js v6.3.289
+  package declares Node `>=22.13.0 || >=24` and canvas backend `^1.0.6`, so the exact lower-bound backend and
+  current runtime are compatible. No package was installed and no image/PDF artifact was added by this
+  design stage.
+- R-002 design response: `SOURCE-AUDIT.json` is now a separate task-doc artifact captured from the hash-pinned
+  PDF by a human auditor who cannot read the production corpus or its generator during capture. Its schema
+  freezes page counts, all 206 IDs/locators/raw labels/normalized values, source-entry and pre-annotation split
+  hashes, final canonical corpus hash, and approval. The protocol references the final audit JCS hash, and
+  any corpus/audit/hash change invalidates downstream evidence.
+- The revised design expands the test handoff with positive fixtures and explicit missing/unknown/wrong-type/
+  null/order/reference/JCS-mutation/renderer-literal/independent-oracle cases. The fresh design review approved
+  the exact revised `DESIGN.md`; test-case revision may resume after this corrected design is committed.

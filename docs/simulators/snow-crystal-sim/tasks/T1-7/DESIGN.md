@@ -79,7 +79,14 @@ apps/snow-crystal-sim/
     holdout-report.json                   opened時だけ存在する結果
   tests/calibration/
     libbrecht-2023-figure2.test.ts
+docs/simulators/snow-crystal-sim/tasks/T1-7/
+  SOURCE-AUDIT.json     production corpusとは独立に原PDFから作る人間監査oracle
 ```
+
+calibration data directory の成果物は **3 JSON と `SHA256SUMS` の計4ファイルだけ**である。
+basename は上記4個に固定し、それ以外の JSON、画像、mask、PDF、生成時の中間ファイルを同 directory
+へ置かない。`SOURCE-AUDIT.json` はテスト対象データと同じ directory に置くと独立性を誤認しやすいため、
+task docs 配下に分離する。これは5個目の calibration data file ではない。
 
 論文 PDF、Figure 2 全体、panel crop は著作物なのでコミットしない。`corpus.json` は恒久 URL、
 PDF SHA-256、page/panel locator、raw label、照合記録を保持する。原資料照合時だけ同一 hash の PDF
@@ -386,6 +393,104 @@ interface TranscriptionEvidenceV1 {
 全 observation は `auditStatus` が `agreed` または `adjudicated` でなければならない。
 `pending` を最終データへ入れない。役割名は固定文字列 A/B/adjudicator とし、個人情報は持たない。
 
+### 6.1 production corpus から独立した原資料 oracle
+
+二重転記が自己整合したまま誤る場合を検出するため、task docs 配下の
+`SOURCE-AUDIT.json` を次の完全 schema で作る。これは `corpus.json` の copy、production
+transcription generator の出力、またはそれらから生成した期待値ではない。
+
+```ts
+interface SourceAuditObservationV1 {
+  readonly sourceObservationId: SourceObservationId;
+  readonly locator: {
+    readonly pdfPage: 11 | 12 | 13 | 14;
+    readonly pagePanelOrdinal: number;
+    readonly panelBoundsPdfPt: readonly [number, number, number, number];
+  };
+  readonly rawLabels: {
+    readonly temperature: string;
+    readonly supersaturation: string;
+    readonly growthTime: string;
+    readonly squareFieldOfView: string;
+  };
+  readonly normalizedSourceValues: {
+    readonly temperatureC: number;
+    readonly supersaturationPct: number;
+    readonly growthTimeSeconds: number;
+    readonly squareFieldOfViewUm: number;
+    readonly inProductDomain: boolean;
+    readonly exclusionReason: null | 'outside-product-domain';
+  };
+}
+
+interface SourceAuditPageV1 {
+  readonly pdfPage: 11 | 12 | 13 | 14;
+  readonly panelCount: number;
+  readonly sourceObservationIds: readonly SourceObservationId[];
+}
+
+interface SourceAuditV1 {
+  readonly schemaVersion: 'snow-crystal-source-audit/1';
+  readonly corpusId: 'libbrecht-2023-figure2-arxiv-v1';
+  readonly sourcePdfSha256:
+    '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+  readonly auditMethod: {
+    readonly kind: 'independent-human-source-pdf-audit';
+    readonly productionCorpusReadDuringCapture: false;
+    readonly productionGeneratorUsed: false;
+    readonly imageArtifactsCommitted: false;
+  };
+  readonly pages: readonly [
+    SourceAuditPageV1, SourceAuditPageV1,
+    SourceAuditPageV1, SourceAuditPageV1,
+  ];
+  readonly observations: readonly SourceAuditObservationV1[];
+  readonly sourceEntrySetSha256: Sha256Hex;
+  readonly preAnnotationSplitAssignmentSha256: Sha256Hex;
+  readonly canonicalCorpusSha256: Sha256Hex;
+  readonly auditPayloadSha256: Sha256Hex;
+  readonly approval: {
+    readonly decision: 'approved';
+    readonly approverRole: 'human-source-auditor';
+    readonly sourcePdfSha256:
+      '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+    readonly sourceEntrySetSha256: Sha256Hex;
+    readonly canonicalCorpusSha256: Sha256Hex;
+    readonly auditPayloadSha256: Sha256Hex;
+    readonly approvedAtUtc: string;
+    readonly note: string | null;
+  };
+}
+```
+
+`pages` は page `[11,12,13,14]` の順、各 `sourceObservationIds` は page-local ordinal 昇順、
+`observations` は ID の ASCII 昇順であり、4 page の `panelCount` 合計と両 ID 配列の合計は206でなければ
+ならない。ordinal、bounds、raw label、4 normalized value は §4 と同じ型・範囲・単位変換を満たす。
+`sourceEntrySetSha256` は `observations` 配列そのものの JCS SHA-256 である。
+`preAnnotationSplitAssignmentSha256` は §9 の `SplitAssignmentV1` の JCS SHA-256、
+`canonicalCorpusSha256` は最終 `corpus.json` object の JCS SHA-256 とする。approval 内の三つの
+source/hash は top-level と厳密一致する。`auditPayloadSha256` は `auditPayloadSha256` と `approval` を
+除く top-level property から成る object の JCS SHA-256で、approval内と厳密一致する。UTC は
+fractional second なしの RFC 3339 とする。
+
+作成順と独立境界を次で固定する。
+
+1. production 側 A/B は hash 一致 PDF から source layer を転記し、production generator の入力を封印する。
+2. 別の `human-source-auditor` は production corpus、A/B表、generator出力を見ず、同じ hash の原 PDF
+   だけから page count、全206 ID/locator/raw label/normalized value を `SOURCE-AUDIT.json` の draftへ入力する。
+3. 両方の capture が完了した後だけ、第三の比較工程が全 field を照合する。不一致は auditor が原 PDF
+   へ戻って裁定し、production 側と audit 側を同じ一次資料へ訂正する。片方を無条件に copy しない。
+4. source entries と §9 の split assignment を annotation 開始前に hash 凍結し、その hash を
+   `EVIDENCE.md` に記録する。以後 morphology vote や projected shape で allocation を変えない。
+5. 全 annotation と extraction が人間承認された最終 corpus を JCS hash し、auditor が全206件の
+   source field と最終 corpus hash を承認する。その後 `SOURCE-AUDIT.json` 自身を JCS hash し、
+   `protocol.json.sourceAuditSha256` に固定する。
+
+通常テストはネットワークや PDF を読まず、`corpus.json` の全206 source entry、page別件数、ID、locator、
+raw/normalized value、最終 corpus hash をこの独立 manifest と照合する。source audit、corpus、split、
+protocol のいずれかが変われば audit approval、設計／テストレビュー、Red/Green、下流較正を stale とし、
+同じ手順で再凍結する。PDF、page raster、panel crop は `SOURCE-AUDIT.json` に含めない。
+
 ## 7. 206点の完全性、一意性、validation、error
 
 検証順は次で固定し、最初の失敗で停止する。error message は少なくとも
@@ -402,7 +507,10 @@ interface TranscriptionEvidenceV1 {
 9. A/B projected-shape evidence の status/null/reason、中間量・raw feature の再計算、audit 整合
 10. projected-shape interval の有限性、`low<=high`、A/B raw 値との min/max 整合
 11. observation と approval を ID/approval ID 昇順にした canonical order
-12. split/protocol との参照完全性と hash
+12. `SOURCE-AUDIT.json` の schema、独立作成宣言、page別件数、全 source field、approval、corpus hash
+13. `split.json` の完全 schema、9 stratum/order/group/partition/全ID、assignment/source/audit/corpus hash
+14. `protocol.json` の完全 schema、renderer/loss/seed/checkpoint/candidate/holdout literalと参照hash
+15. calibration data directory が3 JSONと`SHA256SUMS`の計4 basenameだけであること
 
 `NaN`、±`Infinity`、`-0`、safe integer 外の ordinal、unknown property、unknown enum、暗黙の
 unit、空文字を拒否する。JSON parser が duplicate key を上書きしてから検証する実装は禁止し、
@@ -419,8 +527,9 @@ canonical bytes に対する値であると明記する。
 
 テストは本実装用 canonicalizer と経路を共有しない最小の独立 canonicalizer を持ち、RFC 8785
 Appendix B の代表 number と property order fixture、1 byte 改変で hash が変わる fixture を通す。
-T1-8 以降の `calibrationId` は少なくとも corpus、split、protocol の3 hash を含む。いずれかが
-変われば以前の較正結果、review、holdout 結果を stale とする。
+T1-8 以降の `calibrationId` は少なくとも corpus、split、protocol の3 hash を含む。独立 oracle の
+`SOURCE-AUDIT.json` hash は split/protocol から参照されるため、その変更もこの3 hashへ伝播する。
+いずれかが変われば以前の較正結果、review、holdout 結果を stale とする。
 
 ## 9. 固定 train / holdout 分割
 
@@ -458,6 +567,254 @@ lexicographic 順で stratum 内を並べる。group 数 `n>=2` なら先頭
 明示的な全 ID list と group hash を `split.json` に保存し、テストで再計算
 する。source label の二重転記・監査が完了した直後、annotation を始める前に split と hash を
 固定する。annotation の分布を見て split を入れ替えてはならない。
+
+### 9.1 `split.json` の完全 schema
+
+```ts
+type StratumIdV1 =
+  | 'T0-S0' | 'T0-S1' | 'T0-S2'
+  | 'T1-S0' | 'T1-S1' | 'T1-S2'
+  | 'T2-S0' | 'T2-S1' | 'T2-S2';
+type PartitionV1 = 'train' | 'holdout' | 'report-only';
+
+interface SplitGroupV1 {
+  readonly groupKey: readonly [temperatureC: number, supersaturationPct: number];
+  readonly groupSha256: Sha256Hex;
+  readonly splitOrderSha256: Sha256Hex;
+  readonly stratumId: StratumIdV1 | null;
+  readonly partition: PartitionV1;
+  readonly sourceObservationIds: readonly SourceObservationId[];
+  readonly sourceObservationIdSetSha256: Sha256Hex;
+}
+
+interface SplitStratumV1 {
+  readonly stratumId: StratumIdV1;
+  readonly temperatureBin: 'T0' | 'T1' | 'T2';
+  readonly supersaturationBin: 'S0' | 'S1' | 'S2';
+  readonly groupCount: number;
+  readonly holdoutGroupCount: number;
+  readonly trainGroupSha256s: readonly Sha256Hex[];
+  readonly holdoutGroupSha256s: readonly Sha256Hex[];
+  readonly trainSourceObservationIds: readonly SourceObservationId[];
+  readonly holdoutSourceObservationIds: readonly SourceObservationId[];
+}
+
+interface SplitAssignmentV1 {
+  readonly algorithmId: 'condition-group-hash-stratified-v1';
+  readonly hashPreimagePrefix: 'snow-crystal-sim/T1-7/split-v1\u0000';
+  readonly stratumOrder: readonly [
+    'T0-S0', 'T0-S1', 'T0-S2',
+    'T1-S0', 'T1-S1', 'T1-S2',
+    'T2-S0', 'T2-S1', 'T2-S2',
+  ];
+  readonly strata: readonly [
+    SplitStratumV1, SplitStratumV1, SplitStratumV1,
+    SplitStratumV1, SplitStratumV1, SplitStratumV1,
+    SplitStratumV1, SplitStratumV1, SplitStratumV1,
+  ];
+  readonly groups: readonly SplitGroupV1[];
+  readonly reportOnly: {
+    readonly groupSha256s: readonly Sha256Hex[];
+    readonly sourceObservationIds: readonly SourceObservationId[];
+  };
+}
+
+interface SplitV1 {
+  readonly schemaVersion: 'snow-crystal-observation-split/1';
+  readonly corpusId: 'libbrecht-2023-figure2-arxiv-v1';
+  readonly corpusSha256: Sha256Hex;
+  readonly sourceEntrySetSha256: Sha256Hex;
+  readonly sourceAuditSha256: Sha256Hex;
+  readonly splitAssignmentSha256: Sha256Hex;
+  readonly assignment: SplitAssignmentV1;
+}
+```
+
+`groupSha256=SHA-256(JCS(groupKey))`、`splitOrderSha256` は本節の prefix と JCS group key を連結した
+UTF-8 bytes の SHA-256 である。`sourceObservationIdSetSha256` は ID ASCII 昇順配列の JCS hash。
+`splitAssignmentSha256` は `assignment` object の JCS hash とする。`corpusSha256` は最終
+`corpus.json`、`sourceAuditSha256` は最終 `SOURCE-AUDIT.json` の JCS hash であり、audit 内の
+corpus/source/split hash と相互一致しなければならない。
+
+`strata` と `stratumOrder` は上記9要素の固定幅 tuple で同じ順、各 stratum の train/holdout group hash
+配列は `splitOrderSha256` 昇順、各 ID 配列はその group 順の内側で ID ASCII 昇順とする。`groups` は
+最初に9 stratumを固定順、各 stratum内をsplit-order順で並べ、その後 `report-only` groupを
+`groupSha256` ASCII昇順で置く。report-only group は `stratumId=null`、それ以外で null を許さない。
+`reportOnly` の両配列も `groups` の report-only 部分と同じ順である。全206 IDは train、holdout、
+report-only のどれかに重複なく一度だけ現れ、stratumの冗長な配列、group record、top-level reportOnly
+は相互に厳密一致する。annotation 開始前に凍結した `SplitAssignmentV1` と最終 `split.json.assignment`
+は byte-equivalent JCS でなければならず、後から追加する corpus/audit hash は allocation を変えない。
+count、ordinal は非負 safe integer、全 number は有限 binary64かつ `-0` ではない。全 object property は
+required、unknown property は拒否し、`stratumId` 以外に null を許さない。
+
+### 9.2 `protocol.json` の完全 schema
+
+```ts
+interface ProtocolSeedV1 {
+  readonly index: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  readonly derivationSha256: Sha256Hex;
+  readonly stateU32Le: readonly [number, number, number, number];
+}
+
+interface ProtocolV1 {
+  readonly schemaVersion: 'snow-crystal-calibration-protocol/1';
+  readonly protocolId: 'libbrecht-2023-figure2-scale-marginalized-v1';
+  readonly corpusId: 'libbrecht-2023-figure2-arxiv-v1';
+  readonly corpusSha256: Sha256Hex;
+  readonly splitSha256: Sha256Hex;
+  readonly sourceAuditSha256: Sha256Hex;
+  readonly rasterization: {
+    readonly protocolId: 'figure2-projection-v1';
+    readonly rendererName: 'pdfjs-dist';
+    readonly rendererVersion: '6.3.289';
+    readonly canvasBackendName: '@napi-rs/canvas';
+    readonly canvasBackendVersion: '1.0.6';
+    readonly nodeRuntimeVersion: '24.14.1';
+    readonly sourcePdfSha256:
+      '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+    readonly dpi: 600;
+    readonly pointsPerInch: 72;
+    readonly viewportScale: number;
+    readonly pageBox: 'crop-box';
+    readonly pageRotation: 'respect-pdf-page-rotate';
+    readonly intent: 'display';
+    readonly annotationMode: 'disable';
+    readonly workerMode: 'disabled';
+    readonly useSystemFonts: false;
+    readonly isEvalSupported: false;
+    readonly backgroundRgba: readonly [255, 255, 255, 255];
+    readonly outputColorSpace: 'srgb';
+    readonly pixelFormat: 'rgba8-straight-alpha';
+    readonly origin: 'top-left';
+    readonly rowOrder: 'top-to-bottom';
+  };
+  readonly losses: {
+    readonly rank: {
+      readonly primarySetId: 'basal-rank-v1';
+      readonly primaryComponentIds: readonly [
+        'branching-compactness-v1', 'branching-tip-density-v1',
+      ];
+      readonly integratedSetId: 'integrated-rank-v1';
+      readonly integratedComponentIds: readonly [
+        'branching-compactness-v1',
+        'branching-tip-density-v1',
+        'axis-aspect-ratio-v1',
+      ];
+      readonly components: readonly [
+        {
+          readonly id: 'branching-compactness-v1';
+          readonly observationField: 'morphology.final.basalBranchingLevel';
+          readonly predictionMetric: 'compactness';
+          readonly direction: 'larger-is-higher-rank';
+        },
+        {
+          readonly id: 'branching-tip-density-v1';
+          readonly observationField: 'morphology.final.basalBranchingLevel';
+          readonly predictionMetric: 'tipDensity';
+          readonly direction: 'larger-is-higher-rank';
+        },
+        {
+          readonly id: 'axis-aspect-ratio-v1';
+          readonly observationField: 'morphology.final.growthAxis';
+          readonly predictionMetric: 'aspectRatio';
+          readonly direction: 'larger-is-higher-rank';
+        },
+      ];
+      readonly pairPenalty: {
+        readonly matchingSign: 0;
+        readonly exactlyOneTie: 0.5;
+        readonly reversedNonzeroSign: 1;
+      };
+      readonly aggregationOrder: readonly [
+        'observation-pair', 'group-pair', 'component', 'stratum',
+        'nonempty-strata', 'seed', 'checkpoint',
+      ];
+    };
+    readonly shape: {
+      readonly scoredFeatureIds: readonly [
+        'inverseCircularity', 'normalizedArmLengthCv',
+      ];
+      readonly predictionMetrics: readonly ['compactness', 'armLengthCv'];
+      readonly reportOnlyFeatureIds: readonly ['minorMajorAxisRatio'];
+      readonly scaleId: 'train-empirical-mid-cdf-v1';
+      readonly intervalDistanceId: 'closed-cdf-interval-distance-v1';
+      readonly aggregationOrder: readonly [
+        'feature', 'observation', 'condition-group', 'stratum',
+        'nonempty-strata', 'seed', 'checkpoint',
+      ];
+    };
+    readonly categoricalTagLossDefinition: null;
+  };
+  readonly simulation: {
+    readonly latticeRadiusCells: 115;
+    readonly checkpointBasalRadiusCells: readonly [10, 20, 40];
+    readonly checkpointCriterion: 'first-state-basalRadiusCells-greater-than-or-equal';
+    readonly executionOrder: 'checkpoint-outer-seed-inner';
+    readonly maxStepCount: 40021;
+    readonly seedDerivationPrefix: 'snow-crystal-sim/T1-7/seed-v1/';
+    readonly seeds: readonly [
+      ProtocolSeedV1, ProtocolSeedV1, ProtocolSeedV1, ProtocolSeedV1,
+      ProtocolSeedV1, ProtocolSeedV1, ProtocolSeedV1, ProtocolSeedV1,
+    ];
+    readonly failureCodes: readonly [
+      'checkpoint-not-reached', 'reservoir-boundary-reached',
+      'non-finite-metric', 'max-step-exceeded',
+    ];
+  };
+  readonly candidateManifestContract: {
+    readonly schemaVersion: 'snow-crystal-candidate-manifest/1';
+    readonly relativePathPattern:
+      'calibration/runs/{calibrationId}/candidate-manifest.json';
+    readonly hashAlgorithm: 'rfc8785-jcs-sha256';
+    readonly candidateIdRule: 'jcs-sha256-of-candidate-without-candidateId';
+    readonly allowedFamilies: readonly [
+      'condition-blind-baseline',
+      'nearest-train-condition-baseline',
+      'piecewise-bilinear-map-v1',
+    ];
+    readonly requiredBeforeAnyScore: true;
+  };
+  readonly holdoutRecordContract: {
+    readonly schemaVersion: 'snow-crystal-holdout-run/1';
+    readonly runRecordBasename: 'holdout-run.json';
+    readonly openIntentBasename: 'holdout-open-intent.json';
+    readonly reportBasename: 'holdout-report.json';
+    readonly stateOrder: readonly ['sealed', 'opening', 'opened'];
+    readonly secondOpenError: 'holdout-already-opened-or-in-progress';
+    readonly requiredInputHashFields: readonly [
+      'corpusSha256', 'splitSha256', 'protocolSha256',
+      'candidateManifestSha256', 'selectedCandidateId',
+      'selectedCandidateSha256', 'trainReportSha256',
+    ];
+  };
+}
+```
+
+全 object は上記 property をすべて required とし、追加 property を拒否する。optional property はない。
+`null` を許すのは `losses.categoricalTagLossDefinition` だけであり、これは class threshold が T1-10
+で承認されるまで categorical loss を使用できないことを表す。固定幅 tuple は長さ、値、順序を厳密に
+検査する。`viewportScale` は binary64 の `600/72=25/3` を保存し、再計算値と bit-for-bit 一致させる。
+hash は参照先 object の検証後 JCS bytes に対する値である。
+seed stateは各要素が `[0,2^32-1]` の整数、indexは重複なしの `0..7`、max stepとradius/checkpointは
+正の safe integerである。Protocol内の全numberは有限かつ`-0`ではない。
+
+renderer は Mozilla の公式 [PDF.js v6.3.289 release](https://github.com/mozilla/pdf.js/releases/tag/v6.3.289)
+と Node 用 canvas backend `@napi-rs/canvas` を採用する。PDF.js v6.3.289 の公式
+[`package.json`](https://github.com/mozilla/pdf.js/blob/v6.3.289/package.json) は Node
+`>=22.13.0 || >=24` と backend `^1.0.6` を示すため、確認環境の Node `24.14.1` と互換であり、
+caret ではなく backend `1.0.6` へ固定する。実装工程は一時的なデータ準備環境でこの3 versionを
+assertしてから、PDF.js viewport `scale=25/3` と canvas `getImageData` により pageをRGBA8へ変換する。
+version、600 dpi、crop-box、rotation、annotation無効、worker無効、font/eval、背景、色空間、alpha、
+origin のどれかが違う raster から extraction evidence を作ってはならない。通常テストや製品 runtime
+は rasterizer を起動せず、protocol literalと保存済み evidenceだけを検証する。
+
+`seeds` は index `0..7` 順で、§11 の SHA-256 を再生成した完全 hash と4個のuint32を literal保存する。
+値を計算時だけ生成して省略してはならない。`failureCodes`、loss component、feature、aggregation、
+candidate family、holdout field配列も記載順が canonical order である。candidate manifest 自体の
+production knot/value schema は T1-8 の承認済み設計でこの contract versionへ追加定義するが、T1-7
+consumerは version/path/hash/id/familyを先に検証し、未知versionやfamilyを scoring前に拒否する。
+holdout run record の全 required field と null規則は §12 の discriminated unionを適用し、本 object
+の filenames、state順、input hash field順と矛盾する recordを拒否する。
 
 ## 10. loss 契約
 
@@ -767,10 +1124,26 @@ binary64 tolerance ではない。AC-03、AC-04、T1-0 の CV、T1-9 の境界�
     `40<sqrt(9919)/2` を確認する
 17. train API が holdout annotation を受け取らないこと。sealed→opening→opened、marker の
     exclusive-create、同一/別process二回目、hash違い、opening crash を holdout read 前に拒否すること
+18. §9.1 の `SplitV1` 正例を literal で持ち、9 stratum、group、明示ID、train/holdout/report-only、
+    全冗長参照、source/corpus/audit/assignment hashを検査する。全 required propertyを一つずつ欠落、
+    unknown property追加、wrong type、許可されないnull、tuple/array順交換、dangling group/ID、重複ID、
+    partition跨ぎ、JCS logical mutationへ変え、対応する `TypeError` / `RangeError` を具体化する
+19. §9.2 の `ProtocolV1` 正例を literal で持ち、schema/version/reference hash、loss component/order、
+    raster protocol、checkpoint、seed、max step、failure code、candidate manifest contract、holdout contract
+    を検査する。missing/unknown/wrong type/null/order/reference/JCS mutationを各object階層で具体化し、
+    rendererは `pdfjs-dist@6.3.289`、`@napi-rs/canvas@1.0.6`、Node `24.14.1` の完全一致、
+    `viewportScale===600/72` のbit一致を要求する。major/minorだけの一致やcaret rangeを許さない
+20. `SOURCE-AUDIT.json` の正例schema、page `[11,12,13,14]`、page別件数合計206、全ID/locator/raw/
+    normalized値、sourceEntry/splitAssignment/final corpus hash、人間approvalを検査する。production
+    corpusと同じgeneratorをoracleに使わず、独立manifestに対する全件照合を行う。corpusまたはauditの
+    一方だけのraw label、normalized値、locator、array order、1 code pointを変えるfixture、wrong
+    final corpus hash、未承認、production-derived宣言をすべて拒否する
 
-独立原資料 oracle は二重転記と第三者全件監査であり、実装 validator が自分で生成した値を
-期待値に使わない。loss の期待値は production `score` を import せず、少数 fixture の整数分数・
-手計算 CDF から導く。
+独立原資料 oracle は `SOURCE-AUDIT.json` の別 capture と人間全件監査であり、二重転記、production
+corpus、production generator、実装 validator が自分で生成した値を期待値に使わない。テストは
+audit manifest の JCS hashを protocol参照へ、manifest内の最終 corpus hashを実corpusへ照合し、
+version-control上の監査承認を凍結点とする。loss の期待値は production `score` を import せず、
+少数 fixture の整数分数・手計算 CDF から導く。
 
 ## 15. 制約、停止条件、未解決判断
 
@@ -786,8 +1159,11 @@ binary64 tolerance ではない。AC-03、AC-04、T1-0 の CV、T1-9 の境界�
 - checkpoint平均は未知の画像scaleを周辺化する製品上の近似であり、物理時刻・実寸の復元でも
   Figure 2の成長段階モデルでもない。
 
-T1-7 の完了には、(a) 出典転記と全件監査、(b) annotation開始前に固定したsplit/hash、(c) 独立
-A/B草案、(d) batch適格集合と個別確認集合を合わせた全206点の人間承認、(e) A/B別 extraction
-evidence と再計算可能な interval、(f) corpus/split/protocol の JCS hash、(g) 本書の loss・探索・
-holdout state machine の検証テストがすべて必要である。一つでも未承認 annotation、approval hash
-不一致、未解決抽出差異があれば corpus は incomplete であり、T1-8 の loss 入力へ進めない。
+T1-7 の完了には、(a) production経路と独立した `SOURCE-AUDIT.json` の原PDF全件監査と人間承認、
+(b) 出典転記と annotation開始前に固定したsplit assignment/hash、(c) 独立A/B草案、
+(d) batch適格集合と個別確認集合を合わせた全206点の人間承認、(e) A/B別 extraction evidence と
+再計算可能な interval、(f) data directory内の3 JSONと`SHA256SUMS`の計4ファイル、相互参照する
+corpus/split/protocol/source-audit JCS hash、(g) §9の完全schema、renderer literal、loss・探索・holdout
+state machine の検証テストがすべて必要である。一つでも未承認 annotation、source audit/corpus hash
+不一致、approval hash不一致、未解決抽出差異があれば corpus は incomplete であり、T1-8 の loss
+入力へ進めない。
