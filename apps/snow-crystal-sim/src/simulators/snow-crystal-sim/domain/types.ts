@@ -11,3 +11,5 @@ export interface VaporBudget { readonly mobileVapor: number; readonly depositedW
 export interface StepParameters { readonly beta: number; readonly gamma: number; readonly noiseAmplitude: number; readonly dtCa: number; }
 export interface MassLedger { readonly beforeTotal: number; readonly afterTotal: number; readonly diffusionNet: number; readonly outOfPlaneInput: number; readonly reservoirExchange: number; readonly residual: number; }
 export interface StepResult { readonly state: LatticeState; readonly ledger: MassLedger; readonly reachedEdge: boolean; }
+export type SixArmValues = readonly [number, number, number, number, number, number];
+export interface MorphologyMetrics { readonly basalRadiusCells: number; readonly basalDiameterCells: number; readonly iceCellCount: number; readonly perimeterEdges: number; readonly compactness: number; readonly tipDensity: number; readonly aspectRatio: number | null; readonly armLength: SixArmValues; readonly armMass: SixArmValues; readonly armLengthCv: number | null; readonly armMassCv: number | null; }

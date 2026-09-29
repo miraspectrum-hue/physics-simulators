@@ -16,8 +16,8 @@
 ```yaml
 baseline_status: green
 red_status: expected-failure
-green_status: pending
-final_status: pending
+green_status: green
+final_status: passed
 ui_acceptance: not-required
 ```
 
@@ -43,4 +43,19 @@ ui_acceptance: not-required
   of a function. There were no syntax, type, module-resolution, dependency, or
   environment failures.
 - Implementation Green, final workspace verification, and implementation review
-  have not started.
+  were pending at the end of the test stage.
+
+## Green and final verification
+
+- Date: 2026-09-29
+- Targeted command:
+  `npm.cmd --prefix apps/snow-crystal-sim test -- --run src/simulators/snow-crystal-sim/domain/__tests__/morphology-metrics.test.ts`
+  - Result: exited 0; 1 file / 12 tests passed.
+- Fast command: `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`
+  - Result: exited 0; architecture and typecheck passed; 9 files / 89 tests passed.
+- Full command: `node scripts/verify.mjs`
+  - Result: exited 0; workspace architecture, lint/typecheck, prism-sim 33 files /
+    937 tests, snow-crystal-sim 9 files / 89 tests, and both production builds passed.
+  - The existing prism bundle-size warning remained non-fatal and unrelated.
+- Independent implementation review approved the exact production files recorded
+  in `REVIEW.md`. UI acceptance is not required for this task.
