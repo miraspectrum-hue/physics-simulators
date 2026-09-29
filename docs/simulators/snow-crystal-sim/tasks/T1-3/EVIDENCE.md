@@ -15,17 +15,32 @@
 
 ```yaml
 baseline_status: green
-red_status: pending
+red_status: expected-failure
 green_status: pending
 final_status: pending
 ui_acceptance: not-required
 ```
 
-## Design-stage status
+## Design and test-stage status
 
 - `DESIGN.md` defines the public contract, discrete geometry, units, empty and
   zero-diameter behavior, deterministic six-arm assignment, aggregation order,
   state/thickness validation, independent oracles, and binary64 tolerances.
-- Design review and the human-approved design commit are pending.
-- Test cases, test-code Red, implementation Green, final workspace verification,
-  and implementation review have not started.
+- Design review was approved and the human-approved design was committed as
+  `1c99f1bcdbdf49b4a448a30665c832cb5342cf2c`.
+- `TESTCASES.md` was approved after independent numerical review.
+- Test code was approved at SHA-256
+  `97f9400b89288ce24175e5071c5da1a01d2eb1286aed74f22789853cf32bcb9a`.
+
+## Expected Red
+
+- Date: 2026-09-29
+- Command:
+  `npm.cmd --prefix apps/snow-crystal-sim test -- --run src/simulators/snow-crystal-sim/domain/__tests__/morphology-metrics.test.ts`
+- Result: exited 1 as expected. Vitest ran 12 tests: the independent literal-index
+  audit passed, and the remaining 11 tests failed only at
+  `morphologyMetrics must be publicly exported`, receiving `undefined` instead
+  of a function. There were no syntax, type, module-resolution, dependency, or
+  environment failures.
+- Implementation Green, final workspace verification, and implementation review
+  have not started.
