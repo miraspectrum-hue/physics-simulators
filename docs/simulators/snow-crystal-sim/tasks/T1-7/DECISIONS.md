@@ -51,3 +51,79 @@
   improvement とし、根拠のない絶対正解率を置かない。
 - 理由: 論文は本アプリの二次元 CA に対する正解率や較正閾値を与えず、物理秒と CA step の対応も
   定義されていないため。
+
+## D-06: テストコード工程を3領域へ分割
+
+- 状態: 人間決定済み（2026-09-30）
+- 対象: `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2.test.ts`
+- 事実:
+  1. テストコードの初回レビュー、修正1回目の再レビュー、修正2回目の自己監査で、同じ根本原因が
+     3回連続して残った。
+  2. 改善済みなのは、5成果物ごとの独立した期待 Red、JSON duplicate key、非ネットワーク境界、
+     一部の rank/CDF/24実行/candidate/baseline/Pareto fixture である。
+  3. 未達なのは、5種類の完全な再帰 schema validator、annotation/projected-shape の承認済み
+     literal fixture、holdout の child-process 競合および crash/restart 状態行列である。
+  4. 未達のままでは、壊れた較正データや holdout 漏洩をテストが見逃すため、期待 Red の正式記録と
+     test commit へ進めない。
+- 決定: T1-7 の要求や受入基準は変えず、テストコード工程だけを次の3つの独立ファイル・順次レビューへ
+  分割して組み直す。
+  1. schema/artifact: CorpusV1、SourceAuditV1、SplitV1、ProtocolV1、annotation、shape、成果物境界
+  2. scoring/protocol: split、rank、CDF、scale、seed、candidate、baseline、Pareto
+  3. holdout-safety: sealed record、排他 marker、atomic write、child-process race、crash/restart、漏洩防止
+- 不採用案: 現在の単一ファイルのまま4回目の全面修正を行う。一度に扱う契約が大きく、同じ欠落を
+  繰り返す可能性が高いため採用しない。
+- 再開条件: 各ファイルの担当 testcase、共有 test helper の所有権、5件の期待 Red の配置を
+  `TESTCASES.md` に明記し、testcase review を再承認してからテストコードを組み直す。
+
+## D-07: schema/artifact テスト実装担当の例外切替
+
+- 状態: 人間決定済み（2026-10-01）
+- 対象: `libbrecht-2023-figure2-schema-artifacts.test.ts`
+- 事実:
+  1. D-06 の3分割とテストケース再レビューは完了し、schema/artifact の担当範囲は独立した。
+  2. DeliveryBuilder による初回実装、修正1回目、修正2回目の3回で、5成果物の独立 Red、
+     duplicate key、型検査は改善した。
+  3. 3回とも、完全な再帰 schema、独立 SourceAudit、annotation/projected-shape の既知値、
+     Split/Protocol の全 mutation、REAL206 相互照合が簡略化されたまま残った。
+  4. 現在のテストは正しい成果物を拒否し、壊れた成果物を受理し得るため、test-code gate と
+     test commit へ進めない。
+- 決定: この1ファイルのテスト実装に限り、通常のコスト重視 DeliveryBuilder から高性能モデルの
+  書込みエージェントへ例外的に切り替える。承認済み DESIGN/TESTCASES、変更境界、独立 Reviewer、
+  3回失敗時停止、非設計コミットのゲートは変更しない。
+- 不採用案: schema/artifact をさらに小さい testcase 群へ分け、同じ DeliveryBuilder 帯で順次実装する。
+  ファイル配置は維持できるが、同一ファイルへの複数回編集とレビューが増え、完了まで長くなる。
+- 停止理由: 同一根本原因の3回反復、およびエージェント設計書の「コスト重視モデルから高性能モデルへ
+  切り替える場合は人間確認」に該当する。
+
+## D-08: scoring/protocol テスト実装担当の例外切替
+
+- 状態: 人間決定済み（2026-10-01）
+- 対象: `libbrecht-2023-figure2-scoring-protocol.test.ts`
+- 事実:
+  1. DeliveryBuilder による初回実装、修正1回目、修正2回目の3回で、型検査、代表 CDF、
+     格子数、ring、8 seed hash/state などの一部は正しくなった。
+  2. 3回目にも split が仕様の「hash昇順の先頭をholdout」ではなく末尾をholdoutにしている。
+  3. rank/shape の全階層、scale の完全証跡、baseline/comparator の導出、checkpoint と
+     fresh-process 決定性が、定数または途中階層の省略で迂回可能なままである。
+  4. この状態では誤った較正候補を正しいと判定し得るため、test-code gate へ進めない。
+- 決定: D-07 と同様、この1ファイルに限り高性能モデルの書込みエージェントへ切り替え、
+  承認済み TESTCASES と直近レビューの6項目を満たすまで再構築する。独立 Reviewer と全ゲートは維持する。
+- 不採用案: scoring/protocol をさらに複数ファイルへ分割する。ただし D-06 の3ファイル構成と
+  TESTCASES.md を再変更・再レビューする必要がある。
+- 停止理由: 同一根本原因の3回反復、およびコスト重視モデルから高性能モデルへの切替に人間確認が
+  必要な例外へ再度該当した。
+
+## D-09: holdout-safety テスト実装担当の例外切替
+
+- 状態: 人間決定済み（2026-10-01）
+- 対象: `libbrecht-2023-figure2-holdout-safety.test.ts`
+- 事実:
+  1. DeliveryBuilder による初回実装、修正1回目、修正2回目の3回で、基本スキーマ、JCS関係、
+     EEXIST変換、正常train境界の一部は改善した。
+  2. 完全な独立literal永続化オラクル、子プロセスでの完全open protocol、crash/state行列、
+     copied-directory手続き境界が3回目にも未達だった。
+  3. 未達のままではholdout漏洩、二重開封、クラッシュ後の再開をテストが見逃し得る。
+- 決定: 2026-10-01 の人間指示「高性能モデルを使いたい場合は切り替えて続行してください」に基づき、
+  この1ファイルも高性能モデルの書込みエージェントへ切り替える。承認済みTESTCASES、独立Reviewer、
+  test commitゲートは維持する。
+- 不採用案: 通常DeliveryBuilderで4回目を繰り返す。同じ省略が3回継続したため採用しない。

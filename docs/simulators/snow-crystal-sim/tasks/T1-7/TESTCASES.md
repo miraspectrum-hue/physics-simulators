@@ -1,0 +1,984 @@
+# T1-7 観測コーパスと較正プロトコル — テストケース
+
+## 1. 範囲、権威、テスト配置
+
+本書は承認済み `DESIGN.md` と `DECISIONS.md` を実行可能な検査へ具体化する。対象は
+Libbrecht (2023) Figure 2 v1 の静的コーパス、固定 split、較正 protocol、loss、候補選択、
+holdout 一回開封手順である。観測値から Reiter CA の物理パラメータを導くテストではない。
+
+- 実行プロファイル: `full`
+- UI 影響: なし
+- テスト本体（`DECISIONS.md` D-06 による3分割）:
+  1. `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts`
+  2. `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-scoring-protocol.test.ts`
+  3. `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-holdout-safety.test.ts`
+- 実装成果物:
+  - `apps/snow-crystal-sim/calibration/libbrecht-2023-figure2-v1/{corpus.json,split.json,protocol.json,SHA256SUMS}`
+  - `docs/simulators/snow-crystal-sim/tasks/T1-7/SOURCE-AUDIT.json`
+  - 上記3 test file
+  - holdout 状態機械の synthetic test だけが使う一時 directory
+- 禁止: domain、app、UI、scene、公開 export、論文 PDF、panel crop、mask の追加または変更
+
+各テストファイルは自己完結させ、別の test file、共有 test helper/source file、production validator/scorer、
+公開 export を import しない。必要な小さい oracle は所有する test file 内に置く。3ファイルを横断して
+共通化するための4個目の helper/source fileは作らない。少なくとも
+duplicate-aware JSON scanner、RFC 8785 fixture canonicalizer、SHA-256、十進有理数の単位換算、整数分数、
+empirical mid-CDF、Neumaier sum、hex ring 列挙、seed 再生成を独立に実装する。期待値を corpus validator、
+split generator、production scorer、T1-3 `morphologyMetrics` から生成してはならない。
+
+### 1.1 テストファイルの単独所有権、ケースID、レビュー順
+
+ケースIDは次の1ファイルだけが所有し、他ファイルへ同じケースまたは同じ完全契約検査を複製しない。
+
+| review順 | test file | 単独所有する testcase ID | 境界 |
+|---:|---|---|---|
+| 1 | `libbrecht-2023-figure2-schema-artifacts.test.ts` | `TC-CORPUS-001..003`, `TC-SOURCE-001..004`, `TC-SOURCE-AUDIT-001..003`, `TC-ANNOTATION-001..003`, `TC-SHAPE-001..003`, `TC-JCS-001..002`, `TC-SPLIT-003..004`, `TC-PROTOCOL-003..005`, `TC-REAL-001`, `TC-RED-001` | duplicate-aware JSON tokenization、JCS、Corpus/Observation/SourceAudit/Split/Protocol の完全 schema、annotation、projected shape、著作権・非ネットワーク・成果物境界、REAL206、および5件すべての期待 Red を所有する。 |
+| 2 | `libbrecht-2023-figure2-scoring-protocol.test.ts` | `TC-SPLIT-001..002`, `TC-RANK-001..003`, `TC-CDF-001..003`, `TC-SCALE-001..002`, `TC-CANDIDATE-001`, `TC-BASELINE-001`, `TC-ACCEPT-001`, `TC-PROTOCOL-001..002` | split導出、rank/CDF/scale、seed/radius/lattice、候補・baseline・Pareto と決定的なprotocol数値挙動を所有する。完全 schema validator は持たず、schema fileの完全契約検査を複製しない。 |
+| 3 | `libbrecht-2023-figure2-holdout-safety.test.ts` | `TC-HOLDOUT-001..003` | training leakage、sealed検証、永続exclusive marker、atomic write、child-process race、crash/restart状態行列を所有する。 |
+
+test-code reviewは表の順に、各回fresh Reviewerで1ファイルだけを独立に審査する。前のファイルが
+`approved` になるまで次へ進まず、3ファイルすべての承認後にだけT1-7 test-code gate全体を承認できる。
+ファイル間でhelperを共有しないため、後続ファイルの修正は先行ファイルの実行経路を暗黙に変更しない。
+ただし上流の `DESIGN.md`、本書、または所有境界が変わった場合は、影響する承認をstaleとして再レビューする。
+
+### 1.2 実コーパスと synthetic fixture の分離
+
+`REAL206` は実装工程で、人間承認済みの実データが **3 JSON と `SHA256SUMS` の計4ファイル**、および
+production 経路から独立した `SOURCE-AUDIT.json` に存在する場合だけ完成する fixture である。
+本書は206件の source label、panel bounds、annotation、mask hash を捏造しない。`SYN` は validation と
+score の手計算だけに使う明示的な架空 fixture であり、`corpusId` や source provenance を実観測として
+公開してはならない。テスト名にも必ず `synthetic` を含める。
+
+### 1.3 許容差と等価性
+
+- source の十進単位換算、件数、enum、ID、ordinal、整数分数、JCS bytes、SHA-256、split、seed、状態遷移は
+  厳密一致とする。
+- `-0` は `Object.is(value,-0)` で検出して拒否する。
+- hash は lowercase hex 64桁。hash 比較は文字列厳密一致とする。
+- projected-shape の独立再計算だけ
+  `64 * Number.EPSILON * max(1, abs(expected))` 以下を許す。interval 端点は再計算した A/B raw 値の
+  `Math.min/Math.max` と `Object.is` 相当で厳密一致し、許容差で interval を広げない。
+- loss の整数分数は約分済み numerator/denominator を厳密一致させる。binary64 report は定められた
+  階層・順序・各階層で再初期化した Neumaier sum の結果と bit-for-bit 一致させる。
+- 再現性は `DataView` で binary64 の64 bitを比較し、表示文字列だけを比較しない。
+
+## 2. 共通定数、基底 fixture、error 検査
+
+### TC-CORPUS-001: source metadata と成果物境界
+
+`REAL206` の期待値を次に固定する。
+
+| field | expected |
+|---|---|
+| `schemaVersion` | `snow-crystal-observation-corpus/1` |
+| `corpusId` | `libbrecht-2023-figure2-arxiv-v1` |
+| `arxivId` | `2306.13087v1` |
+| `doi` | `10.48550/arXiv.2306.13087` |
+| `permanentUrl` | `https://arxiv.org/abs/2306.13087v1` |
+| `pdfUrl` | `https://arxiv.org/pdf/2306.13087v1` |
+| `pdfSha256` | `20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af` |
+| `pageCount` | `14` |
+| `figureNumber` | `2` |
+| `figurePdfPages` | `[11,12,13,14]` |
+| `observations.length` | `206` |
+
+repository scan は calibration data directory の直下 basename set が厳密に
+`{corpus.json,protocol.json,split.json,SHA256SUMS}` と一致することを確認する。すなわち、許可するのは
+**3 JSON と `SHA256SUMS` の計4ファイルだけ**で、余分な JSON、subdirectory、`.pdf`, `.png`, `.jpg`,
+`.jpeg`, `.tif`, `.tiff`, `.webp`, `.bmp`, mask binary、base64/data URL、source image replica を一つでも
+拒否する。`SOURCE-AUDIT.json` は calibration data directory ではなく task docs 配下に一つだけ置く。
+通常テスト中の `fetch`、HTTP(S)、DNS、browser、arXiv access は禁止し、global `fetch` を throwing stub
+にしても全テストが通ることを確認する。
+
+### TC-CORPUS-002: duplicate-aware parse、例外 class、message
+
+すべての error は message に `file=<relative path>`, 判明時は `sourceObservationId=<id>`,
+`field=<JSON pointer>`, `reason=<stable code>` を含む。I/O error は同じ error を `cause` に保持する。
+次は各 mutation を単独で適用する。
+
+| mutation | expected class | field / reason |
+|---|---|---|
+| raw JSON に同じ `schemaVersion` key を2回記載 | `SyntaxError` | `/schemaVersion`, `duplicate-key` |
+| raw JSON の `NaN` token | `SyntaxError` | 該当 field, `json-syntax` |
+| raw JSON の `Infinity` / `-Infinity` token | `SyntaxError` | 該当 field, `json-syntax` |
+| `1e400` が parse 後 `Infinity` | `RangeError` | 該当 field, `non-finite` |
+| number `-0` | `RangeError` | 該当 field, `negative-zero` |
+| root/observation/vote/evidence に unknown property | `TypeError` | property pointer, `unknown-property` |
+| enum に未知文字列 | `TypeError` | enum pointer, `unknown-enum` |
+| number field が文字列または `null` | `TypeError` | field pointer, `wrong-type` |
+| ordinal が safe integer 外 | `RangeError` | `/locator/pagePanelOrdinal`, `unsafe-integer` |
+| empty raw label | `RangeError` | raw field, `empty-string` |
+|存在しない file|元の I/O error class|file path, `io`; `cause` 厳密一致|
+
+duplicate key は `JSON.parse` が上書きした object を validator に渡す前に拒否する。全 raw text を対象にし、
+nested object の duplicate も同じ扱いとする。
+
+### TC-CORPUS-003: validation precedence
+
+設計 §7 の番号順で最初の失敗だけを返す。次の複合 mutation で順序を固定する。
+
+| mutations | first expected failure |
+|---|---|
+| duplicate key + 205件 | `SyntaxError`, `duplicate-key` |
+| unknown root property + 205件 | `TypeError`, `unknown-property` |
+| 205件 + duplicate ID | `RangeError`, `/observations`, `wrong-count` |
+| duplicate ID + empty raw label | `RangeError`, `sourceObservationId`, `duplicate-id` |
+| bad raw conversion + bad uncertainty | `RangeError`, raw/normalized field, `unit-mismatch` |
+| bad uncertainty + transcription disagreement | `RangeError`, uncertainty field, `constant-mismatch` |
+| unresolved transcription + bad morphology enum | `RangeError`, transcription field, `unresolved-audit` |
+| unapproved morphology + bad projected interval | `RangeError`, `/annotationApprovals`, `annotation-approval` |
+| bad extraction raw value + bad final interval | `RangeError`, extraction raw field, `recalculation-mismatch` |
+| valid corpus + noncanonical observation order + split hash mismatch | `RangeError`, `/observations`, `noncanonical-order` |
+
+## 3. 出典転記、ID、完全性
+
+### TC-SOURCE-001: page、ordinal、locator の全件検査
+
+`REAL206` の206 IDを ASCII 昇順および file order で検査する。
+
+1. ID は `^L23-F2-P(11|12|13|14)-N[0-9]{3}$`。
+2. `Pxx===locator.pdfPage`、`Nxxx===pagePanelOrdinal`。
+3. 各 page の ordinal set は `1..maxOrdinal` と厳密一致し、欠番・0・重複がない。page 間で ordinal は
+   `1` に戻る。
+4. ID、`[pdfPage,pagePanelOrdinal]`、`panelBoundsPdfPt` の各 tuple は一意。
+5. bounds の4数は有限、`left>=cropLeft`, `bottom>=cropBottom`, `width>0`, `height>0` で、右上が
+   PDF crop box 内。bounds 同一は別IDでも拒否する。
+6. 4 page の件数合計だけを literal `206` とする。page別件数は production corpus から作らず、固定hash PDFを
+   production経路と別に人間captureした `SOURCE-AUDIT.json.pages` と比較する。本書からも作らない。
+
+mutation は duplicate ID、duplicate locator、duplicate bounds、page内 ordinal 1件欠落、N002 を N004へ
+変更、205件、207件を個別に作り、すべて `RangeError` にする。205/207 は一意性より先に
+`field=/observations, reason=wrong-count` で失敗する。
+
+### TC-SOURCE-002: synthetic raw 単位換算
+
+production parserを呼ばず十進文字列を分子・10の冪・単位へ分ける oracle で、次の架空 panel を確認する。
+
+| raw field | literal | normalized expected |
+|---|---|---|
+| temperature | `-15.0 °C` | `temperatureC=-15` |
+| supersaturation | `12.5 %` | `supersaturationPct=12.5` |
+| growth time | `2 min` | `growthTimeSeconds=120` |
+| square FOV | `0.40 mm` | `squareFieldOfViewUm=400` |
+
+同じ意味の `120 s` と `400 µm` もそれぞれ120、400になる。temperature/supersaturation は source stated
+valueを保持し、clampしない。time/FOVは有限かつ正で、`0`, 負値、暗黙 unit、unknown unit は
+`RangeError(unit-or-domain)`。この fixture は論文の実 panel 値ではない。
+
+### TC-SOURCE-003: uncertainty と product-domain 境界
+
+全206点で次を厳密検査する。
+
+```text
+temperaturePlusMinusC === 0.2
+supersaturationFactorRange === [0.8,1.2]
+growthTime === "not-reported"
+squareFieldOfView === "not-reported"
+inProductDomain === (-30 <= T && T <= 0 && 0 <= S && S <= 30)
+exclusionReason === (inProductDomain ? null : "outside-product-domain")
+```
+
+synthetic 境界 `(-30,0),(0,30)` は true、`(-30.000000000000004,0)`, `(0,30.000000000000004)` は false。
+範囲外値を `-30/0/30` へ clamp した object は source normalized value不一致として拒否する。source
+uncertainty を time/FOVへ流用した文字列や数値も拒否する。
+
+### TC-SOURCE-004: 二重転記と第三者 adjudication
+
+- A/B の4 fieldで `raw` と `normalized` がすべて厳密一致する場合だけ `auditStatus='agreed'`, note `null`。
+- `raw` だけ、normalizedだけ、または一 fieldだけ違う場合は `adjudicated` と空でない noteを要求する。
+- `sourceCheckedAgainstPdfSha256` は固定PDF hashと一致する。
+- `pending`、空 note、A/B不一致のまま `agreed`、一致したまま理由なく `adjudicated`、第三値が raw labelの
+  単位換算と一致しないケースを拒否する。
+- `REAL206` は全点について resolved statusであり、未解決を drop せず `RangeError(unresolved-audit)`。
+
+### TC-SOURCE-AUDIT-001: 独立 manifest の完全 schema と正例
+
+`docs/simulators/snow-crystal-sim/tasks/T1-7/SOURCE-AUDIT.json` を production の corpus loader、
+transcription generator、A/B 転記表を import しない duplicate-aware parser で読む。正例 `REAL206_AUDIT` は
+人間監査工程でコミットされた file 自身であり、次の全 property を必須、追加 property を禁止する。
+
+```text
+root:
+  schemaVersion="snow-crystal-source-audit/1"
+  corpusId="libbrecht-2023-figure2-arxiv-v1"
+  sourcePdfSha256="20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af"
+  auditMethod={kind:"independent-human-source-pdf-audit",
+               productionCorpusReadDuringCapture:false,
+               productionGeneratorUsed:false,
+               imageArtifactsCommitted:false}
+  pages=[page11,page12,page13,page14]
+  observations=[...206 independent source entries in sourceObservationId ASCII order...]
+  sourceEntrySetSha256=<human-audit freezeで確定する64桁lowercase hex>
+  preAnnotationSplitAssignmentSha256=<annotation前freezeで確定する64桁lowercase hex>
+  canonicalCorpusSha256=<最終corpusのJCS hashとして確定する64桁lowercase hex>
+  auditPayloadSha256=<定義済みpayloadのJCS hashとして確定する64桁lowercase hex>
+  approval={decision:"approved",approverRole:"human-source-auditor",
+            sourcePdfSha256:<rootと同じ固定PDF hash>,
+            sourceEntrySetSha256:<rootと同じ値>,
+            canonicalCorpusSha256:<rootと同じ値>,
+            auditPayloadSha256:<rootと同じ値>,
+            approvedAtUtc:<YYYY-MM-DDTHH:mm:ssZ>,note:<string|null>}
+
+pageN:
+  {pdfPage:<11|12|13|14>,panelCount:<nonnegative safe integer>,
+   sourceObservationIds:<page-local ordinal順のID配列>}
+
+observation:
+  {sourceObservationId,locator:{pdfPage,pagePanelOrdinal,panelBoundsPdfPt:[left,bottom,width,height]},
+   rawLabels:{temperature,supersaturation,growthTime,squareFieldOfView},
+   normalizedSourceValues:{temperatureC,supersaturationPct,growthTimeSeconds,
+                           squareFieldOfViewUm,inProductDomain,exclusionReason}}
+```
+
+`<...>` はこの工程で作る架空値ではなく、固定 hash PDF の別 capture と人間承認後に初めて置換・凍結する
+実観測 placeholder contract である。テストケース本文や generator は page 別件数、個別 raw label、bounds、
+normalized value、最終4 hashを生成しない。`pages` の順は厳密に `[11,12,13,14]`、各 page の ID は
+page-local ordinal 昇順、`observations` は ID の ASCII 昇順、page count 合計・page ID 合計・observation 数は
+すべて206、全ID集合は厳密一致する。
+
+schema field coverage 用の `SYN-AUDIT-ENTRY` は実観測でないことを名前に固定し、
+`L23-F2-P11-N001`, bounds `[10,20,30,40]`, raw `[-15.0 °C,12.5 %,2 min,0.40 mm]`,
+normalized `[-15,12.5,120,400,true,null]` を literal にする。これは個別 entry の型、順序、単位換算、JCS
+mutation を試すだけで、REAL206 の件数・内容・hash の期待値には使わない。
+
+### TC-SOURCE-AUDIT-002: 独立照合、hash、approval、negative
+
+production corpus の各 observation から source-only projection
+`{sourceObservationId,locator,rawLabels,normalizedSourceValues}` を作り、IDで joinして
+`REAL206_AUDIT.observations` の独立値と全 field 厳密比較する。expected 側を production corpus、同じ
+generator、production validator の正規化結果から作ってはならない。page count、page ID、locator、raw、
+normalized、domain派生値を audit 側から読み、実 corpus を照合する。
+
+hash は次をそれぞれ独立 JCS canonicalizer で再計算する。
+
+1. `sourceEntrySetSha256 = SHA-256(JCS(observations))`。
+2. `preAnnotationSplitAssignmentSha256 = SHA-256(JCS(split.assignment))`。
+3. `canonicalCorpusSha256 = SHA-256(JCS(corpus object))`。
+4. `auditPayloadSha256` は root から `auditPayloadSha256` と `approval` を除いた object の JCS hash。
+5. approval 内の PDF/source-entry/corpus/payload hash は root と厳密一致する。
+6. `protocol.sourceAuditSha256 = SHA-256(JCS(SOURCE-AUDIT object))`、
+   `split.sourceAuditSha256` も同じ値と厳密一致する。
+
+各 mutation は一つずつ行い、missing property、unknown property、wrong type、許可されない null、page tuple
+順交換、page内ID順交換、observation順交換、duplicate/dangling ID、合計205/207、locator/raw label/
+normalized valueの片側だけ変更、raw labelの1 code point変更、source-entry/split/corpus/payload hash不一致、
+approval未承認、fractional second付きUTC、`productionCorpusReadDuringCapture=true`、
+`productionGeneratorUsed=true`、`imageArtifactsCommitted=true` を拒否する。型・unknownは `TypeError`、
+順序・件数・値・参照・hash・approval不一致は `RangeError` とする。
+
+### TC-SOURCE-AUDIT-003: 作成順、freeze、stale、非循環
+
+作成順を状態fixtureで固定する。
+
+```text
+source A/B capture sealed
+  -> independent SOURCE-AUDIT source capture sealed
+  -> source全field比較・原PDF裁定
+  -> sourceEntrySet + preAnnotation SplitAssignment freeze
+  -> morphology annotation/extraction + human approval
+  -> final corpus JCS hash freeze
+  -> SOURCE-AUDIT approval + audit object JCS hash freeze
+  -> split/protocolがsourceAuditSha256を参照
+```
+
+annotation開始前の assignment と最終 `split.assignment` は JCS bytesが同一でなければならない。
+annotation/shapeだけの変更で `preAnnotationSplitAssignmentSha256` が変わってはならない。source field、
+assignment、final corpus、SOURCE-AUDIT の一つを変更すると、それを参照する approval/hash/review/Red/Green/
+下流較正は stale となり、旧hashのままGreenにしない。
+
+hash依存は `source entries -> split assignment`、`final corpus -> source audit approval`、
+`source audit object -> split/protocol reference` の有向順である。`SOURCE-AUDIT.json` 自身のhashを
+自身のpayload/approvalへ埋め込まないため循環がないことを dependency graph のDFSで確認する。
+`canonicalCorpusSha256` が audit を参照する corpus fieldから導かれる実装、または audit object hashを
+audit rootへ書き戻す実装を拒否する。
+
+## 4. 形態注釈と人間承認
+
+### TC-ANNOTATION-001: A/B draft と review mode
+
+基底 vote を次に固定する。
+
+```json
+{"growthAxis":"basal-dominant","basalBranchingLevel":2,"hollowing":"absent","confidence":"high"}
+```
+
+- A/Bが4 fieldとも一致し high/high のときだけ `draftStatus='exact-agreement'` かつ
+  `batch-summary` を許し、`final` は同じ vote、`adjudicationNote=null`。
+- confidenceだけ medium/medium に変えた一致、high/medium、いずれか low、growthAxis/branch/hollowing の
+  いずれか不一致はすべて `individual-source-pdf`。individualは空でないnoteを要求し、finalはA/B以外の
+  有効値または indeterminate/nullでもよい。
+- `exact-agreement`なのに一 fieldが違う、`different`なのに完全一致、medium/lowをbatchに入れる、batchの
+  finalを書き換える、individualのnoteをnull/emptyにする場合は `RangeError(annotation-approval)`。
+- unknown vocabulary/confidenceは `TypeError(unknown-enum)`。branchは `0|1|2|3|null` 以外を拒否する。
+
+### TC-ANNOTATION-002: literal approval hash
+
+ID `L23-F2-P11-N001` と TC-ANNOTATION-001 の基底 vote について、JCS canonical bytes の SHA-256を
+production hash helperから独立に計算し、次へ厳密一致させる。
+
+| target | canonical logical value | SHA-256 |
+|---|---|---|
+| target IDs | `["L23-F2-P11-N001"]` | `0446f0d4af4ae33312f7726af9e436750e0886a33540df8783ca837c80015c6b` |
+| draft set | `[[id,vote,vote]]` | `53aafe785f93df225e57b08dbf502c37864e334ebeabfda5b9682dda6c787daf` |
+| final set | `[[id,vote]]` | `563192cd1f7ec3799a357c843aa269e6dc3e355eecdda500c464cb919e6cd873` |
+
+approval は `reviewMode=batch-summary`, 上記3 hash、固定 PDF hash、`approverRole=human-approver`,
+`approvedAtUtc=2026-09-29T12:00:00Z`, `decision=approved`, `note=null` とする。`approvalId` を除いた object の
+JCS hash は `a4cfc6fbb96f578a871a32c528d07930751392b5ce45bd7e3cb1a0f65148133c` であり、observationの
+`approvalId` もこれへ一致させる。fractional second、timezone offset、氏名/email/account/deviceなど
+schema外PII propertyは拒否する。
+
+### TC-ANNOTATION-003: 全206点の完全被覆と承認前拒否
+
+`REAL206` の approval target配列は各配列内ASCII昇順・重複なし、approvalId昇順であり、multiset unionは
+observation ID setと厳密一致する。重複対象、未被覆1件、未知ID、approval参照不一致、target/draft/final
+hash不一致を各々拒否する。未承認1件を含む corpus では、predictionが空でも `scoreTraining`, baseline,
+candidate ranking, split後loss, holdoutのすべてが最初に `RangeError(annotation-approval)` を投げる。
+
+## 5. projected-shape extraction evidence
+
+### TC-SHAPE-001: mask byte encoding と hash
+
+mask hashのbyte順を独立確認する。
+
+- `width=2,height=2,pixels=[1,1,1,1]` の bytes は uint32 little-endian width/heightの8 byteに
+  row-major 4 byteを続け、SHA-256は
+  `66ad96f0cffebe842cc5d3b24a8c8aac3bc21b781aa3d3e749c3b2d62e884030`。
+- `width=3,height=3,pixels=9個の1` は
+  `a0a7f65a1e81907621d6dc7c9acd606e445022041cd91ac82af733f3f73e37a1`。
+
+bit packing、big-endian、bottom-up、RGBA byteを使うとhashが異なることを確認する。mask本体を成果物へ
+保存せず、テスト内でだけ生成する。
+
+### TC-SHAPE-002: 中間量から3 raw featureを独立再計算
+
+次の `SYN-EA` evidence を使う。rasterは `11x11`、center/endpointsはpixel-center規約である。
+
+```text
+foregroundPixelCount A=4, fourNeighborPerimeterEdges P=8
+centroid=(1.0,1.0)
+covariance={xx:0.25,xy:0,yy:0.25}
+eigenvalues=[0.25,0.25]
+center=(5.5,5.5)
+endpoints clockwise=
+  [(7.5,5.5),(6.5,7.5),(4.5,7.5),(3.5,5.5),(4.5,3.5),(6.5,3.5)]
+```
+
+独立期待値は次である。
+
+```text
+inverseCircularity = ((8/4)*8)/(4*pi) = 4/pi
+                     = 1.2732395447351628
+arm lengths = [2,sqrt(5),sqrt(5),2,sqrt(5),sqrt(5)]
+mean = (2+2*sqrt(5))/3 = 2.1573786516665265...
+population CV = 0.051582744513315945
+trace=0.5, delta=hypot(0,0)=0
+lambdaMin=lambdaMax=0.25
+minorMajorAxisRatio=sqrt(0.25/0.25)=1
+```
+
+endpoint angleは top-left座標の `atan2(y-cy,x-cx)` を `[0,2*pi)` に直した厳密昇順で、先頭は+X、
+紙面上時計回りとなる。同角endpoint、integer座標、raster外座標、endpoint重複、`lambdaMax=0`,
+`lambdaMin>lambdaMax`, 非有限/負共分散、safe integer外A/Pを拒否する。
+
+`SYN-EB` は A=9,P=12、covariance `{xx:1,xy:0,yy:4}`, eigenvalues `[1,4]` とする。同じ
+center `(5.5,5.5)` から、時計回りに
+`[(10.5,5.5),(8.5,9.5),(2.5,9.5),(0.5,5.5),(2.5,1.5),(8.5,1.5)]` を使う。
+各offsetは `(5,0),(3,4),(-3,4),(-5,0),(-3,-4),(3,-4)` なので6距離はすべて5、raw値は
+`4/pi`, `0`, `0.5` となる。A/B最終intervalは
+`inverseCircularity=[4/pi,4/pi]`, `normalizedArmLengthCv=[0,0.051582744513315945]`,
+`minorMajorAxisRatio=[0.5,1]`。interval端はA/B再計算値のmin/maxと厳密一致する。
+
+### TC-SHAPE-003: status、null、reason、audit
+
+| A/B状態 | final feature/status | expected audit |
+|---|---|---|
+| 両方usable、同じstatus/reason | 共通rawのmin/max、top `usable` | `agreed`, note `null` |
+| Aだけfeature usable、Bがnull | そのfeature `null`。他に共通featureありならtop `usable` | `adjudicated`, nonempty note |
+| 両方mask unusable | 全中間量/raw `null`, top `not-usable`, reason `no-common-usable-feature` | status/reason一致なら`agreed` |
+| mask usable、arm unusable | mask由来2 feature可、arm feature null | reasonはarm側のみnon-null |
+
+mask usableなら hash/A/P/centroid/covariance/eigenvalues/2 raw featureは必須でreason null。mask unusableなら
+それら全部null、reason必須、armもunusable。arm usableならcenter/6 endpoints/raw CV必須でreason null。
+片方だけのraw値をintervalへ採用、adjudicationでrawを書換え、全interval nullなのにtop usable、差異が
+あるのにagreed、完全一致なのに理由なくadjudicatedを拒否する。
+
+## 6. JCS、SHA256SUMS、logical mutation
+
+### TC-JCS-001: RFC 8785代表 vector
+
+独立 canonicalizer は UTF-16 code unit property sort と ECMAScript number serializationを使い、少なくとも
+次のcanonical bytesを厳密比較する。
+
+```text
+input property order: {"b":2,"a":1}
+canonical:            {"a":1,"b":2}
+SHA-256:               43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777
+
+333333333.33333329 -> 333333333.3333333
+1E30                 -> 1e+30
+4.50                 -> 4.5
+2e-3                 -> 0.002
+1e-27                -> 1e-27
+```
+
+arraysは順序保持、objectは再帰sort、UTF-8・空白なし。JCS単体では `-0` が `0` になるため、corpus
+validatorがcanonicalize前に `-0` を拒否することも確認する。
+
+### TC-JCS-002: canonical file hash と mutation
+
+pretty/compact、LF/CRLF、property input orderが違っても同一logical objectのhashは同一。
+`{"a":1,"b":2}` の `b` を3へ変えた canonical hashは
+`f9c6777fb86597920de313c707c2c0aa7b059e208a66e1f56f7a2b548e11453d` となり、元hashと異なる。
+array element swap、Unicode code point変更、number変更もhashを変える。
+
+`SHA256SUMS` は filename ASCII順 `corpus.json`, `protocol.json`, `split.json`、各行
+`^[0-9a-f]{64}  [A-Za-z0-9._-]+\.json\n$`、末尾LFあり、自身を含まない。3 JSONをparse/schema検証後の
+JCS bytesで再hashし一致させる。raw pretty bytesをhashする誤実装を検出する。
+
+## 7. condition group と固定 split
+
+### TC-SPLIT-001: group不可分、bin境界、hash順
+
+同じ `[temperatureC,supersaturationPct]` の時刻違い・写真違いは同じgroupで、partitionを跨がない。
+bin境界の期待値は次である。
+
+```text
+(-30,0)->(T0,S0), (-10,10)->(T1,S1), (-3,20)->(T2,S2), (0,30)->(T2,S2)
+```
+
+各stratum内で `SHA-256("snow-crystal-sim/T1-7/split-v1\0" + JCS(groupKey))` のunsigned byte
+lexicographic順を独立計算する。group数 `n=1` はholdout 0、`n=2..9` はholdout 1、`n=10` は2。
+holdout数は `min(n-1,max(1,floor(n/5)))`。domain外groupはreport-onlyでtrain/holdoutに入らない。
+
+### TC-SPLIT-002: 4-stratum canonical order とannotation不変性
+
+架空groupを次の順で保存する。
+
+```text
+G00=(-20,5)  -> (T0,S0), contribution 0
+G01=(-20,15) -> (T0,S1), contribution 1/2
+G10=(-5,5)   -> (T1,S0), contribution 1/4
+G11=(-5,15)  -> (T1,S1), contribution 1
+```
+
+full 9-record orderは `(T0,S0),(T0,S1),(T0,S2),(T1,S0),(T1,S1),(T1,S2),(T2,S0),(T2,S1),(T2,S2)`。
+上の非空4 recordの証跡順は `G00,G01,G10,G11` であり、temperature-only groupingなら得られない。
+非空stratum macro-averageは `(0+1/2+1/4+1)/4=7/16`。annotation final、confidence、shape intervalを
+全て変更してsplit bytes/hashがbit-for-bit不変、conditionを1つ変更するとhashが変わることを確認する。
+
+### TC-SPLIT-003: `SplitV1` 完全 positive literal
+
+`SYN-SPLIT-V1` は実観測値を含まない schema/canonical-order 専用 bundle とする。root は次の propertyを
+この型と値で全て持つ。`H_*` は同じ bundle に literal 保存した sibling object の JCS SHA-256を、test-local
+独立 canonicalizer で fixture 作成時に一度求めて固定した64桁lowercase hexであり、REAL206 の最終hash用
+placeholderではない。
+
+```text
+schemaVersion="snow-crystal-observation-split/1"
+corpusId="libbrecht-2023-figure2-arxiv-v1"
+corpusSha256=H_SYN_CORPUS
+sourceEntrySetSha256=H_SYN_SOURCE_ENTRIES
+sourceAuditSha256=H_SYN_SOURCE_AUDIT
+splitAssignmentSha256=H_SYN_ASSIGNMENT
+assignment={
+  algorithmId:"condition-group-hash-stratified-v1",
+  hashPreimagePrefix:"snow-crystal-sim/T1-7/split-v1\0",
+  stratumOrder:["T0-S0","T0-S1","T0-S2","T1-S0","T1-S1","T1-S2",
+                 "T2-S0","T2-S1","T2-S2"],
+  strata:[S00,S01,S02,S10,S11,S12,S20,S21,S22],
+  groups:[G00,G01,G02,G10,G11,G12,G20,G21,G22,G_REPORT],
+  reportOnly:{groupSha256s:[G_REPORT.groupSha256],
+              sourceObservationIds:["L23-F2-P11-N010"]}
+}
+```
+
+各 `Sxy` の完全 literal は次表の値を使い、表にない propertyを許さない。各行で
+`groupCount=1`, `holdoutGroupCount=0`, `holdoutGroupSha256s=[]`,
+`holdoutSourceObservationIds=[]` とする。
+
+| record | stratumId | temperatureBin | supersaturationBin | train group | train ID |
+|---|---|---|---|---|---|
+| S00 | `T0-S0` | `T0` | `S0` | `G00.groupSha256` | `L23-F2-P11-N001` |
+| S01 | `T0-S1` | `T0` | `S1` | `G01.groupSha256` | `L23-F2-P11-N002` |
+| S02 | `T0-S2` | `T0` | `S2` | `G02.groupSha256` | `L23-F2-P11-N003` |
+| S10 | `T1-S0` | `T1` | `S0` | `G10.groupSha256` | `L23-F2-P11-N004` |
+| S11 | `T1-S1` | `T1` | `S1` | `G11.groupSha256` | `L23-F2-P11-N005` |
+| S12 | `T1-S2` | `T1` | `S2` | `G12.groupSha256` | `L23-F2-P11-N006` |
+| S20 | `T2-S0` | `T2` | `S0` | `G20.groupSha256` | `L23-F2-P11-N007` |
+| S21 | `T2-S1` | `T2` | `S1` | `G21.groupSha256` | `L23-F2-P11-N008` |
+| S22 | `T2-S2` | `T2` | `S2` | `G22.groupSha256` | `L23-F2-P11-N009` |
+
+各 `Sxy.trainGroupSha256s=[Gxy.groupSha256]`、`trainSourceObservationIds=[train ID]` である。
+各 `G` は次の全 propertyを持つ。
+
+```text
+Gxy={groupKey:[T,S], groupSha256:SHA256(JCS([T,S])),
+     splitOrderSha256:SHA256(UTF8(prefix)+UTF8(JCS([T,S]))),
+     stratumId:"Tx-Sy", partition:"train", sourceObservationIds:[ID],
+     sourceObservationIdSetSha256:SHA256(JCS([ID]))}
+```
+
+group keyは順に `[-20,5],[-20,15],[-20,25],[-5,5],[-5,15],[-5,25],[-1,5],[-1,15],[-1,25]`。
+`G_REPORT` は `groupKey=[-31,5]`, `stratumId=null`, `partition="report-only"`, ID
+`L23-F2-P11-N010` で、同じ hash 式を使う。ここでは schema/order を小さく検査するため10 synthetic IDだけを
+用いる。REAL206 integration は TC-REAL-001 で厳密に206 IDを要求し、この小fixtureを実データ完全性の
+oracleにはしない。
+
+### TC-SPLIT-004: required/null/order/reference/hash mutation
+
+`SYN-SPLIT-V1` について root、assignment、各stratum、各group、reportOnlyの全 required propertyを
+property tableから一つずつ削除して `TypeError(missing-property)`、各階層に `extra` を加えて
+`TypeError(unknown-property)`、string/number/boolean/array/objectを一つずつwrong typeへ変えて
+`TypeError(wrong-type)` とする。`stratumId` が report-only groupでだけ nullを許すことを除き、全fieldの
+nullを拒否する。
+
+個別に次も検査する。
+
+- `schemaVersion`、`algorithmId`、prefix、stratum enum、partition enum の1文字変更。
+- `stratumOrder` または `strata` の隣接交換、長さ8/10、binとID不一致。
+- stratumのtrain/holdout group hash順交換、ID順交換、count不一致。
+- groupの`groupKey` tuple順交換/長さ違い、誤bin、誤stratum、train/holdout跨ぎ、report-onlyの非null。
+- `groups` のstratum間/stratum内交換、report-onlyを途中へ挿入。
+- dangling/duplicate group hash、dangling/duplicate ID、同じcondition groupをtrainとholdoutへ分割。
+- `reportOnly` とgroupsのreport-only suffixの不一致。
+- group/source-ID-set/split-order/assignment/corpus/source-entry/source-audit hash参照を各1桁変更。
+- annotationだけの変更では assignment JCS/hash不変、conditionまたはID配列変更では必ずhash変更。
+
+logical mutation後に古い `splitAssignmentSha256` を残すと `RangeError(hash-mismatch)`、新しいhashへ
+追随しても固定順、参照またはallocation違反があれば対応する `RangeError` とする。これにより
+自己整合hashだけで意味契約を迂回できないことを確認する。
+
+## 8. tag rank loss の厳密分数
+
+### TC-RANK-001: pair、tie、反転、欠測
+
+同じstratumの異なるgroup `g_i<g_j` について、観測rankを `g_i=[0,1]`, `g_j=[2,1]` とする。
+直積4 pairの観測signは `[+,+,+,0]`。group prediction signごとの結果は次である。
+
+| prediction sign | `2p`列 | `M` | `N` | reduced loss |
+|---|---:|---:|---:|---:|
+| `+` | `[0,0,0,1]` | 4 | 1 | `1/8` |
+| `0` | `[1,1,1,0]` | 4 | 3 | `3/8` |
+| `-` | `[2,2,2,1]` | 4 | 7 | `7/8` |
+
+同じgroup内pairは列挙しない。`g_i=[null,1]`, `g_j=[2,null]` では eligibleは1組だけで、prediction tieの
+lossは `1/2`。全pair欠測ならgroup pairを除外する。eligible pairがあるのにmetric null/NaN/Infinity/
+未到達なら欠測でなくcandidate failure。数値 `===` ならbit pattern差にかかわらずtieである。
+
+### TC-RANK-002: 3 component と macro階層
+
+TC-RANK-001 の同じrank表に対し、predictionを compactness `+`, tipDensity `0`, aspectRatio `-` とする。
+
+```text
+branching-compactness-v1 = 1/8
+branching-tip-density-v1 = 3/8
+axis-aspect-ratio-v1     = 7/8
+basal-rank-v1            = (1/8+3/8)/2 = 1/4
+integrated-rank-v1       = (1/8+3/8+7/8)/3 = 11/24
+```
+
+growthAxis順は `basal-dominant<mixed<c-axis-dominant`、branch順は `0<1<2<3`、全prediction方向は大きいほど
+高rank。hollowingはrankへ入れない。分母0 component、空stratumを各階層から除外するが、全空ならnull。
+
+### TC-RANK-003: 固定24実行、stratum順、Neumaier再初期化
+
+各candidateは checkpoint外側 `[10,20,40]`、seed内側 `0..7` の24 recordを必須とする。各recordで
+TC-SPLIT-002 の4 stratum contributionを別々に集計し、temperature-major/supersaturation-minor以外の
+順を拒否する。階層ごとに新しいNeumaier accumulatorを作る。
+
+Neumaier単体のadversarial vector `[1,2^-54,2^-54,2^-54]` は補償和後 `1.0000000000000002`、平均は
+`0.25000000000000006` とbit一致させる。前階層のcompensationを次階層へ持ち越してはならない。
+checkpoint10の8 seed lossを全0、checkpoint20をseed0..3=0/seed4..7=1、checkpoint40を全1とするfixtureは
+checkpoint別 `[0,1/2,1]`、最終 `1/2`。best checkpoint選択、seed除外、24 primitive前のmetric平均を
+行う実装を失敗させる。
+
+## 9. empirical mid-CDF と shape loss
+
+### TC-CDF-001: 全実数上のliteral CDF
+
+train multiset `X=[1,2,2,4]`（重複保持、n=4）に対する期待値を固定する。
+
+| z | position | F(z) |
+|---:|---|---:|
+| 0.5 | min未満 | `0` |
+| 1 | min同値 | `1/8` |
+| 1.5 | sample間 | `1/4` |
+| 2 | 重複同値 | `1/2` |
+| 3 | sample間 | `3/4` |
+| 4 | max同値 | `7/8` |
+| 5 | max超過 | `1` |
+
+線形補間、重複除去、right-CDFを使わない。midpointは `low/2+high/2` の評価順とし非有限ならcorpus error。
+holdoutでもこのtrain Xを使い、holdout値からCDFを再作成しない。
+
+### TC-CDF-002: interval distance と null
+
+TC-CDF-001 のCDFで観測interval `[2,4]` はCDF区間 `[1/2,7/8]`。
+
+```text
+prediction 1 -> u=1/8, d=3/8
+prediction 3 -> u=3/4, d=0
+prediction 5 -> u=1,   d=1/8
+```
+
+zero-width `[2,2]` とprediction 4は `d=7/8-1/2=3/8`。観測interval nullはfeatureを分母から除外する。
+interval非nullでprediction null/非有限/未到達はcandidate failure。Xが空ならfeature reportはnull。
+feature順はinverseCircularity、normalizedArmLengthCv。minorMajorAxisRatioはreport-only。
+
+### TC-CDF-003: hierarchical shape aggregation
+
+2 observationのfeature primitiveを `o1=[0,1/2]`, `o2=[1/4,null]` とすると、observation平均は
+`o1=1/4`, `o2=1/4`、group平均 `1/4`。primitiveを先に全件flat平均した `1/4` と偶然一致するfixtureだけに
+依存せず、`o1=[0,1]`, `o2=[0,null]` も使い、正しいobservation macroは `(1/2+0)/2=1/4`、flat平均は
+`1/3` となることを確認する。その後 group→2D stratum→非空stratum→seed→checkpointの順に、各階層で
+Neumaierを再初期化する。
+
+## 10. scale-marginalized comparison と候補
+
+### TC-SCALE-001: time/FOV/dimension-only metamorphic invariance
+
+承認tag/shape、condition、candidate、seed、checkpoint predictionを固定し、各observationの
+`growthTimeSeconds` を `120->240`、`squareFieldOfViewUm` を `400->800`、raw labelsも整合する別値へ変える。
+panel raster width/heightと報告専用dimensionも別値にするが、承認shape intervalは同じに保つ。
+24 primitive、rank/shape全階層、candidate order、baseline、Pareto結果はbinary64 bit-for-bit不変とする。
+time/FOV/実寸をcheckpoint選択、重み、停止stepへ使う実装を検出する。
+
+### TC-SCALE-002: checkpoint、8 seed、candidate failure
+
+各condition/candidateに `(10,0)..(10,7),(20,0)..(20,7),(40,0)..(40,7)` が一度ずつ必要。
+一件欠落、checkpoint未到達、外縁停止、metric null/非有限、step 40021超過のいずれもcandidate全体を
+`failed` にし、null lossや0点、残り23件平均へ変えない。全24件成功なら各observationを24回別採点してから
+seed、checkpointを等重みmacro-averageする。
+
+### TC-CANDIDATE-001: family/order/tie/failure
+
+実行順はfamilyRank `condition-blind-baseline < nearest-train-condition-baseline < production`、production内は
+knot数、candidateId ASCII順。train選択keyは `(tagRankLoss,shapeLoss,knotCount,candidateId)`。
+
+```text
+C1=(1/4,1/3,4,"20...")
+C2=(1/4,1/3,3,"f0...") -> C2 wins fewer knots
+C3=(1/4,1/3,3,"0a...") -> C3 wins ID tie-break
+C4=status failed         -> 有限lossの全candidateより後ろ
+```
+
+全candidate共通でtag nullならtag項、shape nullならshape項を比較keyから除く。両方nullなら
+`RangeError(no-calibration-evidence)`。usable evidenceがあるのに当該candidateだけnullならfailureとして
+後置する。manifest追加削除、wall-clock/object insertion orderを使わない。
+
+### TC-BASELINE-001: modal、median、nearest tie
+
+condition-blind synthetic trainのtag ranks `[0,1,1,2]` はmode `1`、feature midpoint `[1,3,7,9]` のmedianは
+`3/2+7/2=5`。enum mode同数tieは定義済みenum順の先頭。nearest fixtureはtrain key `[-20,5]` と
+`[-10,5]`、query `[-15,5]` とし、正規化座標のsquared distanceが同じなのでgroup hashのunsigned ASCII
+小さい方を選ぶ。holdout labelsは読まない。baseline predictionは全24 recordへ同じ値を複製する。
+
+### TC-ACCEPT-001: comparator と Pareto
+
+baseline train tupleを blind `(1/2,1/3,rank0)`, nearest `(1/2,1/4,rank1)` とするとnearestを固定 comparator
+にする。holdout comparator `(tag=1/2,shape=1/4)` に対する期待は次である。
+
+| candidate | expected |
+|---|---|
+| `(1/2,1/4)` | rejected（厳密改善なし） |
+| `(1/3,1/4)` | accepted |
+| `(1/2,1/5)` | accepted |
+| `(1/3,1/3)` | rejected（shape悪化） |
+| `(null,1/5)` when comparator tag nonnull | failed/rejected、null有利化禁止 |
+| shape両者null、tag `1/3<1/2` | accepted |
+
+acceptance証跡も9 stratum canonical順を保持する。
+
+## 11. lattice、checkpoint、seed、決定性
+
+### TC-PROTOCOL-001: radius 115 ring の独立全列挙
+
+production lattice helperを使わず、整数 `q,r in [-115,115]` を二重loopし
+`max(abs(q),abs(r),abs(q+r))===115` の座標だけを列挙する。ring countは `6*115=690`。
+各点の `rho2=q*q+q*r+r*r` の最小は `9919` で、少なくとも `(115,-57),(115,-58)` が達成する。
+
+```text
+sqrt(9919) = 99.5941765365827...
+sqrt(9919)/2 = 49.79708826829135...
+40 < sqrt(9919)/2
+latticeCellCount(115)=1+3*115*116=40021
+```
+
+checkpoint `[10,20,40]` は初めて `basalRadiusCells>=k` になったstateで記録する。10/20/40以外、best段階、
+物理時刻対応、step上限40021超過を拒否する。
+
+### TC-PROTOCOL-002: 8 literal seed
+
+ASCII `snow-crystal-sim/T1-7/seed-v1/<decimalIndex>` のSHA-256 raw bytes先頭16をuint32 little-endian 4個へ
+変換し、次へ厳密一致させる。
+
+| i | SHA-256 | seed `[u32,u32,u32,u32]` |
+|---:|---|---|
+|0|`067267644959298fcccf5751a438cb6eedcefe325f085997025e29a6fd7fd6af`|`[1684500998,2401851721,1364709324,1858812068]`|
+|1|`7061bcfbe7242c394ac03d46ed5d1496e87e17821f5e2a1f4abb637423493aff`|`[4223426928,959194343,1178452042,2517917165]`|
+|2|`7df501fec43bd4feaf6bca052062d0cb36203c27de50e1cb65e495b0db001996`|`[4261541245,4275321796,97151919,3419431456]`|
+|3|`5d41398e0d5790438b7f804de7f351fc2a9acaf7399ed30c1f08a35b13c6070b`|`[2386116957,1133532941,1300266891,4233229287]`|
+|4|`82e8a7e0b0be4953a50179247e748c2077006dec0d51b4586aad68c57e7efdeb`|`[3769100418,1397341872,611910053,546075774]`|
+|5|`d21f3ac2b8df5e280d04f0b42b12f54ee705e31fae215c94faa7e584f4df7e62`|`[3258589138,677306296,3035628557,1324683819]`|
+|6|`926c9755bb09b0b5b9b686f9f129be4d258a49d9cba8cc26270e4587a2af8966`|`[1435987090,3048212923,4186355385,1304308209]`|
+|7|`5d4b43b7013caec4be9bc34702737ff707b244c60771f4e9486bb7e7682c544c`|`[3074640733,3299752961,1204001726,4152324866]`|
+
+いずれもall-zeroでないためretryなし。protocolのliteral hash/seedを再生成して比較する。同じ
+condition/candidate/seed/checkpointを同processで2回、fresh processで1回実行し、metricsと証跡をbit-for-bit
+一致させる。
+
+### TC-PROTOCOL-003: `ProtocolV1` 完全 positive literal
+
+`SYN-PROTOCOL-V1` は次の object を完全な正例として literal 保存する。`H_SYN_CORPUS`,
+`H_SYN_SPLIT`, `H_SYN_SOURCE_AUDIT` は `SYN-SPLIT-V1` bundleの参照先と同じ64桁lowercase hexであり、
+REAL206の未確定hashとは混用しない。
+
+```text
+schemaVersion="snow-crystal-calibration-protocol/1"
+protocolId="libbrecht-2023-figure2-scale-marginalized-v1"
+corpusId="libbrecht-2023-figure2-arxiv-v1"
+corpusSha256=H_SYN_CORPUS
+splitSha256=H_SYN_SPLIT
+sourceAuditSha256=H_SYN_SOURCE_AUDIT
+
+rasterization={
+  protocolId:"figure2-projection-v1",
+  rendererName:"pdfjs-dist", rendererVersion:"6.3.289",
+  canvasBackendName:"@napi-rs/canvas", canvasBackendVersion:"1.0.6",
+  nodeRuntimeVersion:"24.14.1",
+  sourcePdfSha256:"20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af",
+  dpi:600, pointsPerInch:72, viewportScale:25/3,
+  pageBox:"crop-box", pageRotation:"respect-pdf-page-rotate", intent:"display",
+  annotationMode:"disable", workerMode:"disabled",
+  useSystemFonts:false, isEvalSupported:false,
+  backgroundRgba:[255,255,255,255], outputColorSpace:"srgb",
+  pixelFormat:"rgba8-straight-alpha", origin:"top-left", rowOrder:"top-to-bottom"
+}
+
+losses={
+  rank:{
+    primarySetId:"basal-rank-v1",
+    primaryComponentIds:["branching-compactness-v1","branching-tip-density-v1"],
+    integratedSetId:"integrated-rank-v1",
+    integratedComponentIds:["branching-compactness-v1","branching-tip-density-v1",
+                            "axis-aspect-ratio-v1"],
+    components:[
+      {id:"branching-compactness-v1",
+       observationField:"morphology.final.basalBranchingLevel",
+       predictionMetric:"compactness",direction:"larger-is-higher-rank"},
+      {id:"branching-tip-density-v1",
+       observationField:"morphology.final.basalBranchingLevel",
+       predictionMetric:"tipDensity",direction:"larger-is-higher-rank"},
+      {id:"axis-aspect-ratio-v1",observationField:"morphology.final.growthAxis",
+       predictionMetric:"aspectRatio",direction:"larger-is-higher-rank"}
+    ],
+    pairPenalty:{matchingSign:0,exactlyOneTie:0.5,reversedNonzeroSign:1},
+    aggregationOrder:["observation-pair","group-pair","component","stratum",
+                      "nonempty-strata","seed","checkpoint"]
+  },
+  shape:{
+    scoredFeatureIds:["inverseCircularity","normalizedArmLengthCv"],
+    predictionMetrics:["compactness","armLengthCv"],
+    reportOnlyFeatureIds:["minorMajorAxisRatio"],
+    scaleId:"train-empirical-mid-cdf-v1",
+    intervalDistanceId:"closed-cdf-interval-distance-v1",
+    aggregationOrder:["feature","observation","condition-group","stratum",
+                      "nonempty-strata","seed","checkpoint"]
+  },
+  categoricalTagLossDefinition:null
+}
+
+simulation={
+  latticeRadiusCells:115,
+  checkpointBasalRadiusCells:[10,20,40],
+  checkpointCriterion:"first-state-basalRadiusCells-greater-than-or-equal",
+  executionOrder:"checkpoint-outer-seed-inner",
+  maxStepCount:40021,
+  seedDerivationPrefix:"snow-crystal-sim/T1-7/seed-v1/",
+  seeds:[
+    {index:0,derivationSha256:"067267644959298fcccf5751a438cb6eedcefe325f085997025e29a6fd7fd6af",
+     stateU32Le:[1684500998,2401851721,1364709324,1858812068]},
+    {index:1,derivationSha256:"7061bcfbe7242c394ac03d46ed5d1496e87e17821f5e2a1f4abb637423493aff",
+     stateU32Le:[4223426928,959194343,1178452042,2517917165]},
+    {index:2,derivationSha256:"7df501fec43bd4feaf6bca052062d0cb36203c27de50e1cb65e495b0db001996",
+     stateU32Le:[4261541245,4275321796,97151919,3419431456]},
+    {index:3,derivationSha256:"5d41398e0d5790438b7f804de7f351fc2a9acaf7399ed30c1f08a35b13c6070b",
+     stateU32Le:[2386116957,1133532941,1300266891,4233229287]},
+    {index:4,derivationSha256:"82e8a7e0b0be4953a50179247e748c2077006dec0d51b4586aad68c57e7efdeb",
+     stateU32Le:[3769100418,1397341872,611910053,546075774]},
+    {index:5,derivationSha256:"d21f3ac2b8df5e280d04f0b42b12f54ee705e31fae215c94faa7e584f4df7e62",
+     stateU32Le:[3258589138,677306296,3035628557,1324683819]},
+    {index:6,derivationSha256:"926c9755bb09b0b5b9b686f9f129be4d258a49d9cba8cc26270e4587a2af8966",
+     stateU32Le:[1435987090,3048212923,4186355385,1304308209]},
+    {index:7,derivationSha256:"5d4b43b7013caec4be9bc34702737ff707b244c60771f4e9486bb7e7682c544c",
+     stateU32Le:[3074640733,3299752961,1204001726,4152324866]}
+  ],
+  failureCodes:["checkpoint-not-reached","reservoir-boundary-reached",
+                "non-finite-metric","max-step-exceeded"]
+}
+
+candidateManifestContract={
+  schemaVersion:"snow-crystal-candidate-manifest/1",
+  relativePathPattern:"calibration/runs/{calibrationId}/candidate-manifest.json",
+  hashAlgorithm:"rfc8785-jcs-sha256",
+  candidateIdRule:"jcs-sha256-of-candidate-without-candidateId",
+  allowedFamilies:["condition-blind-baseline","nearest-train-condition-baseline",
+                   "piecewise-bilinear-map-v1"],
+  requiredBeforeAnyScore:true
+}
+
+holdoutRecordContract={
+  schemaVersion:"snow-crystal-holdout-run/1",
+  runRecordBasename:"holdout-run.json",
+  openIntentBasename:"holdout-open-intent.json",
+  reportBasename:"holdout-report.json",
+  stateOrder:["sealed","opening","opened"],
+  secondOpenError:"holdout-already-opened-or-in-progress",
+  requiredInputHashFields:["corpusSha256","splitSha256","protocolSha256",
+                           "candidateManifestSha256","selectedCandidateId",
+                           "selectedCandidateSha256","trainReportSha256"]
+}
+```
+
+上の `25/3` は JSON文字列ではなく、test fixture生成コードで `600/72` を一度評価して保存する同一binary64
+numberの表記である。
+
+### TC-PROTOCOL-004: required/null/order/version/reference mutation
+
+root、rasterization、losses、rank、各component、pairPenalty、shape、simulation、各seed、
+candidateManifestContract、holdoutRecordContractの全 required propertyを一つずつ削除して
+`TypeError(missing-property)`、各階層にunknown propertyを追加して `TypeError(unknown-property)`、
+wrong typeを与えて `TypeError(wrong-type)` とする。`categoricalTagLossDefinition` だけが nullを許し、
+他のnullは拒否する。
+
+次の literal/order mutationを一つずつ検査する。
+
+- schema/protocol/corpus ID、corpus/split/source-audit hashを1文字変更。
+- rendererを `pdfjs-dist@6.3.288`、`6.3`、`^6.3.289`、canvasを `1.0`、`^1.0.6`、Nodeを
+  `24.14`、`>=24` に変更し、完全一致でないものをすべて拒否。
+- dpi 599/601、pointsPerInch 71/73、viewportScaleを25/3の隣接binary64、page-box/rotation/intent/
+  annotation/worker/font/eval/background/sRGB/RGBA8/top-left/row-orderの各1項目変更。
+- rank primary/integrated ID、component ID/field/metric/direction、pair penalty、aggregation順の変更・交換・欠落。
+- shape scored feature/prediction metricの対応交換、report-only feature混入、CDF/distance ID、aggregation順変更。
+- radius 114/116、checkpoint順交換/重複/値変更、criterion、execution order、maxStep 40020/40022、seed prefix変更。
+- seed index交換/重複/欠落、derivation hash/stateの1 bit変更、uint32範囲外、all-zero state。
+- failure code順交換、未知code、欠落。
+- candidate manifest version/path/hash/id rule/family順/booleanを変更し、未知version/familyをscore前に拒否。
+- holdout version/basename/state順/error/required hash field順を変更し、run recordとの不一致をopen前に拒否。
+
+全固定幅tuple/arrayは長さと順序を厳密検査する。numberは有限、`-0`不可、integer fieldはsafe integer、seed
+stateはuint32。protocol objectのlogical mutation後に `SHA256SUMS` または sibling hash参照を更新しなければ
+`RangeError(hash-mismatch)`、hashだけ追随してもliteral契約違反なら対応するType/RangeErrorとする。
+
+### TC-PROTOCOL-005: raster preparation boundary
+
+通常test/runtimeはrendererを起動しない。データ準備工程だけが実行前に package/runtime versionを完全一致
+assertし、固定PDF hash確認後、600 dpi、`viewportScale===600/72`、crop-box、PDF page rotation尊重、display、
+annotation/worker無効、system font/eval無効、白背景、sRGB、RGBA8 straight alpha、top-left/top-to-bottomで
+rasterizeした証跡だけを許す。renderer/canvas/Nodeのいずれかが違う既存evidenceを再利用せず
+`RangeError(raster-protocol-mismatch)` とする。ネットワークなしの通常testは保存済みprotocol/evidenceのみを
+検証し、PDF/page raster/panel cropをrepositoryへ追加しない。
+
+## 12. holdout leakage と永続一回開封
+
+### TC-HOLDOUT-001: training隔離とsealed検証
+
+`scoreTraining` にholdout ID、annotation、shape、またはpartition混在objectを1件でも渡すと
+`RangeError(holdout-data-in-training)`。training CDF、baseline、candidate選択、threshold、tie-breakはtrain
+だけから作る。sealed recordのcorpus/split/protocol/manifest/selected candidate/train report/comparator/
+human gate hashを一つずつ変更し、すべてholdout reader呼出し前に拒否する。human gateの
+`decision`, `inputBundleSha256`, `evidenceSha256`, role, UTCも検証する。
+
+### TC-HOLDOUT-002: sealed→opening→opened
+
+isolated temp directoryにvalid sealed recordを置き、holdout readerをspyにする。期待順は次である。
+
+1. sealed/hash/gate検証。
+2. `holdout-open-intent.json` を`wx`でexclusive-createしflush。
+3. opening recordをtemp+flush+same-directory atomic rename。
+4. ここで初めてreaderが1回呼ばれる。
+5. reportをtemp+flush+renameし、JCS hashをopened recordへ保存。
+6. opened recordをtemp+flush+rename。intent markerは残る。
+
+最終recordはstate opened、report hash一致、acceptance accepted/rejectedのいずれか。reportは全input hash、
+candidate/comparator、24明細、loss、Paretoを持つ。
+
+### TC-HOLDOUT-003: 排他、二回目、別process、crash
+
+- 同一processの二回目は既存markerで `RangeError(holdout-already-opened-or-in-progress)`、reader 0回。
+- child processを2つbarrierで同時開始し、`wx`成功はちょうど1つ。他方は同じRangeErrorでreader 0回。
+- markerあり+sealed/opening/openedの各状態はすべて拒否し、自動resumeしない。
+- opening record保存直後に注入crashさせるとmarkerとopening recordが残る。再起動後はreaderを呼ばず拒否。
+- report保存後/opened保存前crashでもretryせず拒否。marker削除、state巻戻し、同じcalibrationIdでの再実行を
+  APIとして提供しない。
+- 別directoryにcopyしたrunは機械的には防げないため、テストは「暗号学的一回性」を主張せず、record/hashと
+  repository evidenceを人間gateが照合する境界を確認する。
+
+## 13. 完全コーパス acceptance と expected Red
+
+### TC-REAL-001: 206件完成条件
+
+`REAL206` について本書の全validation、全件二重転記、全206 human approval被覆、全projected evidence、
+`SOURCE-AUDIT.json` の独立全件照合、split参照完全性、protocol完全literal、`SHA256SUMS` の3 canonical
+JSON hash、source-audit JCS hashとそのsplit/protocol参照を検査する。個別source値は、固定hash PDFから
+production転記と別工程で人間capture・全件監査された committed `SOURCE-AUDIT.json` だけを期待値とし、
+corpus自身、本書、test generator、production generator/validatorから作らない。auditのcanonical corpus hashも
+実corpus JCS hashと一致させる。1件でもpending、unapproved、hash mismatch、unresolved extractionなら
+corpus incompleteでT1-8入力を拒否する。
+
+### TC-RED-001: typecheckを壊さない期待 Red
+
+`libbrecht-2023-figure2-schema-artifacts.test.ts` だけが期待 Red を持つ。static JSONをTypeScriptの静的importにせず、
+`fs.existsSync` とpath variableで存在を確認し、次の5 pathを**別々の5 test case**で一つずつassertする。
+
+1. `apps/snow-crystal-sim/calibration/libbrecht-2023-figure2-v1/corpus.json`
+2. `apps/snow-crystal-sim/calibration/libbrecht-2023-figure2-v1/split.json`
+3. `apps/snow-crystal-sim/calibration/libbrecht-2023-figure2-v1/protocol.json`
+4. `apps/snow-crystal-sim/calibration/libbrecht-2023-figure2-v1/SHA256SUMS`
+5. `docs/simulators/snow-crystal-sim/tasks/T1-7/SOURCE-AUDIT.json`
+
+各testは対応する1 pathだけを検査し、先頭の例は次の意味にする。
+
+```text
+expect(artifactExists("calibration/libbrecht-2023-figure2-v1/corpus.json")).toBe(true)
+```
+
+5件それぞれについて存在確認がtrueになってからだけ、その成果物を必要とする動的read/parseへ進む。従って
+実装前Redは5件すべてが独立したmissing-artifact assertion failureであり、module resolution、型error、依存error、
+syntax errorではなく、欠けているcalibration artifactに対する期待assertion failureでなければならない。
+同じ `describe` やloopの最初の失敗で残り4件を未実行にしてはならず、test runnerの結果に5つのpathが個別に現れる。
+schema-artifacts file内のsynthetic oracle testsはGreenであり、scoring-protocolとholdout-safetyの全testも実装成果物を
+読まないsynthetic Greenでなければならない。後者2ファイルへartifact存在assertionまたは期待Redを複製しない。
+
+実装工程で作る計画済みfileは、calibration data directoryの **3 JSONと`SHA256SUMS`の計4ファイル**、task docs
+配下の独立 `SOURCE-AUDIT.json`、および§1に列挙した3 test fileだけである。schema-artifacts fileは
+`parseJsonRejectingDuplicateKeys`, `validateCorpusV1`, `validateSourceAuditV1`, `validateSplitV1`,
+`validateProtocolV1`, `canonicalizeForOracle`、scoring-protocol fileは `deriveSplitForOracle`,
+`scoreRankFixture`, `scoreShapeFixture`、holdout-safety fileは `openHoldoutFixtureOnce` をtest-local functionとして
+所有する。同名helperを他ファイルへ複製せず、共有helper/source fileまたはbrowser/runtime/domain exportにしない。
+holdout synthetic一時fileはtest終了時に隔離temp directoryごと破棄し、repository成果物へ含めない。
+
+## 14. 追跡表
+
+所有fileの略号は `schema-artifacts`、`scoring-protocol`、`holdout-safety` とし、いずれも§1の完全basenameを指す。
+
+| DESIGN handoff | testcase | 単独所有file |
+|---|---|---|
+| source/PDF/206/page/ID/locator/raw/uncertainty/domain | TC-CORPUS-001, TC-SOURCE-001..004 | schema-artifacts |
+| production非依存SOURCE-AUDIT schema、全件照合、approval/hash/freeze/stale | TC-SOURCE-AUDIT-001..003, TC-REAL-001 | schema-artifacts |
+| duplicate JSON、unknown、NaN/Infinity/-0、205/207、precedence | TC-CORPUS-002..003, TC-SOURCE-001 | schema-artifacts |
+| A/B annotation、人間approval、hash、承認前拒否 | TC-ANNOTATION-001..003 | schema-artifacts |
+| A/B extraction evidence、raw再計算、interval | TC-SHAPE-001..003 | schema-artifacts |
+| RFC 8785、canonical hash、logical mutation | TC-JCS-001..002 | schema-artifacts |
+| grouped split、9 stratum順、4-stratum、annotation不変 | TC-SPLIT-001..002 | scoring-protocol |
+| SplitV1完全schema、required/null/order/reference/hash | TC-SPLIT-003..004 | schema-artifacts |
+| exact rank fraction、direction/tie/missing、macro/Neumaier | TC-RANK-001..003 | scoring-protocol |
+| empirical mid-CDF、interval、shape hierarchy | TC-CDF-001..003 | scoring-protocol |
+| time/FOV invariance、24 scale marginalization、failure | TC-SCALE-001..002 | scoring-protocol |
+| baseline、候補順、tie、Pareto | TC-CANDIDATE-001, TC-BASELINE-001, TC-ACCEPT-001 | scoring-protocol |
+| radius115、9919、checkpoint40、40021 | TC-PROTOCOL-001 | scoring-protocol |
+| literal 8 seed、決定性 | TC-PROTOCOL-002 | scoring-protocol |
+| ProtocolV1完全schema、renderer/loss/simulation/candidate/holdout | TC-PROTOCOL-003..005 | schema-artifacts |
+| sealed/opening/opened、exclusive marker、crash | TC-HOLDOUT-001..003 | holdout-safety |
+| copyright、non-network、実データ非捏造、5件の独立expected Red | TC-CORPUS-001, TC-REAL-001, TC-RED-001 | schema-artifacts |

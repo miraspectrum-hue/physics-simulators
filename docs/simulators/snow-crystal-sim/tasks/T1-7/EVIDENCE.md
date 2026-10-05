@@ -13,7 +13,7 @@
 
 ```yaml
 baseline_status: green
-red_status: pending
+red_status: expected-failure
 green_status: pending
 final_status: pending
 ui_acceptance: not-required
@@ -70,3 +70,31 @@ ui_acceptance: not-required
 - The revised design expands the test handoff with positive fixtures and explicit missing/unknown/wrong-type/
   null/order/reference/JCS-mutation/renderer-literal/independent-oracle cases. The fresh design review approved
   the exact revised `DESIGN.md`; test-case revision may resume after this corrected design is committed.
+
+## Test-case and test-code status
+
+- The human-approved D-06 decision split the test code into three independently reviewed files without changing
+  requirements, numerical methods, fixtures, or acceptance criteria. The revised `TESTCASES.md` passed a fresh
+  independent review at SHA-256
+  `292a82adce22faa4fa486280ccf29c848afd3a4a768cad051142c392896ffd73`.
+- Approved test-code hashes:
+  - schema/artifacts: `610c01e5f75c10d3519b0415845edb4cfff0c121f78cd89a0b55a7d91ed24b4a`
+  - scoring/protocol: `907f10446bfb7b69bb514ff742e70f9145530a048721a935bcd6e3fdd2d343a7`
+  - holdout-safety: `96de66062ec81703a18fd48fc42ccf0d943aa7f623100403a31ca9e5df632189`
+- The obsolete unapproved single-file test draft was removed after the three split files were approved.
+
+## Expected Red
+
+- Date: 2026-10-06
+- Typecheck command: `npm.cmd run typecheck --workspace=apps/snow-crystal-sim`
+  - Result: exited 0.
+- Synthetic-only command:
+  `npm.cmd run test --workspace=apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-scoring-protocol.test.ts tests/calibration/libbrecht-2023-figure2-holdout-safety.test.ts`
+  - Result: exited 0; 2 files / 28 tests passed.
+- Full expected-Red command: `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`
+  - Result: exited 1 after architecture and typecheck passed. Vitest reported 12 files total,
+    2,328 tests passed, 1 planned REAL206 integration test skipped, and exactly 5 expected failures.
+  - Each failure is an independent `TC-RED-001` existence assertion for one missing implementation artifact:
+    `corpus.json`, `split.json`, `protocol.json`, `SHA256SUMS`, or task-doc `SOURCE-AUDIT.json`.
+  - There were no syntax, type, module-resolution, dependency, environment, scoring/protocol, or holdout-safety
+    failures. These five missing artifacts are the planned implementation boundary for the next stage.
