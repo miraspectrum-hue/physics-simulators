@@ -45,6 +45,26 @@ summary: "一次資料v1について206観測、PDF 12,317,042 bytes、SHA-256�
 ```
 
 ```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:f848e95eab3c7d6be0f86e46a778a780345aaba2faa3e5ed3fc57b593f091a62
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:c76eee8fcb6dd0f04761da080d7bcd5ad267fead87e79d8d4bc5fb340d0a4dd6
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md:523
+    problem: The exact JCS preimages for transcriberASetSha256, transcriberBSetSha256, comparisonSetSha256, and migratedConfirmedIdSetSha256 are not fully specified.
+    evidence: The A/B preimage is described only with bracket notation, the comparison hash has no record or tuple schema for its per-ID/per-field results, and the migrated confirmed-ID-set hash has no stated ordering or preimage definition. Multiple object/tuple representations satisfy the prose but produce different SHA-256 values, so an independent validator cannot reproduce these provenance hashes uniquely from TranscriptionEvidenceV1 and the migration record.
+    required_change: Define exact JSON interfaces or fixed-width tuple schemas for all four hash preimages, including included fields, field/tuple order, ID ordering, candidate-comparison representation, the stage at which the narrowly scoped U+03BC/U+00B5 rule is applied, and the precise migrated-ID-set JCS preimage.
+conditions: []
+rollback_to: design
+summary: The amendment otherwise matches the human decision and preserves per-panel human confirmation, A/B independence, disagreement handling, source-oracle boundaries, and downstream invalidation. Independent checks confirmed the supplied backup hash, 33 objects, 32 confirmed entries, blank P11-N033, and agreement of those 32 entries with the two 206-entry drafts; however, the new provenance hashes are not yet uniquely reproducible.
+```
+
+```yaml
 review_type: test-code
 status: changes-requested
 reviewed_files:
@@ -1032,4 +1052,34 @@ summary: >-
   排他競合、crash後の別process再開拒否を確認した。格子40021セル、ring690点、
   最小rho²9919、8 seed、およびholdoutのrank・shape代表値を独立再計算した。
   本承認は実装前の統合test-code gateに対するものであり、実コーパス完成を意味しない。
+```
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:db91dbcb45221a9da3ff4316f78c7432ae0a1f322dcbd2bbb8d7f8808ac90610
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:c76eee8fcb6dd0f04761da080d7bcd5ad267fead87e79d8d4bc5fb340d0a4dd6
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  直前のR-001は解消された。A/B候補集合、比較集合、移行済みID集合について、
+  wrapper、収録field、固定tuple幅、field順、ASCII ID順、JCS UTF-8前像が一意に定義されている。
+  U+03BC/U+00B5の限定正規化は、原文字列を保持したA/B集合hashの計算後、
+  comparison/proposed生成時かつcomparison hash計算前にだけ適用され、他の文字差へ拡張されない。
+  固定証跡から独立再計算したA/B集合hashは
+  de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732 と
+  b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3、
+  comparison hashは33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9、
+  32件の移行ID集合hashは92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5
+  となり、206件ずつの共通ID、618 exact field、206 canonical-unit-equivalent fieldを再現できた。
+  固定PDFの12,317,042 bytesとSHA-256、LocalStorage backupのSHA-256、
+  33 entry中32件complete/confirmed、未完了P11-N033、および32件のA/B値との一致も独立確認した。
+  既存32件をbyte-for-byte保持して候補で上書きしない移行、残りを含む全206 panel・4 fieldの
+  人間による能動確認、disagreementのdefault禁止と理由記録、第三blank転記ではない独立性限界が
+  明記されている。旧design/testcase/test-code/Red/implementation証跡をstaleとし、
+  修正版design承認後に順次再ゲートする規則も維持されている。
 ```

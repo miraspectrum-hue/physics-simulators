@@ -127,3 +127,48 @@
   この1ファイルも高性能モデルの書込みエージェントへ切り替える。承認済みTESTCASES、独立Reviewer、
   test commitゲートは維持する。
 - 不採用案: 通常DeliveryBuilderで4回目を繰り返す。同じ省略が3回継続したため採用しない。
+
+## D-10: 原資料監査を独立A/B候補＋人間全件確認へ変更
+
+- 状態: 人間決定済み（2026-10-08）
+- 対象: `DESIGN.md` §6.1 のうち、`human-source-auditor` が A/B を見ずに全206件を blank から
+  再転記する手順だけ。D-03 の形態タグ、人間の最終責任、206 panel 全件確認、未承認値を loss に
+  入れない規則、その他の物理・較正契約は変更しない。
+- 事実:
+  1. 独立した Transcriber A/B は原 PDF の全206件を転記済みである。両者の normalized value は全件で
+     一致する。systematic な raw 差は square-field-of-view unit の U+03BC GREEK SMALL LETTER MU と
+     U+00B5 MICRO SIGN だけであり、PDF raster 上の同形 glyph から Unicode code point は決められない。
+  2. 人間が blank form へ32件を直接入力・確認した時点で、206件すべての再入力は疲労と転記ミスを
+     増やし得ると判断した。これは token 節約のためではない。
+  3. LocalStorage backup SHA-256
+     `9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c` は33 entry object を持ち、
+     32件が complete/confirmed、末尾 `P11-N033` は blank/incomplete である。32件の normalized value は
+     A/B双方と一致し、raw は少なくとも片方の spelling と一致する。
+- 決定:
+  1. A/B は互いの出力、人間入力、比較結果を見ない独立セッションのまま、206件ずつの draft を
+     別々の JCS SHA-256 で凍結する。両 draft の完成・件数・hash が確定する前に確認 UI へ候補を
+     prefill しない。
+  2. exact match は一つの proposed raw/normalized pair を表示できる。不一致は A/B の両候補を highlight
+     し、default を選ばない。µ unit の二 code point だけは、数字、末尾 `m`、normalized µm値が一致する
+     場合に限り canonical equivalent とし、final raw は U+00B5 `µm` とする。A/Bの元文字列はhash済み
+     draftに残し、他の文字差へこの例外を広げない。
+  3. 人間は同じ hash の原 PDF panel を全206件で目視し、temperature、supersaturation、growth time、
+     square field of view の各 raw/normalized pair を能動操作で確認または訂正する。未確認値は
+     `SOURCE-AUDIT.json`、corpus、split、lossへ入れない。訂正・disagreement解決は、氏名、メール、
+     account ID、端末名を含まない非空 rationale を残す。
+  4. backup の32 confirmed entryは、人間がすでに原 panel から直接確認した値としてそのまま移行し、
+     AI候補で上書きしない。backup自体はcommitせず、hash、件数、移行ID集合hash、上書きなしの宣言を
+     保存する。blank の `P11-N033` は未確認として通常の候補確認へ回す。
+  5. 人間が候補を見る以上、旧手順の第三 blank transcription と同じ独立性はない。この限界を明記し、
+     A/B事前凍結、原画像の常時併置、disagreementのdefaultなし、field別の明示確認、訂正理由、206件
+     完全性検査で confirmation bias と共通誤りの risk を低減する。人間が最終値へ責任を持つ点は
+     弱めない。
+- 理由: 人間の原資料判断を維持しながら、機械的な再入力負担と疲労由来の誤りを減らすため。
+  A/B候補を正解として無条件採用せず、全panelの人間目視とfield別承認を必須にする。
+- 既存入力の保全: 画面実装やLocalStorage移行を行う前に上記backup hashを再検証し、32 confirmed値を
+  上書きしない migration test を通す。移行不能またはhash不一致なら処理を停止し、人間へ報告する。
+- 無効化: この決定で `DESIGN.md` が変わるため、従来のdesign review、`TESTCASES.md` とそのreview、
+  既存test-code review、期待Red、implementation evidenceはstaleである。既存のtest commitを履歴から
+  消さないが、修正版designの承認・design commit後にtestcase修正と再レビュー、test修正レビュー、
+  新しい期待Redを順に完了するまで監査UI/corpus実装へ進まない。A/B draftそのものは、独立性証跡、
+  206件完全性、凍結hashを再検証できる場合に限り再利用できる。

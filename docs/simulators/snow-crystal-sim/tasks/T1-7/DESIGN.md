@@ -80,13 +80,13 @@ apps/snow-crystal-sim/
   tests/calibration/
     libbrecht-2023-figure2.test.ts
 docs/simulators/snow-crystal-sim/tasks/T1-7/
-  SOURCE-AUDIT.json     production corpusとは独立に原PDFから作る人間監査oracle
+  SOURCE-AUDIT.json     独立A/B候補を原PDF全件目視で人間確認したsource oracle
 ```
 
 calibration data directory の成果物は **3 JSON と `SHA256SUMS` の計4ファイルだけ**である。
 basename は上記4個に固定し、それ以外の JSON、画像、mask、PDF、生成時の中間ファイルを同 directory
-へ置かない。`SOURCE-AUDIT.json` はテスト対象データと同じ directory に置くと独立性を誤認しやすいため、
-task docs 配下に分離する。これは5個目の calibration data file ではない。
+へ置かない。`SOURCE-AUDIT.json` はテスト対象データと同じ directory に置くと production artifact と
+誤認しやすいため、task docs 配下に分離する。これは5個目の calibration data file ではない。
 
 論文 PDF、Figure 2 全体、panel crop は著作物なのでコミットしない。`corpus.json` は恒久 URL、
 PDF SHA-256、page/panel locator、raw label、照合記録を保持する。原資料照合時だけ同一 hash の PDF
@@ -393,11 +393,13 @@ interface TranscriptionEvidenceV1 {
 全 observation は `auditStatus` が `agreed` または `adjudicated` でなければならない。
 `pending` を最終データへ入れない。役割名は固定文字列 A/B/adjudicator とし、個人情報は持たない。
 
-### 6.1 production corpus から独立した原資料 oracle
+### 6.1 独立A/B候補と人間全件確認による原資料 oracle
 
-二重転記が自己整合したまま誤る場合を検出するため、task docs 配下の
-`SOURCE-AUDIT.json` を次の完全 schema で作る。これは `corpus.json` の copy、production
-transcription generator の出力、またはそれらから生成した期待値ではない。
+task docs 配下の `SOURCE-AUDIT.json` を次の完全 schema で作る。A/B は互いの draft を見ずに
+全206 panel を転記し、両方が完成した時点の内容を別々の JCS hash で凍結する。人間はその後にだけ
+候補を見られるが、同じ hash の原 PDF panel を全206件について目視し、4 field の raw と normalized
+の組を一つずつ明示確認または訂正する。未確認値、`corpus.json` の copy、最終 production corpus、
+production generator が生成した期待値を source oracle として採用しない。
 
 ```ts
 interface SourceAuditObservationV1 {
@@ -421,6 +423,83 @@ interface SourceAuditObservationV1 {
     readonly inProductDomain: boolean;
     readonly exclusionReason: null | 'outside-product-domain';
   };
+  readonly verification: {
+    readonly sourcePanelInspected: true;
+    readonly fields: {
+      readonly temperature: SourceAuditFieldVerificationV1;
+      readonly supersaturation: SourceAuditFieldVerificationV1;
+      readonly growthTime: SourceAuditFieldVerificationV1;
+      readonly squareFieldOfView: SourceAuditFieldVerificationV1;
+    };
+    readonly verifiedByRole: 'human-source-auditor';
+    readonly verificationRecordedAtUtc: string;
+  };
+}
+
+interface SourceAuditFieldVerificationV1 {
+  readonly candidateComparison: 'exact' | 'canonical-unit-equivalent' | 'different';
+  readonly humanAction:
+    | 'confirmed-proposal'
+    | 'resolved-disagreement'
+    | 'corrected-proposal'
+    | 'preserved-prior-human-confirmation';
+  readonly humanConfirmedRawAndNormalized: true;
+  readonly rationale: string | null;
+}
+
+type SourceCandidateLocatorTupleV1 = readonly [
+  11 | 12 | 13 | 14, // pdfPage
+  number,             // pagePanelOrdinal
+  readonly [number, number, number, number], // panelBoundsPdfPt: left,bottom,width,height
+];
+
+type SourceCandidateValueTupleV1 = readonly [string, number]; // raw, normalized
+type SourceCandidateFieldsTupleV1 = readonly [
+  readonly ['temperature', string, number],
+  readonly ['supersaturation', string, number],
+  readonly ['growthTime', string, number],
+  readonly ['squareFieldOfView', string, number],
+];
+type SourceCandidateHashRowV1 = readonly [
+  SourceObservationId,
+  SourceCandidateLocatorTupleV1,
+  SourceCandidateFieldsTupleV1,
+];
+
+interface SourceCandidateSetHashPreimageV1 {
+  readonly schemaVersion: 'snow-crystal-source-candidate-set-hash-preimage/1';
+  readonly sourcePdfSha256:
+    '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+  readonly transcriberRole: 'A' | 'B';
+  readonly observations: readonly SourceCandidateHashRowV1[];
+}
+
+type SourceCandidateComparisonV1 = 'exact' | 'canonical-unit-equivalent' | 'different';
+type SourceComparisonFieldTupleV1<Name extends string> = readonly [
+  Name,
+  SourceCandidateValueTupleV1, // candidate A: raw, normalized
+  SourceCandidateValueTupleV1, // candidate B: raw, normalized
+  SourceCandidateComparisonV1,
+  SourceCandidateValueTupleV1 | null, // proposed raw, normalized; null for different
+];
+type SourceComparisonFieldsTupleV1 = readonly [
+  SourceComparisonFieldTupleV1<'temperature'>,
+  SourceComparisonFieldTupleV1<'supersaturation'>,
+  SourceComparisonFieldTupleV1<'growthTime'>,
+  SourceComparisonFieldTupleV1<'squareFieldOfView'>,
+];
+type SourceComparisonHashRowV1 = readonly [
+  SourceObservationId,
+  SourceComparisonFieldsTupleV1,
+];
+
+interface SourceComparisonSetHashPreimageV1 {
+  readonly schemaVersion: 'snow-crystal-source-comparison-set-hash-preimage/1';
+  readonly sourcePdfSha256:
+    '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+  readonly transcriberASetSha256: Sha256Hex;
+  readonly transcriberBSetSha256: Sha256Hex;
+  readonly observations: readonly SourceComparisonHashRowV1[];
 }
 
 interface SourceAuditPageV1 {
@@ -435,10 +514,28 @@ interface SourceAuditV1 {
   readonly sourcePdfSha256:
     '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
   readonly auditMethod: {
-    readonly kind: 'independent-human-source-pdf-audit';
-    readonly productionCorpusReadDuringCapture: false;
+    readonly kind: 'independent-ai-candidates-human-source-pdf-verification';
+    readonly candidatePrefillEnabledOnlyAfterBothDraftsFrozen: true;
+    readonly productionCorpusReadDuringHumanVerification: false;
     readonly productionGeneratorUsed: false;
     readonly imageArtifactsCommitted: false;
+  };
+  readonly candidateDrafts: {
+    readonly transcriberASetSha256: Sha256Hex;
+    readonly transcriberBSetSha256: Sha256Hex;
+    readonly comparisonSetSha256: Sha256Hex;
+    readonly eachDraftObservationCount: 206;
+  };
+  readonly priorHumanCaptureMigration: {
+    readonly sourceKind: 'local-storage-human-source-audit-draft/1';
+    readonly sourceFileSha256:
+      '9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c';
+    readonly entryObjectCount: 33;
+    readonly migratedConfirmedCompleteCount: 32;
+    readonly incompleteSourceObservationIds: readonly ['P11-N033'];
+    readonly migratedConfirmedIdSetSha256: Sha256Hex;
+    readonly confirmedValuesOverwrittenDuringMigration: false;
+    readonly originalVerificationTimeKnown: false;
   };
   readonly pages: readonly [
     SourceAuditPageV1, SourceAuditPageV1,
@@ -463,9 +560,63 @@ interface SourceAuditV1 {
 }
 ```
 
+#### 6.1.1 A/B、比較、移行IDの hash preimage
+
+全4 hash は RFC 8785 JCS が返す UTF-8 bytes（BOM、末尾改行なし）へ SHA-256 を1回適用し、64文字の
+lowercase hexadecimal で保存する。object property の入力順は意味を持たず、JCS の UTF-16 code unit
+lexicographic property sort に従う。一方、array と fixed-width tuple の順序は意味を持ち、並べ替えては
+ならない。全 property は必須、
+`undefined` と schema 外 property は禁止する。hash 前に全 number を有限かつ `-0` でない JSON number
+として検証する。
+
+`transcriberASetSha256` と `transcriberBSetSha256` の preimage は、それぞれ上記
+`SourceCandidateSetHashPreimageV1` object そのものである。A は `transcriberRole='A'`、B は `'B'` とし、
+`observations` は206件を `sourceObservationId` の ASCII byte 昇順に並べる。各 row は必ず3要素、locator
+は `[pdfPage,pagePanelOrdinal,[left,bottom,width,height]]`、fields は必ず
+`temperature,supersaturation,growthTime,squareFieldOfView` の順である。各 field tuple は
+`[fieldName,raw,normalized]` の3要素とし、raw は transcriber が保存した Unicode string を code point
+変更せず入れる。draft file の metadata、projection evidence、annotation、human final、timestamp、
+whitespace、file bytes は preimage に含めない。同じ206件でも role が違えば別 preimage である。
+
+`comparisonSetSha256` の preimage は上記 `SourceComparisonSetHashPreimageV1` object そのものである。
+その `transcriberASetSha256` / `transcriberBSetSha256` は先に計算した hash と厳密一致させ、
+`observations` は同じ206 IDの ASCII byte 昇順、各 row は2要素、fields は上と同じ4 field順とする。
+各 field tuple は `[fieldName,[rawA,normalizedA],[rawB,normalizedB],comparison,proposed]` の固定5要素で、
+A/B raw は frozen candidate の code pointをそのまま保持する。
+
+comparison は次の順で一意に求める。
+
+1. `rawA===rawB` を Unicode code unit列の完全一致、`Object.is(normalizedA,normalizedB)` を数値一致とし、
+   両方が真なら `exact` とする。`squareFieldOfView` の proposed raw は、有効なunit suffixがU+03BC `μm`
+   ならU+00B5 `µm`へ置換し、すでにU+00B5なら維持する。他のfieldはrawAを維持する。proposedは
+   `[proposedRaw,normalizedA]` とする。
+2. exact でない `squareFieldOfView` だけ、両rawが
+   `^[0-9]+(?:\.[0-9]+)?(?:\u03BC|\u00B5)m$` に一致し、十進数部分の単位変換がnormalizedと一致する
+   ことを検証した後、末尾の U+03BC `μm` を U+00B5 `µm` へ置換する。末尾以外は一切変換しない。
+   変換後rawが完全一致し、normalizedが `Object.is` で一致し、変換前rawがU+03BC/U+00B5の一文字だけ
+   異なる場合に限り `canonical-unit-equivalent`、`proposed=[canonicalRaw,normalizedA]` とする。
+3. それ以外は `different`、`proposed=null` とする。case fold、Unicode全体のnormalization、trim、
+   空白・符号・数字・単位の補正をcomparison作成時に行わない。
+
+したがって narrow canonicalization は、frozen A/B set hashを計算した**後**、comparison tupleの
+`comparison` と `proposed` を作る段階だけに適用する。A/B preimageのraw、comparison tuple内のrawA/rawB、
+`TranscriptionEvidenceV1` は書き換えない。
+
+`migratedConfirmedIdSetSha256` の preimage は wrapper object ではなく、移行対象の完全形
+`SourceObservationId` だけを ASCII byte 昇順に並べた JSON array そのものである。backup の entry を
+移行対象にできるのは、`confirmed===true`、4 rawが非空string、4 normalizedが有限かつ`-0`でない数値、
+各raw/normalized pairが§4のsource grammar・単位変換を満たす場合だけとする。backup keyを
+`L23-F2-${backupKey}` で完全形へ写し、重複、未知ID、locator不一致を拒否する。この固定backupでは
+array長は32で `P11-N033` は含まない。count、backup hash、entry value、timestamp、wrapper property、
+末尾改行はこのID-set preimageに含めない。それらは `priorHumanCaptureMigration` の別propertyと
+source file hashで拘束する。
+
 `pages` は page `[11,12,13,14]` の順、各 `sourceObservationIds` は page-local ordinal 昇順、
 `observations` は ID の ASCII 昇順であり、4 page の `panelCount` 合計と両 ID 配列の合計は206でなければ
 ならない。ordinal、bounds、raw label、4 normalized value は §4 と同じ型・範囲・単位変換を満たす。
+各 observation の `verificationRecordedAtUtc` と approval の UTC は fractional second なしの RFC 3339
+とする。前者は新規確認では確認記録時刻、移行済み32件では移行記録時刻であり、backupに存在しない
+元の確認時刻を推測しない。
 `sourceEntrySetSha256` は `observations` 配列そのものの JCS SHA-256 である。
 `preAnnotationSplitAssignmentSha256` は §9 の `SplitAssignmentV1` の JCS SHA-256、
 `canonicalCorpusSha256` は最終 `corpus.json` object の JCS SHA-256 とする。approval 内の三つの
@@ -473,21 +624,60 @@ source/hash は top-level と厳密一致する。`auditPayloadSha256` は `audi
 除く top-level property から成る object の JCS SHA-256で、approval内と厳密一致する。UTC は
 fractional second なしの RFC 3339 とする。
 
-作成順と独立境界を次で固定する。
+作成順、候補の提示規則、独立境界を次で固定する。
 
-1. production 側 A/B は hash 一致 PDF から source layer を転記し、production generator の入力を封印する。
-2. 別の `human-source-auditor` は production corpus、A/B表、generator出力を見ず、同じ hash の原 PDF
-   だけから page count、全206 ID/locator/raw label/normalized value を `SOURCE-AUDIT.json` の draftへ入力する。
-3. 両方の capture が完了した後だけ、第三の比較工程が全 field を照合する。不一致は auditor が原 PDF
-   へ戻って裁定し、production 側と audit 側を同じ一次資料へ訂正する。片方を無条件に copy しない。
-4. source entries と §9 の split assignment を annotation 開始前に hash 凍結し、その hash を
+1. Transcriber A/B は hash 一致 PDF だけから、同じ ID/locator schema で全206件を互いに独立転記する。
+   完成前は相手の draft、比較結果、既存の人間入力、production corpus を見せない。各 draft は
+   §6.1.1 の `SourceCandidateSetHashPreimageV1` として JCS SHA-256 を取り、凍結後は訂正せず、最終値は
+   別 field に記録する。
+2. A/B の両 hash と206件ずつの完全性が確定するまで、確認 UI は候補を prefill してはならない。
+   比較工程は field ごとに raw と normalized を§6.1.1の順で比較し、
+   `SourceComparisonSetHashPreimageV1` を JCS hash して
+   `comparisonSetSha256` に固定する。最終 corpus の `TranscriptionEvidenceV1` から同じ規則で投影した
+   A/B配列と比較配列がこの3 hashを厳密に再現できなければならず、人間の訂正でA/B evidenceを
+   書き換えない。A/B候補は provenance evidence であってcanonical source valueではなく、4 fieldの
+   人間確認が完了した observation に限ってfinal source valueと一緒にcorpusへ収録できる。
+3. raw も normalized も同一なら `exact` とし、一つの proposed pair を表示できる。§6.1.1 の
+   U+03BC/U+00B5限定条件を満たす差は `canonical-unit-equivalent` としてcanonical proposed pairを
+   表示できる。それ以外の差は `different` とし、A/B の両 pair を同じ強調度で並べ、default 選択なし
+   とする。人間はどちらかを選ぶ義務はなく、原 PDF に基づく第三の値を入力できる。
+4. 唯一の文字正規化例外として、square-field-of-view の unit suffix にある U+03BC GREEK SMALL
+   LETTER MU と U+00B5 MICRO SIGN は、数字と末尾 `m` を含む他の全文字が同一で normalized µm 値も
+   同一のときだけ `canonical-unit-equivalent` とする。PDF raster の同形 glyph は Unicode code point
+   を保持していないため、これは出典値の不一致ではない。A/B の原 string は frozen draft に保持し、
+   proposed/final raw は unit suffix を U+00B5 `µm` に canonicalize する。他の空白、数字、符号、単位差を
+   この例外へ広げない。
+5. 人間は原 PDF panel を候補より先または同時に見られる状態で、4 field 全ての raw/normalized pair を
+   明示操作で確認する。画面を開いたこと、prefill 済みであること、次へ進んだことを確認操作の代用に
+   しない。`different` は双方を highlight し、`resolved-disagreement` と非空の非個人情報 rationale を
+   必須とする。proposed value を変更した場合も `corrected-proposal` と同じ rationale を必須とする。
+   `confirmed-proposal` の rationale は `null` とする。4 field の確認が揃わない observation は export、
+   `SOURCE-AUDIT.json`、`corpus.json`、split/loss 入力の全てから拒否する。
+6. backup SHA-256
+   `9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c` の LocalStorage capture は、33
+   entry object 中32件が complete/confirmed、`P11-N033` が blank/incomplete である。32件は A/B の
+   normalized value と一致し、raw は少なくとも片方と一致することを migration 前に再検証したうえで、
+   人間がすでに原 panel から直接入力・確認した値として byte-for-byte 保持し、候補で上書きしない。
+   その4 field は `preserved-prior-human-confirmation`、`humanConfirmedRawAndNormalized=true` とし、
+   backup key `Pxx-Nxxx` は文字列連結 `L23-F2-${backupKey}` だけで `SourceObservationId` へ写し、存在する
+   ID/locator と一意に一致しなければ移行を停止する。`P11-N033` は移行済み確認に数えない。backup 自体や
+   個人情報は commit せず、file hash、件数、移行ID集合hash、
+   `confirmedValuesOverwrittenDuringMigration=false`、`originalVerificationTimeKnown=false` だけを監査証跡に
+   残す。
+7. この方式では人間は A/B 候補を目にするため、旧方式の「第三者が候補を見ずに全件再転記」という
+   統計的独立性はない。確認biasを抑えるため、A/B完成前の候補表示禁止、二つのdraft hash固定、原画像
+   の常時併置、disagreementのdefaultなし、fieldごとの能動確認、訂正理由、206件の確認完了検査を必須
+   とする。したがって本 oracle は**独立A/B転記を人間が原資料全件照合した oracle**であり、独立した
+   第三転記とは呼ばない。人間が最終値へ責任を持つ要件は変更しない。
+8. source entries と §9 の split assignment を annotation 開始前に hash 凍結し、その hash を
    `EVIDENCE.md` に記録する。以後 morphology vote や projected shape で allocation を変えない。
-5. 全 annotation と extraction が人間承認された最終 corpus を JCS hash し、auditor が全206件の
+9. 全 annotation と extraction が人間承認された最終 corpus を JCS hash し、auditor が全206件の
    source field と最終 corpus hash を承認する。その後 `SOURCE-AUDIT.json` 自身を JCS hash し、
    `protocol.json.sourceAuditSha256` に固定する。
 
-通常テストはネットワークや PDF を読まず、`corpus.json` の全206 source entry、page別件数、ID、locator、
-raw/normalized value、最終 corpus hash をこの独立 manifest と照合する。source audit、corpus、split、
+通常テストはネットワークや PDF を読まず、A/B draft hash、comparison hash、移行証跡、4 field の人間
+確認状態に加え、`corpus.json` の全206 source entry、page別件数、ID、locator、
+raw/normalized value、最終 corpus hash をこの監査 manifest と照合する。source audit、corpus、split、
 protocol のいずれかが変われば audit approval、設計／テストレビュー、Red/Green、下流較正を stale とし、
 同じ手順で再凍結する。PDF、page raster、panel crop は `SOURCE-AUDIT.json` に含めない。
 
@@ -1134,13 +1324,17 @@ binary64 tolerance ではない。AC-03、AC-04、T1-0 の CV、T1-9 の境界�
     rendererは `pdfjs-dist@6.3.289`、`@napi-rs/canvas@1.0.6`、Node `24.14.1` の完全一致、
     `viewportScale===600/72` のbit一致を要求する。major/minorだけの一致やcaret rangeを許さない
 20. `SOURCE-AUDIT.json` の正例schema、page `[11,12,13,14]`、page別件数合計206、全ID/locator/raw/
-    normalized値、sourceEntry/splitAssignment/final corpus hash、人間approvalを検査する。production
-    corpusと同じgeneratorをoracleに使わず、独立manifestに対する全件照合を行う。corpusまたはauditの
+    normalized値、A/B draft/comparison/migration hash、field別人間確認、sourceEntry/splitAssignment/
+    final corpus hash、人間approvalを検査する。production corpusと同じgeneratorをoracleに使わず、
+    人間が原PDF全件を確認したmanifestに対する全件照合を行う。corpusまたはauditの
     一方だけのraw label、normalized値、locator、array order、1 code pointを変えるfixture、wrong
-    final corpus hash、未承認、production-derived宣言をすべて拒否する
+    final corpus hash、未確認field、未凍結/不一致draft hash、migration上書き、未承認、
+    production-derived宣言をすべて拒否する。U+03BC/U+00B5を同値にするのはA/B candidate比較時の
+    限定規則だけであり、canonicalized final rawの1 code point mutationは引き続き拒否する
 
-独立原資料 oracle は `SOURCE-AUDIT.json` の別 capture と人間全件監査であり、二重転記、production
-corpus、production generator、実装 validator が自分で生成した値を期待値に使わない。テストは
+原資料 oracle は `SOURCE-AUDIT.json` の独立A/B frozen draft と人間全件確認であり、production corpus、
+production generator、実装 validator が自分で生成した値を期待値に使わない。人間確認は第三の独立
+blank転記ではないという限界を監査記録に残す。テストは
 audit manifest の JCS hashを protocol参照へ、manifest内の最終 corpus hashを実corpusへ照合し、
 version-control上の監査承認を凍結点とする。loss の期待値は production `score` を import せず、
 少数 fixture の整数分数・手計算 CDF から導く。
@@ -1159,7 +1353,7 @@ version-control上の監査承認を凍結点とする。loss の期待値は pr
 - checkpoint平均は未知の画像scaleを周辺化する製品上の近似であり、物理時刻・実寸の復元でも
   Figure 2の成長段階モデルでもない。
 
-T1-7 の完了には、(a) production経路と独立した `SOURCE-AUDIT.json` の原PDF全件監査と人間承認、
+T1-7 の完了には、(a) 独立A/B frozen draftを用いる `SOURCE-AUDIT.json` の原PDF全件目視確認と人間承認、
 (b) 出典転記と annotation開始前に固定したsplit assignment/hash、(c) 独立A/B草案、
 (d) batch適格集合と個別確認集合を合わせた全206点の人間承認、(e) A/B別 extraction evidence と
 再計算可能な interval、(f) data directory内の3 JSONと`SHA256SUMS`の計4ファイル、相互参照する
