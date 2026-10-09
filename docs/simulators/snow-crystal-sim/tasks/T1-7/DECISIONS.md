@@ -172,3 +172,20 @@
   消さないが、修正版designの承認・design commit後にtestcase修正と再レビュー、test修正レビュー、
   新しい期待Redを順に完了するまで監査UI/corpus実装へ進まない。A/B draftそのものは、独立性証跡、
   206件完全性、凍結hashを再検証できる場合に限り再利用できる。
+
+## D-11: source-audit再設計後のschemaテスト実装を高性能モデルへ再切替
+
+- 状態: 人間決定済みのD-07および「必要なら高性能モデルへ切り替えて続行」の再適用（2026-10-09）
+- 対象: `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts` のうち、
+  D-10で変更した `TC-SOURCE-AUDIT-001..005` と関連する `TC-REAL-001` のテストコード化。
+- 事実:
+  1. 通常DeliveryBuilderによる初回、修正1回目、修正2回目の3回で、型検査、期待Red、
+     A/B/comparison既知hash再構築、freeze/stale graphは改善した。
+  2. 3回目の独立レビューでも、LocalStorage移行mutationが同じmigration-conflictへ先に到達すること、
+     206×4 workflowが凍結候補・32件移行・期待ID集合へ結合されていないこと、action表が
+     comparison/proposal/backup tupleへ結合されていないことがhigh findingとして残った。
+  3. 同一根本原因の3回反復により、通常DeliveryBuilderで4回目を行う条件を満たさない。
+- 決定: D-07で人間承認済みの例外を同じファイルへ再適用し、高性能モデルの書込みエージェントへ
+  切り替える。変更境界、承認済みDESIGN/TESTCASES、fresh Reviewer、期待Red、非設計自動コミットの
+  各ゲートは変更しない。
+- 不採用案: 通常DeliveryBuilderで4回目を繰り返す。同じ未結合・到達不能mutationが3回続いたため採用しない。

@@ -98,3 +98,36 @@ ui_acceptance: not-required
     `corpus.json`, `split.json`, `protocol.json`, `SHA256SUMS`, or task-doc `SOURCE-AUDIT.json`.
   - There were no syntax, type, module-resolution, dependency, environment, scoring/protocol, or holdout-safety
     failures. These five missing artifacts are the planned implementation boundary for the next stage.
+
+## D-10 source-audit redesign: test cases, test code, and expected Red
+
+- Date: 2026-10-09
+- The prior test-case approval, schema/artifacts test-code approval, and 2026-10-06 Red above became stale when
+  D-10 changed the source-audit workflow. They remain as history and are not the current gate evidence.
+- Revised `TESTCASES.md` SHA-256:
+  `31087002d9b47b0e5bdcb0be69bb3d62c9aab6d4be664b250523985d788d2b2b`.
+  A fresh independent test-case review approved 45 testcase IDs, including A/B candidate and comparison hashes,
+  the 32-entry migration, all 206 panels / 824 fields, production-corpus isolation, action/rationale rules,
+  freeze order, and stale propagation.
+- Revised schema/artifacts test-code SHA-256:
+  `ff9bfd0daf0c2f332d6a329a659e12d1abb94884314f9fc5c957d65b284d24c5`.
+  A fresh independent test-code review approved it after confirming that duplicate verification events are
+  retained and rejected rather than overwritten.
+- Typecheck command executed through the Windows Node/npm CLI equivalent of
+  `npm run typecheck --workspace apps/snow-crystal-sim`.
+  - Result: exited 0.
+- Targeted Red command executed through the Windows Node/npm CLI equivalent of
+  `npm run test --workspace apps/snow-crystal-sim -- --run tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts`.
+  - Result: exited 1 with 2,345 synthetic tests passed, one permitted `TC-REAL-001` skip, and exactly five
+    `TC-RED-001` failures.
+  - Each failure is the expected assertion for one missing artifact: `corpus.json`, `split.json`, `protocol.json`,
+    `SHA256SUMS`, or task-doc `SOURCE-AUDIT.json`.
+- Full expected-Red command: `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`.
+  - Result: exited 1 after architecture and typecheck passed. Vitest reported 12 files, 2,462 tests passed,
+    one permitted `TC-REAL-001` skip, and exactly the same five missing-artifact failures.
+  - No syntax, type, module-resolution, dependency, environment, scoring/protocol, holdout-safety, or unrelated
+    regression was present.
+- The fixed LocalStorage backup was independently read-only checked at SHA-256
+  `9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c`: version 1,
+  role `human-source-auditor`, 33 entries, 32 complete/confirmed entries, and blank/incomplete `P11-N033`.
+  The test suite does not depend on the external attachment path and does not commit the backup.

@@ -2,6 +2,8 @@
 // @ts-expect-error Node typings are intentionally outside this browser workspace.
 import { createHash } from 'node:crypto';
 // @ts-expect-error Node typings are intentionally outside this browser workspace.
+import { gunzipSync } from 'node:zlib';
+// @ts-expect-error Node typings are intentionally outside this browser workspace.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 // @ts-expect-error Node typings are intentionally outside this browser workspace.
 import { resolve } from 'node:path';
@@ -155,7 +157,7 @@ const APPROVAL_ID='a4cfc6fbb96f578a871a32c528d07930751392b5ce45bd7e3cb1a0f651481
 const SYN_APPROVAL:Obj={approvalId:APPROVAL_ID,reviewMode:'batch-summary',targetSourceObservationIds:[ID],targetIdSetSha256:'0446f0d4af4ae33312f7726af9e436750e0886a33540df8783ca837c80015c6b',draftAnnotationSetSha256:'53aafe785f93df225e57b08dbf502c37864e334ebeabfda5b9682dda6c787daf',finalAnnotationSetSha256:'563192cd1f7ec3799a357c843aa269e6dc3e355eecdda500c464cb919e6cd873',sourcePdfSha256:PDF,approverRole:'human-approver',approvedAtUtc:'2026-09-29T12:00:00Z',decision:'approved',note:null};
 const SYN_UNUSED:Obj={rasterWidthPx:11,rasterHeightPx:11,maskStatus:'not-usable',maskUsabilityReason:'occlusion',maskSha256:null,foregroundPixelCount:null,fourNeighborPerimeterEdges:null,foregroundCentroidPx:null,populationCovariancePx2:null,eigenvaluesPx2:null,armStatus:'not-usable',armUsabilityReason:'occlusion',centerPx:null,armEndpointsClockwisePx:null,rawInverseCircularity:null,rawNormalizedArmLengthCv:null,rawMinorMajorAxisRatio:null};
 const SYN_OBSERVATION:Obj={sourceObservationId:ID,sourceIdKind:'derived-page-panel-id',locator:{pdfPage:11,pagePanelOrdinal:1,panelBoundsPdfPt:[10,20,30,40]},rawLabels:{temperature:'-15.0 °C',supersaturation:'12.5 %',growthTime:'2 min',squareFieldOfView:'0.40 mm'},temperatureC:-15,supersaturationPct:12.5,growthTimeSeconds:120,squareFieldOfViewUm:400,sourceUncertainty:{temperaturePlusMinusC:0.2,supersaturationFactorRange:[0.8,1.2],growthTime:'not-reported',squareFieldOfView:'not-reported'},inProductDomain:true,exclusionReason:null,transcription:{transcriberA:{temperature:{raw:'-15.0 °C',normalized:-15},supersaturation:{raw:'12.5 %',normalized:12.5},growthTime:{raw:'2 min',normalized:120},squareFieldOfView:{raw:'0.40 mm',normalized:400}},transcriberB:{temperature:{raw:'-15.0 °C',normalized:-15},supersaturation:{raw:'12.5 %',normalized:12.5},growthTime:{raw:'2 min',normalized:120},squareFieldOfView:{raw:'0.40 mm',normalized:400}},auditStatus:'agreed',adjudicationNote:null,sourceCheckedAgainstPdfSha256:PDF},morphology:{annotatorA:clone(VOTE),annotatorB:clone(VOTE),draftStatus:'exact-agreement',final:clone(VOTE),approvalId:APPROVAL_ID,adjudicationNote:null},projectedShape:{status:'not-usable',inverseCircularity:null,normalizedArmLengthCv:null,minorMajorAxisRatio:null,reason:'no-common-usable-feature',extractionA:clone(SYN_UNUSED),extractionB:clone(SYN_UNUSED),auditStatus:'agreed',adjudicationNote:null,extractionProtocolId:'figure2-projection-v1'}};
-const SYN_AUDIT_ENTRY:Obj={sourceObservationId:'L23-F2-P11-N001',locator:{pdfPage:11,pagePanelOrdinal:1,panelBoundsPdfPt:[10,20,30,40]},rawLabels:{temperature:'-15.0 °C',supersaturation:'12.5 %',growthTime:'2 min',squareFieldOfView:'0.40 mm'},normalizedSourceValues:{temperatureC:-15,supersaturationPct:12.5,growthTimeSeconds:120,squareFieldOfViewUm:400,inProductDomain:true,exclusionReason:null}};
+const SYN_AUDIT_ENTRY:Obj={sourceObservationId:'L23-F2-P11-N001',locator:{pdfPage:11,pagePanelOrdinal:1,panelBoundsPdfPt:[10,20,30,40]},rawLabels:{temperature:'-15.0 °C',supersaturation:'12.5 %',growthTime:'2 min',squareFieldOfView:'0.40 mm'},normalizedSourceValues:{temperatureC:-15,supersaturationPct:12.5,growthTimeSeconds:120,squareFieldOfViewUm:400,inProductDomain:true,exclusionReason:null},verification:{sourcePanelInspected:true,fields:{temperature:{candidateComparison:'exact',humanAction:'confirmed-proposal',humanConfirmedRawAndNormalized:true,rationale:null},supersaturation:{candidateComparison:'exact',humanAction:'confirmed-proposal',humanConfirmedRawAndNormalized:true,rationale:null},growthTime:{candidateComparison:'exact',humanAction:'confirmed-proposal',humanConfirmedRawAndNormalized:true,rationale:null},squareFieldOfView:{candidateComparison:'exact',humanAction:'confirmed-proposal',humanConfirmedRawAndNormalized:true,rationale:null}},verifiedByRole:'human-source-auditor',verificationRecordedAtUtc:'2026-10-08T12:00:00Z'}};
 const SOURCE:Obj={arxivId:'2306.13087v1',doi:'10.48550/arXiv.2306.13087',permanentUrl:'https://arxiv.org/abs/2306.13087v1',pdfUrl:'https://arxiv.org/pdf/2306.13087v1',pdfSha256:PDF,pageCount:14,figureNumber:2,figurePdfPages:[11,12,13,14]};
 const voteRule=record({growthAxis:enumeration('basal-dominant','c-axis-dominant','mixed','indeterminate'),basalBranchingLevel:nullable(enumeration(0,1,2,3)),hollowing:enumeration('present','absent','indeterminate'),confidence:enumeration('high','medium','low')});
 const locatorRule=record({pdfPage:enumeration(11,12,13,14),pagePanelOrdinal:positiveInt,panelBoundsPdfPt:tuple(numeric,numeric,positive,positive)});
@@ -165,9 +167,9 @@ const morphologyRule=record({annotatorA:voteRule,annotatorB:voteRule,draftStatus
 const approvalRule=record({approvalId:hash,reviewMode:enumeration('batch-summary','individual-source-pdf'),targetSourceObservationIds:list(identity),targetIdSetSha256:hash,draftAnnotationSetSha256:hash,finalAnnotationSetSha256:hash,sourcePdfSha256:literal(PDF),approverRole:literal('human-approver'),approvedAtUtc:utc,decision:literal('approved'),note});
 
 function decimalUnit(raw: unknown, field: string, c=CTX, p=''): number {
-  const m=/^([+-]?)(\d+)(?:\.(\d+))?\s*(°C|%|s|min|µm|μm|mm)$/.exec(string(raw,c,p));
+  const m=/^([+-]?)(\d+)(?:\.(\d+))?\s*(°C|C|%|s|sec|min|µm|μm|mm)$/.exec(string(raw,c,p));
   if(!m)fail(RangeError,c,p,'unit-or-domain');
-  const units:Record<string,Record<string,bigint>>={temperature:{'°C':1n},supersaturation:{'%':1n},growthTime:{s:1n,min:60n},squareFieldOfView:{'µm':1n,'μm':1n,mm:1000n}};
+  const units:Record<string,Record<string,bigint>>={temperature:{'°C':1n,C:1n},supersaturation:{'%':1n},growthTime:{s:1n,sec:1n,min:60n},squareFieldOfView:{'µm':1n,'μm':1n,mm:1000n}};
   const factor=units[field]?.[m[4]!];if(factor===undefined)fail(RangeError,c,p,'unit-or-domain');
   const digits=m[3]??'';const numerator=BigInt(`${m[1]==='-'?'-':''}${m[2]}${digits}`)*factor;
   const result=Number(numerator)/Number(10n**BigInt(digits.length));
@@ -336,16 +338,51 @@ function validateCorpusV1(v:unknown,file='corpus.json'):Obj {
   const obs=os.map((o,i)=>{const z=keys(o,Object.keys(SYN_OBSERVATION),c,`/observations/${i}`);literal('derived-page-panel-id')(z.sourceIdKind,c,`/observations/${i}/sourceIdKind`);return z;});
   corpusStages(obs,x.annotationApprovals,c);return x;
 }
-const auditEntryRule=record({sourceObservationId:identity,locator:locatorRule,rawLabels:rawRule,normalizedSourceValues:normalizedRule});
-function auditEntry(v:unknown,c=CTX,p=''):void {auditEntryRule(v,c,p);const o=object(v),n=object(o.normalizedSourceValues);locator(o,c,p);sourceValues({...n,rawLabels:o.rawLabels!},c,p);domain(n,c,at(p,'normalizedSourceValues'));}
-const auditMethod:Obj={kind:'independent-human-source-pdf-audit',productionCorpusReadDuringCapture:false,productionGeneratorUsed:false,imageArtifactsCommitted:false};
+const fieldVerificationRule=record({candidateComparison:enumeration('exact','canonical-unit-equivalent','different'),humanAction:enumeration('confirmed-proposal','resolved-disagreement','corrected-proposal','preserved-prior-human-confirmation'),humanConfirmedRawAndNormalized:literal(true),rationale:note});
+const auditEntryRule=record({sourceObservationId:identity,locator:locatorRule,rawLabels:rawRule,normalizedSourceValues:normalizedRule,verification:record({sourcePanelInspected:literal(true),fields:record(Object.fromEntries(SOURCE_KEYS.map(k=>[k,fieldVerificationRule]))),verifiedByRole:literal('human-source-auditor'),verificationRecordedAtUtc:utc})});
+type ActionBindings={comparison:Map<string,Json[]>;prior:Map<string,Obj>};
+function auditEntry(v:unknown,c=CTX,p='',bindings?:ActionBindings):void {
+  auditEntryRule(v,c,p);
+  const o=object(v),n=object(o.normalizedSourceValues),fields=object(object(o.verification).fields);
+  locator(o,c,p);sourceValues({...n,rawLabels:o.rawLabels!},c,p);domain(n,c,at(p,'normalizedSourceValues'));
+  for(const [i,key]of SOURCE_KEYS.entries()){
+    const field=object(fields[key]),q=at(at(at(p,'verification'),'fields'),key),rationale=field.rationale,action=field.humanAction;
+    if((action==='confirmed-proposal'||action==='preserved-prior-human-confirmation')&&rationale!==null)fail(RangeError,c,at(q,'rationale'),'rationale-mismatch');
+    if((action==='resolved-disagreement'||action==='corrected-proposal')&&(typeof rationale!=='string'||rationale.trim()===''))fail(RangeError,c,at(q,'rationale'),'rationale-required');
+    if(typeof rationale==='string'&&(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(rationale)||/\b(?:accountId|account_id|userId|user_id|uid|deviceName|device_name|hostname|computerName|machine_id)\s*[=:]/i.test(rationale)))fail(RangeError,c,at(q,'rationale'),'personal-information');
+    if(!bindings)continue; // Schema/unit-only fixtures have no candidate provenance.
+    const comparison=bindings.comparison.get(string(o.sourceObservationId));
+    if(!comparison)fail(RangeError,c,at(p,'sourceObservationId'),'missing-candidate');
+    const tuple=array(comparison[i]),kind=tuple[3],proposal=tuple[4],prior=bindings.prior.get(string(o.sourceObservationId));
+    equal(field.candidateComparison,kind!,c,at(q,'candidateComparison'),'comparison-mismatch');
+    const raw=string(object(o.rawLabels)[key]),value=number(n[NORMAL_KEYS[i]!]);
+    if(prior){
+      if(action!=='preserved-prior-human-confirmation')fail(RangeError,c,at(q,'humanAction'),'prior-action-mismatch');
+      if(!samePair(raw,value,string(object(prior.rawLabels)[key]),number(object(prior.normalizedSourceValues)[NORMAL_KEYS[i]!])) )fail(RangeError,c,q,'prior-pair-mismatch');
+      continue;
+    }
+    if(action==='preserved-prior-human-confirmation')fail(RangeError,c,at(q,'humanAction'),'missing-prior-confirmation');
+    if(key==='squareFieldOfView'&&/μm$/u.test(raw))fail(RangeError,c,at(at(p,'rawLabels'),key),'noncanonical-final-unit');
+    if(kind==='different'){
+      if(proposal!==null)fail(RangeError,c,q,'different-with-default');
+      if(action!=='resolved-disagreement')fail(RangeError,c,at(q,'humanAction'),'disagreement-action-mismatch');
+    }else{
+      const proposed=array(proposal),same=samePair(raw,value,string(proposed[0]),number(proposed[1]));
+      if(action!==(same?'confirmed-proposal':'corrected-proposal'))fail(RangeError,c,at(q,'humanAction'),'proposal-action-mismatch');
+    }
+  }
+}
+const auditMethod:Obj={kind:'independent-ai-candidates-human-source-pdf-verification',candidatePrefillEnabledOnlyAfterBothDraftsFrozen:true,productionCorpusReadDuringHumanVerification:false,productionGeneratorUsed:false,imageArtifactsCommitted:false};
 const auditApprovalRule=record({decision:literal('approved'),approverRole:literal('human-source-auditor'),sourcePdfSha256:literal(PDF),sourceEntrySetSha256:hash,canonicalCorpusSha256:hash,auditPayloadSha256:hash,approvedAtUtc:utc,note});
-const auditRule=record({schemaVersion:literal('snow-crystal-source-audit/1'),corpusId:literal(CORPUS_ID),sourcePdfSha256:literal(PDF),auditMethod:fixed(auditMethod),pages:list(record({pdfPage:enumeration(11,12,13,14),panelCount:natural,sourceObservationIds:list(identity)}),4),observations:list(auditEntryRule),sourceEntrySetSha256:hash,preAnnotationSplitAssignmentSha256:hash,canonicalCorpusSha256:hash,auditPayloadSha256:hash,approval:auditApprovalRule});
+const candidateDraftRule=record({transcriberASetSha256:hash,transcriberBSetSha256:hash,comparisonSetSha256:hash,eachDraftObservationCount:literal(206)});
+const migrationRule=record({sourceKind:literal('local-storage-human-source-audit-draft/1'),sourceFileSha256:literal('9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c'),entryObjectCount:literal(33),migratedConfirmedCompleteCount:literal(32),incompleteSourceObservationIds:fixed(['P11-N033']),migratedConfirmedIdSetSha256:literal('92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5'),confirmedValuesOverwrittenDuringMigration:literal(false),originalVerificationTimeKnown:literal(false)});
+const auditRule=record({schemaVersion:literal('snow-crystal-source-audit/1'),corpusId:literal(CORPUS_ID),sourcePdfSha256:literal(PDF),auditMethod:fixed(auditMethod),candidateDrafts:candidateDraftRule,priorHumanCaptureMigration:migrationRule,pages:list(record({pdfPage:enumeration(11,12,13,14),panelCount:natural,sourceObservationIds:list(identity)}),4),observations:list(auditEntryRule),sourceEntrySetSha256:hash,preAnnotationSplitAssignmentSha256:hash,canonicalCorpusSha256:hash,auditPayloadSha256:hash,approval:auditApprovalRule});
 function sourceProjection(o:Obj):Obj {return {sourceObservationId:o.sourceObservationId!,locator:o.locator!,rawLabels:o.rawLabels!,normalizedSourceValues:Object.fromEntries([...NORMAL_KEYS,'inProductDomain','exclusionReason'].map(k=>[k,o[k]!]))};}
+function auditProjection(o:Obj):Obj {return {sourceObservationId:o.sourceObservationId!,locator:o.locator!,rawLabels:o.rawLabels!,normalizedSourceValues:o.normalizedSourceValues!};}
 function sourceJoin(observations:Obj[],independent:Obj[],c=CTX):void {
   const byId=new Map(independent.map(o=>[string(o.sourceObservationId),o]));
   if(byId.size!==independent.length||byId.size!==observations.length)fail(RangeError,c,'/observations','wrong-count');
-  for(const o of observations){const id=string(o.sourceObservationId),a=byId.get(id);if(!a)fail(RangeError,{...c,id},'/observations','dangling-id');equal(sourceProjection(o),a,{...c,id},'/observations','source-audit-mismatch');}
+  for(const o of observations){const id=string(o.sourceObservationId),a=byId.get(id);if(!a)fail(RangeError,{...c,id},'/observations','dangling-id');equal(sourceProjection(o),auditProjection(a),{...c,id},'/observations','source-audit-mismatch');}
 }
 function validateSourceAuditV1(v:unknown,corpus:Obj,assignment:Obj,file='SOURCE-AUDIT.json'):Obj {
   const c={file};auditRule(v,c,'');const a=object(v);auditBindings(a,corpus,assignment,206,c);return a;
@@ -357,9 +394,153 @@ function auditBindings(a:Obj,corpus:Obj,assignment:Obj,requiredCount:number,c=CT
   const pages=array(a.pages).map(x=>object(x));equal(pages.map(p=>p.pdfPage!),[11,12,13,14],c,'/pages','noncanonical-order');
   for(const [i,page]of pages.entries()){const expected=os.filter(o=>object(o.locator).pdfPage===page.pdfPage).map(o=>o.sourceObservationId!);equal(page.sourceObservationIds,expected,c,`/pages/${i}/sourceObservationIds`,'reference-mismatch');equal(page.panelCount,expected.length,c,`/pages/${i}/panelCount`,'wrong-count');}
   sourceJoin(array(corpus.observations).map(x=>object(x)),os,c);
+  if(requiredCount===206){
+    verifyFrozenCandidates(a,corpus,c);
+    const comparison=comparisonPreimage(candidateRowsFromCorpus(corpus,'transcriberA',c),candidateRowsFromCorpus(corpus,'transcriberB',c));
+    const comparisons=new Map(array(comparison.observations).map(row=>[string(array(row)[0]),array(array(row)[1])])),prior=new Map<string,Obj>();
+    // The backup itself is deliberately not committed. REAL206 checks the fixed
+    // migration manifest, ID set and A/B membership; original bytes/bits are
+    // checked at the one-time raw-backup gate and by SYN-MIGRATION below.
+    for(const id of migrationIds()){
+      const entry=os.find(o=>o.sourceObservationId===id);if(!entry)fail(RangeError,c,'/observations','missing-prior-confirmation');
+      for(const [i,key]of SOURCE_KEYS.entries()){
+        const tuple=array(comparisons.get(id)![i]),av=array(tuple[1]),bv=array(tuple[2]),raw=string(object(entry.rawLabels)[key]),n=number(object(entry.normalizedSourceValues)[NORMAL_KEYS[i]!]);
+        if(!Object.is(n,av[1])||!Object.is(n,bv[1])||(raw!==av[0]&&raw!==bv[0]))fail(RangeError,c,'/observations','prior-candidate-membership-mismatch');
+      }
+      prior.set(id,entry);
+    }
+    os.forEach((o,i)=>auditEntry(o,c,`/observations/${i}`,{comparison:comparisons,prior}));
+  }
   const hashes:Obj={sourceEntrySetSha256:digest(a.observations),preAnnotationSplitAssignmentSha256:digest(assignment),canonicalCorpusSha256:digest(corpus),auditPayloadSha256:digest(without(a,'auditPayloadSha256','approval'))};
   for(const [k,h]of Object.entries(hashes))equal(a[k],h,c,at('',k),'hash-mismatch');
   const approval=object(a.approval);for(const k of ['sourcePdfSha256','sourceEntrySetSha256','canonicalCorpusSha256','auditPayloadSha256'])equal(approval[k],a[k]!,c,`/approval/${k}`,'hash-mismatch');
+}
+type CandidateRow=[string,[number,number,[number,number,number,number]],[[string,string,number],[string,string,number],[string,string,number],[string,string,number]]];
+const CANDIDATE_A='de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732';
+// Frozen test-local A evidence: no runtime tmp, PDF, production artifact, or generator dependency.
+const FROZEN_A_GZIP='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';
+function frozenCandidateRows():CandidateRow[]{const bytes=Uint8Array.from(atob(FROZEN_A_GZIP),ch=>ch.charCodeAt(0));return JSON.parse(new TextDecoder().decode(gunzipSync(bytes))) as CandidateRow[];}
+const CANDIDATE_B='b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3';
+const COMPARISON='33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9';
+function candidatePreimage(role:'A'|'B',rows:CandidateRow[]):Obj {return {schemaVersion:'snow-crystal-source-candidate-set-hash-preimage/1',sourcePdfSha256:PDF,transcriberRole:role,observations:rows};}
+function canonicalFovRaw(raw:string):string {return raw.replace(/\u03bcm$/u,'µm');}
+function comparedField(name:string,a:[string,number],b:[string,number]):Json {if(a[0]===b[0]&&Object.is(a[1],b[1]))return [name,a,b,'exact',[name==='squareFieldOfView'?canonicalFovRaw(a[0]):a[0],a[1]]];const narrow=name==='squareFieldOfView'&&/^[0-9]+(?:\.[0-9]+)?[μµ]m$/u.test(a[0])&&/^[0-9]+(?:\.[0-9]+)?[μµ]m$/u.test(b[0])&&canonicalFovRaw(a[0])===canonicalFovRaw(b[0])&&Object.is(a[1],b[1])&&a[0]!==b[0];return narrow?[name,a,b,'canonical-unit-equivalent',[canonicalFovRaw(a[0]),a[1]]]:[name,a,b,'different',null];}
+function comparisonPreimage(aRows:CandidateRow[],bRows:CandidateRow[]):Obj {for(const rows of [aRows,bRows]){if(rows.map(row=>row[0]).join('\0')!==rows.map(row=>row[0]).sort().join('\0'))fail(RangeError,CTX,'/candidateDrafts','noncanonical-order');for(const row of rows){if(!ID_PATTERN.test(row[0])||row.length!==3||row[1].length!==3||row[1][2].length!==4||row[2].length!==4||row[2].map(x=>x[0]).join(',')!==SOURCE_KEYS.join(','))fail(RangeError,CTX,'/candidateDrafts','tuple-mismatch');for(const field of row[2]){if(typeof field[1]!=='string'||!Number.isFinite(field[2])||Object.is(field[2],-0))fail(RangeError,CTX,'/candidateDrafts','candidate-value-mismatch');}}}const a=new Map(aRows.map(row=>[row[0],row])),b=new Map(bRows.map(row=>[row[0],row]));if(a.size!==206||b.size!==206||[...a.keys()].join('\0')!==[...b.keys()].join('\0'))fail(RangeError,CTX,'/candidateDrafts','candidate-set-mismatch');const observations=[...a.keys()].sort().map(id=>{const ar=a.get(id)!,br=b.get(id)!;if(canonicalizeForOracle(ar[1])!==canonicalizeForOracle(br[1]))fail(RangeError,CTX,'/candidateDrafts','locator-mismatch');return [id,ar[2].map((field,i)=>comparedField(field[0], [field[1],field[2]], [br[2][i]![1],br[2][i]![2]]))];});return {schemaVersion:'snow-crystal-source-comparison-set-hash-preimage/1',sourcePdfSha256:PDF,transcriberASetSha256:digest(candidatePreimage('A',aRows)),transcriberBSetSha256:digest(candidatePreimage('B',bRows)),observations};}
+function candidateRowsFromCorpus(corpus:Obj, side:'transcriberA'|'transcriberB', c=CTX):CandidateRow[]{
+  const rows=array(corpus.observations).map((value,index)=>{const observation=object(value),id=string(observation.sourceObservationId,c,`/observations/${index}/sourceObservationId`),l=object(observation.locator),t=object(observation.transcription),draft=object(t[side]);const locator:[number,number,[number,number,number,number]]=[number(l.pdfPage,c,`/observations/${index}/locator/pdfPage`),number(l.pagePanelOrdinal,c,`/observations/${index}/locator/pagePanelOrdinal`),array(l.panelBoundsPdfPt).map((n,i)=>number(n,c,`/observations/${index}/locator/panelBoundsPdfPt/${i}`)) as [number,number,number,number]];const fields=SOURCE_KEYS.map(key=>{const vote=object(draft[key],c,`/observations/${index}/transcription/${side}/${key}`);return [key,string(vote.raw,c,''),number(vote.normalized,c,'')] as [string,string,number];}) as CandidateRow[2];return [id,locator,fields] as CandidateRow;});
+  if(rows.length!==206)fail(RangeError,c,'/observations','wrong-count');if(rows.map(row=>row[0]).join('\0')!==rows.map(row=>row[0]).sort().join('\0'))fail(RangeError,c,'/observations','noncanonical-order');for(const row of rows){if(row[2].length!==4||row[2].map(x=>x[0]).join(',')!==SOURCE_KEYS.join(','))fail(RangeError,c,'/transcription','tuple-mismatch');}return rows;
+}
+function verifyFrozenCandidates(audit:Obj, corpus:Obj, c=CTX):void {
+  const drafts=object(audit.candidateDrafts),aRows=candidateRowsFromCorpus(corpus,'transcriberA',c),bRows=candidateRowsFromCorpus(corpus,'transcriberB',c),comparison=comparisonPreimage(aRows,bRows),rows=array(comparison.observations);equal(drafts.eachDraftObservationCount,206,c,'/candidateDrafts/eachDraftObservationCount','wrong-count');equal(drafts.transcriberASetSha256,digest(candidatePreimage('A',aRows)),c,'/candidateDrafts/transcriberASetSha256','hash-mismatch');equal(drafts.transcriberBSetSha256,digest(candidatePreimage('B',bRows)),c,'/candidateDrafts/transcriberBSetSha256','hash-mismatch');equal(drafts.comparisonSetSha256,digest(comparison),c,'/candidateDrafts/comparisonSetSha256','hash-mismatch');equal(drafts.transcriberASetSha256,CANDIDATE_A,c,'/candidateDrafts/transcriberASetSha256','fixed-hash-mismatch');equal(drafts.transcriberBSetSha256,CANDIDATE_B,c,'/candidateDrafts/transcriberBSetSha256','fixed-hash-mismatch');equal(drafts.comparisonSetSha256,COMPARISON,c,'/candidateDrafts/comparisonSetSha256','fixed-hash-mismatch');
+  const totals={exact:0,canonical:0,different:0};for(const row of rows){const fields=array(array(row)[1]);if(fields.length!==4)fail(RangeError,c,'/candidateDrafts','tuple-mismatch');for(const field of fields){const kind=array(field)[3];if(kind==='exact')totals.exact++;else if(kind==='canonical-unit-equivalent')totals.canonical++;else if(kind==='different')totals.different++;else fail(RangeError,c,'/candidateDrafts','unknown-comparison');}}
+  if(totals.exact!==618||totals.canonical!==206||totals.different!==0)fail(RangeError,c,'/candidateDrafts','comparison-count-mismatch');
+}
+function binary64Bits(n:number):string {const bytes=new Uint8Array(8),view=new DataView(bytes.buffer);view.setFloat64(0,n,false);return [...bytes].map(x=>x.toString(16).padStart(2,'0')).join('');}
+const BACKUP_HASH='9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c';
+const MIGRATED_HASH='92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5';
+const BACKUP_RAW_KEYS=['rawTemperature','rawSupersaturation','rawGrowthTime','rawSquareFieldOfView'];
+const migrationIds=():string[]=>Array.from({length:32},(_,i)=>`L23-F2-P11-N${String(i+1).padStart(3,'0')}`);
+const codeUnits=(s:string):number[]=>Array.from({length:s.length},(_,i)=>s.charCodeAt(i));
+const utf8=(s:string):number[]=>[...new TextEncoder().encode(s)];
+function samePair(raw:string,n:number,expectedRaw:string,expectedN:number):boolean {
+  return raw===expectedRaw&&JSON.stringify(codeUnits(raw))===JSON.stringify(codeUnits(expectedRaw))&&JSON.stringify(utf8(raw))===JSON.stringify(utf8(expectedRaw))&&Object.is(n,expectedN)&&binary64Bits(n)===binary64Bits(expectedN);
+}
+function sourceTupleFingerprint(o:Obj):Json[] {
+  return SOURCE_KEYS.map((key,i)=>{const raw=string(object(o.rawLabels)[key]),n=number(object(o.normalizedSourceValues)[NORMAL_KEYS[i]!]);return [codeUnits(raw),utf8(raw),binary64Bits(n)];});
+}
+function readPriorCaptureForOracle(bytes:Uint8Array,expectedHash=BACKUP_HASH,c=CTX):Obj {
+  if(sha(bytes)!==expectedHash)fail(RangeError,c,'/sourceFileSha256','backup-hash-mismatch');
+  return object(parseJsonRejectingDuplicateKeys(new TextDecoder('utf-8',{fatal:true}).decode(bytes),c.file));
+}
+function migratePriorCaptureForOracle(backup:Obj,aRows:CandidateRow[],bRows:CandidateRow[],locators:Map<string,CandidateRow[1]>,state:Map<string,Obj>,manifest:Obj,recordedAtUtc:string,c=CTX):void {
+  // The caller first authenticates raw file bytes. This content stage is separately
+  // exercised with SYN-MIGRATION, including non-JSON numbers and late failures.
+  migrationRule(manifest,c,'/priorHumanCaptureMigration');utc(recordedAtUtc,c,'/verificationRecordedAtUtc');
+  keys(backup,['version','role','entries'],c);literal(1,'backup-version-mismatch')(backup.version,c,'/version');literal('human-source-auditor','backup-role-mismatch')(backup.role,c,'/role');
+  const entries=object(backup.entries,c,'/entries'),expectedKeys=Array.from({length:33},(_,i)=>`P11-N${String(i+1).padStart(3,'0')}`);
+  if(Object.keys(entries).length!==33)fail(RangeError,c,'/entries','wrong-count');
+  for(const key of Object.keys(entries))if(!expectedKeys.includes(key))fail(RangeError,c,at('/entries',key),'unknown-backup-id');
+  const a=new Map(aRows.map(row=>[row[0],row])),b=new Map(bRows.map(row=>[row[0],row]));
+  if(a.size!==aRows.length||b.size!==bRows.length)fail(RangeError,c,'/candidateDrafts','duplicate-id');
+  const next:Obj[]=[];
+  for(const [index,key]of expectedKeys.entries()){
+    const q=at('/entries',key),entry=keys(entries[key],[...BACKUP_RAW_KEYS,...NORMAL_KEYS,'confirmed'],c,q),id=`L23-F2-${key}`;
+    bool(entry.confirmed,c,at(q,'confirmed'));
+    if(index===32){
+      if(entry.confirmed!==false)fail(RangeError,c,q,'incomplete-migrated');
+      if(BACKUP_RAW_KEYS.some(k=>entry[k]!=='')||NORMAL_KEYS.some(k=>entry[k]!==null))fail(RangeError,c,q,'incomplete-entry-filled');
+      continue;
+    }
+    if(entry.confirmed!==true)fail(RangeError,c,at(q,'confirmed'),'not-confirmed');
+    if(state.has(id))fail(RangeError,c,q,'migration-conflict');
+    const ar=a.get(id),br=b.get(id),l=locators.get(id);
+    if(!ar||!br||!l)fail(RangeError,c,q,'unknown-candidate-id');
+    equal(ar[1],l,c,q,'locator-mismatch');equal(br[1],l,c,q,'locator-mismatch');
+    const raw:Obj={},n:Obj={};
+    for(const [i,name]of SOURCE_KEYS.entries()){
+      const r=string(entry[BACKUP_RAW_KEYS[i]!],c,at(q,BACKUP_RAW_KEYS[i]!)),value=number(entry[NORMAL_KEYS[i]!],c,at(q,NORMAL_KEYS[i]!));
+      if(!Object.is(decimalUnit(r,name,c,at(q,BACKUP_RAW_KEYS[i]!)),value))fail(RangeError,c,q,'unit-mismatch');
+      if(!Object.is(value,ar[2][i]![2])||!Object.is(value,br[2][i]![2])||binary64Bits(value)!==binary64Bits(ar[2][i]![2])||binary64Bits(value)!==binary64Bits(br[2][i]![2]))fail(RangeError,c,q,'candidate-normalized-mismatch');
+      if(r!==ar[2][i]![1]&&r!==br[2][i]![1])fail(RangeError,c,q,'candidate-raw-mismatch');
+      raw[name]=r;n[NORMAL_KEYS[i]!]=value;
+    }
+    const inside=number(n.temperatureC)>=-30&&number(n.temperatureC)<=0&&number(n.supersaturationPct)>=0&&number(n.supersaturationPct)<=30;
+    n.inProductDomain=inside;n.exclusionReason=inside?null:'outside-product-domain';
+    next.push({sourceObservationId:id,locator:{pdfPage:l[0],pagePanelOrdinal:l[1],panelBoundsPdfPt:clone(l[2])},rawLabels:raw,normalizedSourceValues:n,verification:{sourcePanelInspected:true,fields:Object.fromEntries(SOURCE_KEYS.map((name,i)=>[name,{candidateComparison:array(comparedField(name,[ar[2][i]![1],ar[2][i]![2]],[br[2][i]![1],br[2][i]![2]]))[3]!,humanAction:'preserved-prior-human-confirmation',humanConfirmedRawAndNormalized:true,rationale:null}])),verifiedByRole:'human-source-auditor',verificationRecordedAtUtc:recordedAtUtc}});
+  }
+  equal(next.map(x=>x.sourceObservationId!),migrationIds(),c,'/entries','migration-id-set-mismatch');
+  equal(digest(next.map(x=>x.sourceObservationId!)),manifest.migratedConfirmedIdSetSha256!,c,'/entries','migration-id-set-mismatch');
+  // Commit only after every entry, including the final incomplete one, passes.
+  next.forEach(item=>auditEntry(item,c));
+  for(const item of next)state.set(string(item.sourceObservationId),clone(item));
+}
+function migrateAuthenticatedPriorCaptureForOracle(bytes:Uint8Array,aRows:CandidateRow[],bRows:CandidateRow[],locators:Map<string,CandidateRow[1]>,state:Map<string,Obj>,manifest:Obj,recordedAtUtc:string,expectedRawHash=BACKUP_HASH):void {
+  migratePriorCaptureForOracle(readPriorCaptureForOracle(bytes,expectedRawHash),aRows,bRows,locators,state,manifest,recordedAtUtc);
+}
+type VerificationEvent={sourcePanelVisibleAt:number;candidateVisibleAt:number;sourcePdfSha256:string;sourceLocator:CandidateRow[1];explicitRawAction:boolean;explicitNormalizedAction:boolean;persisted:boolean;origin:'prior'|'new'};
+type WorkflowState={aRows:CandidateRow[];bRows:CandidateRow[];aFrozen:boolean;bFrozen:boolean;comparisonFrozen:boolean;drafts:Obj;migrationManifest:Obj;priorCaptureBytes:Uint8Array;priorCaptureHash:string;sourceLocators:Map<string,CandidateRow[1]>;migrationRecordedAtUtc:string;migrated:Map<string,Obj>;events:Array<[string,VerificationEvent]>;entries:Map<string,Obj>;exported:boolean};
+function workflowBindings(state:WorkflowState):ActionBindings {
+  if(!state.aFrozen||!state.bFrozen||!state.comparisonFrozen)fail(RangeError,CTX,'/candidateDrafts','candidates-not-frozen');
+  if(state.aRows.length!==206||state.bRows.length!==206)fail(RangeError,CTX,'/candidateDrafts','wrong-count');
+  const comparison=comparisonPreimage(state.aRows,state.bRows);
+  for(const [name,actual,expected]of [['transcriberASetSha256',digest(candidatePreimage('A',state.aRows)),CANDIDATE_A],['transcriberBSetSha256',digest(candidatePreimage('B',state.bRows)),CANDIDATE_B],['comparisonSetSha256',digest(comparison),COMPARISON]] as const){
+    equal(state.drafts[name],actual,CTX,`/candidateDrafts/${name}`,'hash-mismatch');equal(actual,expected,CTX,`/candidateDrafts/${name}`,'fixed-hash-mismatch');
+  }
+  equal(state.drafts.eachDraftObservationCount,206,CTX,'/candidateDrafts/eachDraftObservationCount','wrong-count');migrationRule(state.migrationManifest,CTX,'/priorHumanCaptureMigration');
+  equal([...state.migrated.keys()].sort(),migrationIds(),CTX,'/migration','migration-id-set-mismatch');
+  const original=new Map<string,Obj>();migrateAuthenticatedPriorCaptureForOracle(state.priorCaptureBytes,state.aRows,state.bRows,state.sourceLocators,original,state.migrationManifest,state.migrationRecordedAtUtc,state.priorCaptureHash);
+  equal([...state.migrated], [...original],CTX,'/migration','migration-copy-mismatch');
+  return {comparison:new Map(array(comparison.observations).map(row=>[string(array(row)[0]),array(array(row)[1])])),prior:state.migrated};
+}
+function verifyHumanWorkflow(state:WorkflowState,readDuringVerification:()=>unknown):void {
+  const bindings=workflowBindings(state),ids=[...bindings.comparison.keys()],expected=new Set(ids.flatMap(id=>SOURCE_KEYS.map(field=>`${id}/${field}`)));
+  const counts=new Map<string,number>();
+  for(const [key]of state.events){
+    if(!expected.has(key))fail(RangeError,CTX,'/verification','unknown-panel-or-field');
+    counts.set(key,(counts.get(key)??0)+1);
+  }
+  for(const count of counts.values())if(count!==1)fail(RangeError,CTX,'/verification','duplicate-human-verification');
+  for(const key of expected)if(counts.get(key)!==1)fail(RangeError,CTX,'/verification','incomplete-human-verification');
+  equal([...state.entries.keys()].sort(),ids,CTX,'/verification','incomplete-human-verification');
+  for(const [key,event]of state.events){
+    const id=key.slice(0,key.lastIndexOf('/')),prior=bindings.prior.has(id);
+    if(event.origin!==(prior?'prior':'new'))fail(RangeError,CTX,'/verification','confirmation-origin-mismatch');
+    equal(event.sourcePdfSha256,PDF,CTX,'/verification','source-pdf-mismatch');
+    const row=state.aRows.find(row=>row[0]===id)!;
+    equal(event.sourceLocator,row[1],CTX,'/verification','source-locator-mismatch');
+    equal(object(state.entries.get(id)!.locator),{pdfPage:row[1][0],pagePanelOrdinal:row[1][1],panelBoundsPdfPt:row[1][2]},CTX,'/verification','source-locator-mismatch');
+    if(!Number.isFinite(event.sourcePanelVisibleAt)||!Number.isFinite(event.candidateVisibleAt)||event.sourcePanelVisibleAt>event.candidateVisibleAt)fail(RangeError,CTX,'/verification','pdf-not-visible-with-candidate');
+    if(event.explicitRawAction!==true||event.explicitNormalizedAction!==true)fail(RangeError,CTX,'/verification','incomplete-human-verification');
+    if(event.persisted!==true)fail(RangeError,CTX,'/verification','unsaved-human-verification');
+  }
+  for(const id of ids)auditEntry(state.entries.get(id),CTX,'',bindings);
+  expect(readDuringVerification).not.toHaveBeenCalled();
+}
+function exportVerifiedAudit(state:WorkflowState,reader:()=>unknown):Obj {
+  verifyHumanWorkflow(state,reader);const exported:Obj={observations:[...state.entries.values()].map(clone)};state.exported=true;expect(reader).not.toHaveBeenCalled();return exported;
+}
+function verifyExportedAuditAgainstCorpus(exported:Obj,readAfterExport:()=>Obj):void {
+  const corpus=readAfterExport();sourceJoin(array(corpus.observations).map(objectValue=>object(objectValue)),array(exported.observations).map(objectValue=>object(objectValue)));
 }
 
 const PREFIX='snow-crystal-sim/T1-7/split-v1\0';
@@ -474,13 +655,13 @@ function artifactBoundary(names:string[],contents:string[],directories:string[]=
   if(directories.length||contents.some(s=>/data:[^\s]*;base64,|JVBERi0|iVBORw0KGgo|\/9j\/|\"(?:pixels|maskBytes|imageData|base64)\"\s*:/.test(s)))fail(RangeError,CTX,'/artifacts','artifact-boundary');
 }
 
-const FREEZE_ORDER=['source-ab-sealed','independent-audit-sealed','source-compared','source-and-assignment-frozen','annotations-approved','corpus-frozen','audit-approved','references-frozen'];
-function freezeOrder(stages:string[],before:Obj,after:Obj):void {equal(stages,FREEZE_ORDER,CTX,'/freeze','freeze-order');equal(canonicalizeForOracle(after),canonicalizeForOracle(before),CTX,'/assignment','stale');}
+const SOURCE_AUDIT_SEQUENCE=['candidate-a-frozen','candidate-b-frozen','comparison-frozen','backup-hash-verified','migrated-id-set-frozen','human-source-confirmed','source-and-assignment-frozen','annotations-approved','corpus-frozen','audit-approved','references-frozen'];
+function sourceAuditSequence(stages:string[],before:Obj,after:Obj):void {equal(stages,SOURCE_AUDIT_SEQUENCE,CTX,'/freeze','freeze-order');equal(canonicalizeForOracle(after),canonicalizeForOracle(before),CTX,'/assignment','stale');}
 function acyclic(graph:Record<string,string[]>):void {
   const active=new Set<string>(),done=new Set<string>();const visit=(v:string):void=>{if(active.has(v))fail(RangeError,CTX,'/hashDependencies','cyclic-hash');if(done.has(v))return;active.add(v);for(const next of graph[v]??[])visit(next);active.delete(v);done.add(v);};Object.keys(graph).forEach(visit);
 }
-const HASH_GRAPH:Record<string,string[]>={source:['assignment','sourceEntryHash'],assignment:['assignmentHash'],sourceEntryHash:['auditPayload'],assignmentHash:['auditPayload'],corpus:['corpusHash'],corpusHash:['auditPayload'],auditPayload:['auditApproval'],auditApproval:['auditObject'],auditObject:['split','protocol'],split:['protocol'],protocol:['review','red','green','calibration']};
-function staleFrom(node:string):Set<string>{const out=new Set<string>();const visit=(n:string)=>{for(const x of HASH_GRAPH[n]??[])if(!out.has(x)){out.add(x);visit(x);}};visit(node);return out;}
+const SOURCE_AUDIT_DEPENDENCIES:Record<string,string[]>={candidateA:['comparison'],candidateB:['comparison'],comparison:['humanConfirmedSource'],backup:['migratedIdSet','humanConfirmedSource'],migratedIdSet:['humanConfirmedSource'],humanConfirmedSource:['sourceEntryHash','assignment'],sourceEntryHash:['auditPayload'],assignment:['assignmentHash'],assignmentHash:['auditPayload'],corpus:['corpusHash'],corpusHash:['auditPayload'],auditPayload:['auditApproval'],auditApproval:['auditObject'],auditObject:['split','protocol'],split:['protocol'],protocol:['review','red','green','calibration']};
+function staleFromSourceAudit(node:string):Set<string>{const out=new Set<string>();const visit=(n:string)=>{for(const x of SOURCE_AUDIT_DEPENDENCIES[n]??[])if(!out.has(x)){out.add(x);visit(x);}};visit(node);return out;}
 
 function assertError(run:()=>unknown,C:ErrorClass,p:string,reason:string,id?:string):Error {
   let error:unknown;try{run();}catch(e){error=e;}
@@ -521,6 +702,42 @@ const SYN_EA:Obj={rasterWidthPx:11,rasterHeightPx:11,maskStatus:'usable',maskUsa
 const SYN_EB:Obj={...clone(SYN_EA),maskSha256:'a0a7f65a1e81907621d6dc7c9acd606e445022041cd91ac82af733f3f73e37a1',foregroundPixelCount:9,fourNeighborPerimeterEdges:12,populationCovariancePx2:{xx:1,xy:0,yy:4},eigenvaluesPx2:[1,4],armEndpointsClockwisePx:[[10.5,5.5],[8.5,9.5],[2.5,9.5],[0.5,5.5],[2.5,1.5],[8.5,1.5]],rawNormalizedArmLengthCv:0,rawMinorMajorAxisRatio:0.5};
 const SYN_PROJECTED:Obj={status:'usable',inverseCircularity:{low:1.2732395447351628,high:1.2732395447351628},normalizedArmLengthCv:{low:0,high:0.051582744513315945},minorMajorAxisRatio:{low:0.5,high:1},reason:null,extractionA:SYN_EA,extractionB:SYN_EB,auditStatus:'agreed',adjudicationNote:null,extractionProtocolId:'figure2-projection-v1'};
 function schemaOnlyCorpus():Obj {return {schemaVersion:'snow-crystal-observation-corpus/1',corpusId:CORPUS_ID,source:clone(SOURCE),observations:[clone(SYN_OBSERVATION)],annotationApprovals:[clone(SYN_APPROVAL)]};}
+function comparisonMap(aRows:CandidateRow[],bRows:CandidateRow[]):Map<string,Json[]> {
+  const b=new Map(bRows.map(row=>[row[0],row]));
+  return new Map(aRows.map(row=>[row[0],row[2].map((field,i)=>{const other=b.get(row[0])![2][i]!;return comparedField(field[0],[field[1],field[2]],[other[1],other[2]]);})]));
+}
+function syntheticBackup(aRows:CandidateRow[]):Obj {
+  const entries:Obj={};
+  for(const id of migrationIds()){
+    const row=aRows.find(row=>row[0]===id)!;
+    entries[id.slice('L23-F2-'.length)]={...Object.fromEntries(BACKUP_RAW_KEYS.map((key,i)=>[key,row[2][i]![1]])),...Object.fromEntries(NORMAL_KEYS.map((key,i)=>[key,row[2][i]![2]])),confirmed:true};
+  }
+  entries['P11-N033']={...Object.fromEntries(BACKUP_RAW_KEYS.map(key=>[key,''])),...Object.fromEntries(NORMAL_KEYS.map(key=>[key,null])),confirmed:false};
+  return {version:1,role:'human-source-auditor',entries};
+}
+function syntheticMigrationFixture(){
+  const aRows:CandidateRow[]=Array.from({length:33},(_,i)=>[`L23-F2-P11-N${String(i+1).padStart(3,'0')}`,[11,i+1,[10+(i%8)*40,20+Math.floor(i/8)*50,30,40]],[['temperature','-3C',-3],['supersaturation','150%',150],['growthTime','82sec',82],['squareFieldOfView','1164μm',1164]]]);
+  const bRows=clone(aRows);for(const row of bRows)row[2][3][1]='1164µm';
+  const backup=syntheticBackup(aRows),locators=new Map(aRows.map(row=>[row[0],clone(row[1])])),manifest=clone(object(SYN_AUDIT_STRUCTURE.priorHumanCaptureMigration)),recordedAtUtc='2026-10-09T00:00:00Z';
+  return {aRows,bRows,backup,locators,manifest,recordedAtUtc};
+}
+function entryFromCandidate(row:CandidateRow[],id:string,comparisons:Map<string,Json[]>):Obj {
+  const candidate=row.find(row=>row[0]===id)!,l=candidate[1],fields=comparisons.get(id)!,raw:Obj={},n:Obj={};
+  SOURCE_KEYS.forEach((key,i)=>{const pair=array(array(fields[i])[4]);raw[key]=pair[0]!;n[NORMAL_KEYS[i]!]=pair[1]!;});
+  const inside=number(n.temperatureC)>=-30&&number(n.temperatureC)<=0&&number(n.supersaturationPct)>=0&&number(n.supersaturationPct)<=30;n.inProductDomain=inside;n.exclusionReason=inside?null:'outside-product-domain';
+  return {sourceObservationId:id,locator:{pdfPage:l[0],pagePanelOrdinal:l[1],panelBoundsPdfPt:clone(l[2])},rawLabels:raw,normalizedSourceValues:n,verification:{sourcePanelInspected:true,fields:Object.fromEntries(SOURCE_KEYS.map((key,i)=>[key,{candidateComparison:array(fields[i])[3]!,humanAction:'confirmed-proposal',humanConfirmedRawAndNormalized:true,rationale:null}])),verifiedByRole:'human-source-auditor',verificationRecordedAtUtc:'2026-10-09T00:00:01Z'}};
+}
+function humanWorkflowFixture():WorkflowState {
+  const aRows=frozenCandidateRows(),bRows=clone(aRows);for(const row of bRows)row[2][3][1]=canonicalFovRaw(row[2][3][1]);
+  // Synthetic capture with the real candidate layout, NOT the original backup.
+  // Only the one-time human-backup gate can authenticate BACKUP_HASH.
+  const backup=syntheticBackup(aRows),priorCaptureBytes=new TextEncoder().encode(JSON.stringify(backup)),priorCaptureHash=sha(priorCaptureBytes),sourceLocators=new Map(aRows.map(row=>[row[0],clone(row[1])])),migrationManifest=clone(object(SYN_AUDIT_STRUCTURE.priorHumanCaptureMigration)),migrationRecordedAtUtc='2026-10-09T00:00:00Z',migrated=new Map<string,Obj>();
+  migrateAuthenticatedPriorCaptureForOracle(priorCaptureBytes,aRows,bRows,sourceLocators,migrated,migrationManifest,migrationRecordedAtUtc,priorCaptureHash);
+  const comparisons=comparisonMap(aRows,bRows),events:Array<[string,VerificationEvent]>=[],entries=new Map<string,Obj>();
+  for(const row of aRows){const prior=migrated.get(row[0]);entries.set(row[0],prior?clone(prior):entryFromCandidate(aRows,row[0],comparisons));for(const field of SOURCE_KEYS)events.push([`${row[0]}/${field}`,{sourcePanelVisibleAt:1,candidateVisibleAt:2,sourcePdfSha256:PDF,sourceLocator:clone(row[1]),explicitRawAction:true,explicitNormalizedAction:true,persisted:true,origin:prior?'prior':'new'}]);}
+  return {aRows,bRows,aFrozen:true,bFrozen:true,comparisonFrozen:true,drafts:clone(object(SYN_AUDIT_STRUCTURE.candidateDrafts)),migrationManifest,priorCaptureBytes,priorCaptureHash,sourceLocators,migrationRecordedAtUtc,migrated,events,entries,exported:false};
+}
+function workflowEvent(state:WorkflowState,key:string):VerificationEvent {return state.events.find(([eventKey])=>eventKey===key)![1];}
 
 beforeAll(()=>{vi.stubGlobal('fetch',()=>{throw new Error('network forbidden in T1-7');});});
 afterAll(()=>{vi.unstubAllGlobals();});
@@ -682,7 +899,7 @@ describe('TC-SHAPE synthetic extraction contract',()=>{
 
 // Structural audit fixture only. It deliberately has one entry and is NEVER passed as
 // a positive SourceAuditV1/REAL206 oracle. Capture independence is a human process gate.
-const SYN_AUDIT_STRUCTURE:Obj={schemaVersion:'snow-crystal-source-audit/1',corpusId:CORPUS_ID,sourcePdfSha256:PDF,auditMethod,pages:[{pdfPage:11,panelCount:1,sourceObservationIds:[ID]},{pdfPage:12,panelCount:0,sourceObservationIds:[]},{pdfPage:13,panelCount:0,sourceObservationIds:[]},{pdfPage:14,panelCount:0,sourceObservationIds:[]}],observations:[SYN_AUDIT_ENTRY],sourceEntrySetSha256:digest([SYN_AUDIT_ENTRY]),preAnnotationSplitAssignmentSha256:digest(SYN_ASSIGNMENT),canonicalCorpusSha256:digest(schemaOnlyCorpus()),auditPayloadSha256:'0'.repeat(64),approval:{decision:'approved',approverRole:'human-source-auditor',sourcePdfSha256:PDF,sourceEntrySetSha256:digest([SYN_AUDIT_ENTRY]),canonicalCorpusSha256:digest(schemaOnlyCorpus()),auditPayloadSha256:'0'.repeat(64),approvedAtUtc:'2026-09-29T12:00:00Z',note:null}};
+const SYN_AUDIT_STRUCTURE:Obj={schemaVersion:'snow-crystal-source-audit/1',corpusId:CORPUS_ID,sourcePdfSha256:PDF,auditMethod,candidateDrafts:{transcriberASetSha256:CANDIDATE_A,transcriberBSetSha256:CANDIDATE_B,comparisonSetSha256:COMPARISON,eachDraftObservationCount:206},priorHumanCaptureMigration:{sourceKind:'local-storage-human-source-audit-draft/1',sourceFileSha256:'9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c',entryObjectCount:33,migratedConfirmedCompleteCount:32,incompleteSourceObservationIds:['P11-N033'],migratedConfirmedIdSetSha256:'92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5',confirmedValuesOverwrittenDuringMigration:false,originalVerificationTimeKnown:false},pages:[{pdfPage:11,panelCount:1,sourceObservationIds:[ID]},{pdfPage:12,panelCount:0,sourceObservationIds:[]},{pdfPage:13,panelCount:0,sourceObservationIds:[]},{pdfPage:14,panelCount:0,sourceObservationIds:[]}],observations:[SYN_AUDIT_ENTRY],sourceEntrySetSha256:digest([SYN_AUDIT_ENTRY]),preAnnotationSplitAssignmentSha256:digest(SYN_ASSIGNMENT),canonicalCorpusSha256:digest(schemaOnlyCorpus()),auditPayloadSha256:'0'.repeat(64),approval:{decision:'approved',approverRole:'human-source-auditor',sourcePdfSha256:PDF,sourceEntrySetSha256:digest([SYN_AUDIT_ENTRY]),canonicalCorpusSha256:digest(schemaOnlyCorpus()),auditPayloadSha256:'0'.repeat(64),approvedAtUtc:'2026-10-08T12:00:00Z',note:null}};
 SYN_AUDIT_STRUCTURE.auditPayloadSha256=digest(without(SYN_AUDIT_STRUCTURE,'auditPayloadSha256','approval'));object(SYN_AUDIT_STRUCTURE.approval).auditPayloadSha256=SYN_AUDIT_STRUCTURE.auditPayloadSha256;
 
 describe('TC-SOURCE-AUDIT synthetic components; REAL206 alone is the source oracle',()=>{
@@ -691,34 +908,194 @@ describe('TC-SOURCE-AUDIT synthetic components; REAL206 alone is the source orac
     assertError(()=>validateSourceAuditV1(SYN_AUDIT_STRUCTURE,schemaOnlyCorpus(),SYN_ASSIGNMENT),RangeError,'/observations','wrong-count');
     for(const n of [205,207])assertError(()=>validateSourceAuditV1({...SYN_AUDIT_STRUCTURE,observations:Array(n).fill(SYN_AUDIT_ENTRY)},schemaOnlyCorpus(),SYN_ASSIGNMENT),RangeError,'/observations','wrong-count');
   });
-  it('TC-SOURCE-AUDIT-002 synthetic source-only independent literals join all fields and reject one-sided edits',()=>{
-    sourceJoin([SYN_OBSERVATION],[SYN_AUDIT_ENTRY]);
-    for(const {path,value}of walk(SYN_AUDIT_ENTRY).filter(x=>x.path.length&&x.value!==null&&typeof x.value!=='object')){
-      const replacement:Json=typeof value==='string'?`${value}x`:typeof value==='number'?value+1:!value;
-      expect(()=>sourceJoin([SYN_OBSERVATION],[edit(SYN_AUDIT_ENTRY,path,replacement)])).toThrow(RangeError);
-    }
-    expect(()=>sourceJoin([SYN_OBSERVATION],[])).toThrow(RangeError);
-    expect(()=>sourceJoin([SYN_OBSERVATION],[SYN_AUDIT_ENTRY,SYN_AUDIT_ENTRY])).toThrow(RangeError);
-    const changed=edit(SYN_OBSERVATION,['rawLabels','temperature'],'-15.00 °C');expect(()=>sourceJoin([changed],[SYN_AUDIT_ENTRY])).toThrow(RangeError);
+  it('TC-SOURCE-AUDIT-002 preserves A/B JCS tuples and limits mu canonicalization',()=>{
+    expect(CANDIDATE_A).toBe('de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732');expect(CANDIDATE_B).toBe('b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3');expect(COMPARISON).toBe('33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9');
+    const a:['123μm',number]=['123μm',123],b:['123µm',number]=['123µm',123];
+    expect(comparedField('squareFieldOfView',a,b)).toEqual(['squareFieldOfView',a,b,'canonical-unit-equivalent',['123µm',123]]);
+    expect(comparedField('squareFieldOfView',['123μm',123],['123μm',123])).toEqual(['squareFieldOfView',['123μm',123],['123μm',123],'exact',['123µm',123]]);
+    for(const pair of [[['-3μC',-3],['-3µC',-3]],[['123μm ',123],['123µm ',123]],[['μ123m',123],['µ123m',123]]] as Array<[[string,number],[string,number]]>)expect(array(comparedField('squareFieldOfView',pair[0],pair[1]))[3]).toBe('different');
+    expect(array(comparedField('temperature',['-3μC',-3],['-3µC',-3]))[4]).toBeNull();
+    const row:CandidateRow=[ID,[11,1,[10,20,30,40]],[['temperature','-15.0 °C',-15],['supersaturation','12.5 %',12.5],['growthTime','2 min',120],['squareFieldOfView','0.40 mm',400]]];
+    expect(candidatePreimage('A',[row])).toEqual({schemaVersion:'snow-crystal-source-candidate-set-hash-preimage/1',sourcePdfSha256:PDF,transcriberRole:'A',observations:[row]});
+    expect(digest(candidatePreimage('A',[row]))).not.toBe(digest(candidatePreimage('B',[row])));
+    expect(()=>comparisonPreimage([row],[row])).toThrow(RangeError);
   });
-  it('TC-SOURCE-AUDIT-002 synthetic page identity, four independent hash bindings and approval references',()=>{
+  it('TC-SOURCE-AUDIT-002 executes the frozen 206 A/B/comparison evidence and reaches each tuple guard',()=>{
+    const aRows=frozenCandidateRows(),bRows=clone(aRows);for(const row of bRows)row[2][3]![1]=String(row[2][3]![1]).replace(/μm$/u,'µm');
+    expect(aRows).toHaveLength(206);expect(digest(candidatePreimage('A',aRows))).toBe(CANDIDATE_A);expect(digest(candidatePreimage('B',bRows))).toBe(CANDIDATE_B);const comparison=comparisonPreimage(aRows,bRows);expect(digest(comparison)).toBe(COMPARISON);const kinds=array(comparison.observations).flatMap(row=>array(array(row)[1]).map(field=>array(field)[3]));expect(kinds.filter(x=>x==='exact')).toHaveLength(618);expect(kinds.filter(x=>x==='canonical-unit-equivalent')).toHaveLength(206);expect(kinds.filter(x=>x==='different')).toHaveLength(0);
+    for(const bad of [edit(aRows,[0,0],'L23-F2-P11-N999'),edit(aRows,[0,1,0],12),edit(aRows,[0,2,0,0],'wrong'),edit(aRows,[0,2,0],['growthTime','-3C',-3]),edit(aRows,[0,2,0,1],-4)])expect(()=>comparisonPreimage(bad as CandidateRow[],bRows)).toThrow(RangeError);
+  });
+  it('TC-SOURCE-AUDIT-003 preserves the 32 human entries and rejects accidental overwrite',()=>{
+    expect(SYN_AUDIT_STRUCTURE.priorHumanCaptureMigration).toMatchObject({entryObjectCount:33,migratedConfirmedCompleteCount:32,incompleteSourceObservationIds:['P11-N033'],confirmedValuesOverwrittenDuringMigration:false,originalVerificationTimeKnown:false});
+    expect(digest(Array.from({length:32},(_,i)=>`L23-F2-P11-N${String(i+1).padStart(3,'0')}`))).toBe('92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5');
+    const prior=clone(SYN_AUDIT_ENTRY);object(prior.verification).fields=Object.fromEntries(SOURCE_KEYS.map(k=>[k,{candidateComparison:'exact',humanAction:'preserved-prior-human-confirmation',humanConfirmedRawAndNormalized:true,rationale:null}]));auditEntry(prior);
+    expect(()=>auditEntry(edit(prior,['rawLabels','squareFieldOfView'],'0.41 mm'))).toThrow(RangeError);
+  });
+  it('TC-SOURCE-AUDIT-003 migrates only the byte-identical 32 confirmed backup entries atomically',()=>{
+    const f=syntheticMigrationFixture(),state=new Map<string,Obj>(),before=clone(f.backup);
+    const bytes=new TextEncoder().encode(JSON.stringify(f.backup)),syntheticHash=sha(bytes);
+    expect(BACKUP_HASH).toBe('9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c');
+    assertError(()=>readPriorCaptureForOracle(bytes),RangeError,'/sourceFileSha256','backup-hash-mismatch');
+    const parsed=readPriorCaptureForOracle(bytes,syntheticHash);
+    assertError(()=>readPriorCaptureForOracle(new TextEncoder().encode(JSON.stringify(edit(f.backup,['entries','P11-N001','rawSquareFieldOfView'],'1164µm'))),syntheticHash),RangeError,'/sourceFileSha256','backup-hash-mismatch');
+    const hashFailureState=new Map<string,Obj>();assertError(()=>migrateAuthenticatedPriorCaptureForOracle(bytes,f.aRows,f.bRows,f.locators,hashFailureState,f.manifest,f.recordedAtUtc),RangeError,'/sourceFileSha256','backup-hash-mismatch');expect(hashFailureState.size).toBe(0);
+    migrateAuthenticatedPriorCaptureForOracle(bytes,f.aRows,f.bRows,f.locators,state,f.manifest,f.recordedAtUtc,syntheticHash);
+    expect([...state.keys()]).toEqual(migrationIds());expect(state.has('L23-F2-P11-N033')).toBe(false);expect(digest([...state.keys()])).toBe(MIGRATED_HASH);
+    const bindings={comparison:comparisonMap(f.aRows,f.bRows),prior:state};
+    for(const [id,after]of state){
+      const original=object(object(before.entries)[id.slice('L23-F2-'.length)]),copy:Obj={rawLabels:Object.fromEntries(SOURCE_KEYS.map((key,i)=>[key,original[BACKUP_RAW_KEYS[i]!]!])),normalizedSourceValues:Object.fromEntries(NORMAL_KEYS.map(key=>[key,original[key]!]))};
+      expect(sourceTupleFingerprint(after)).toEqual(sourceTupleFingerprint(copy));
+      for(const [i,key]of SOURCE_KEYS.entries()){
+        const raw=string(object(after.rawLabels)[key]),n=number(object(after.normalizedSourceValues)[NORMAL_KEYS[i]!]);
+        expect(utf8(raw)).toEqual(utf8(string(original[BACKUP_RAW_KEYS[i]!]))) ;expect(codeUnits(raw)).toEqual(codeUnits(string(original[BACKUP_RAW_KEYS[i]!]))) ;
+        expect(Object.is(n,original[NORMAL_KEYS[i]!])).toBe(true);expect(binary64Bits(n)).toBe(binary64Bits(number(original[NORMAL_KEYS[i]!])));
+        expect(object(object(object(after.verification).fields)[key])).toMatchObject({humanAction:'preserved-prior-human-confirmation',humanConfirmedRawAndNormalized:true,rationale:null});
+      }
+      expect(after.locator).toEqual({pdfPage:11,pagePanelOrdinal:Number(id.slice(-3)),panelBoundsPdfPt:f.locators.get(id)![2]});
+      expect(object(after.verification).verificationRecordedAtUtc).toBe('2026-10-09T00:00:00Z');auditEntry(after,CTX,'',bindings);
+      assertError(()=>auditEntry(edit(after,['rawLabels','squareFieldOfView'],'1164µm'),CTX,'',bindings),RangeError,'/verification/fields/squareFieldOfView','prior-pair-mismatch');
+      const overwritten=edit(after,['rawLabels','growthTime'],'83sec');object(overwritten.normalizedSourceValues).growthTimeSeconds=83;
+      assertError(()=>auditEntry(overwritten,CTX,'',bindings),RangeError,'/verification/fields/growthTime','prior-pair-mismatch');
+      assertError(()=>auditEntry(edit(after,['verification','fields','growthTime','humanAction'],'confirmed-proposal'),CTX,'',bindings),RangeError,'/verification/fields/growthTime/humanAction','prior-action-mismatch');
+    }
+    expect(f.backup).toEqual(before);expect(f.aRows[0]![2][3][1]).toBe('1164μm');expect(f.bRows[0]![2][3][1]).toBe('1164µm');
+    const unchanged=canonicalizeForOracle([...state]);assertError(()=>migratePriorCaptureForOracle(parsed,f.aRows,f.bRows,f.locators,state,f.manifest,f.recordedAtUtc),RangeError,'/entries/P11-N001','migration-conflict');expect(canonicalizeForOracle([...state])).toBe(unchanged);
+  });
+  it('TC-SOURCE-AUDIT-003 each rejection reaches its own condition from an empty state',()=>{
+    const variants:Array<{change:(f:ReturnType<typeof syntheticMigrationFixture>)=>void;C:ErrorClass;p:string;reason:string}>=[
+      {change:f=>{f.backup.version=2;},C:RangeError,p:'/version',reason:'backup-version-mismatch'},
+      {change:f=>{f.backup.role='A';},C:RangeError,p:'/role',reason:'backup-role-mismatch'},
+      {change:f=>{delete object(f.backup.entries)['P11-N001'];},C:RangeError,p:'/entries',reason:'wrong-count'},
+      {change:f=>{object(f.backup.entries)['P11-N034']=clone(object(f.backup.entries)['P11-N033']!);},C:RangeError,p:'/entries',reason:'wrong-count'},
+      {change:f=>{object(object(f.backup.entries)['P11-N001']).confirmed=false;},C:RangeError,p:'/entries/P11-N001/confirmed',reason:'not-confirmed'},
+      {change:f=>{object(object(f.backup.entries)['P11-N032']).confirmed=false;},C:RangeError,p:'/entries/P11-N032/confirmed',reason:'not-confirmed'},
+      {change:f=>{object(object(f.backup.entries)['P11-N001']).rawGrowthTime='';},C:RangeError,p:'/entries/P11-N001/rawGrowthTime',reason:'empty-string'},
+      ...[NaN,Infinity,-Infinity,-0].map(n=>({change:(f:ReturnType<typeof syntheticMigrationFixture>)=>{object(object(f.backup.entries)['P11-N001']).growthTimeSeconds=n;},C:RangeError,p:'/entries/P11-N001/growthTimeSeconds',reason:Object.is(n,-0)?'negative-zero':'non-finite'})),
+      {change:f=>{object(object(f.backup.entries)['P11-N001']).growthTimeSeconds=83;},C:RangeError,p:'/entries/P11-N001',reason:'unit-mismatch'},
+      {change:f=>{const e=object(object(f.backup.entries)['P11-N001']);e.growthTimeSeconds=83;e.rawGrowthTime='83sec';},C:RangeError,p:'/entries/P11-N001',reason:'candidate-normalized-mismatch'},
+      {change:f=>{object(object(f.backup.entries)['P11-N001']).rawGrowthTime='82 sec';},C:RangeError,p:'/entries/P11-N001',reason:'candidate-raw-mismatch'},
+      {change:f=>{object(object(f.backup.entries)['P11-N002']).extra='pii';},C:TypeError,p:'/entries/P11-N002/extra',reason:'unknown-property'},
+      {change:f=>{delete object(object(f.backup.entries)['P11-N002']).temperatureC;},C:TypeError,p:'/entries/P11-N002/temperatureC',reason:'missing-property'},
+      {change:f=>{const e=object(f.backup.entries);e['L23-F2-P11-N001']=e['P11-N001']!;delete e['P11-N001'];},C:RangeError,p:'/entries/L23-F2-P11-N001',reason:'unknown-backup-id'},
+      {change:f=>{const e=object(f.backup.entries);e['P11-N999']=e['P11-N001']!;delete e['P11-N001'];},C:RangeError,p:'/entries/P11-N999',reason:'unknown-backup-id'},
+      {change:f=>{const e=object(f.backup.entries);e['P11-N01']=e['P11-N001']!;delete e['P11-N001'];},C:RangeError,p:'/entries/P11-N01',reason:'unknown-backup-id'},
+      {change:f=>{f.aRows.push(clone(f.aRows[0]!));},C:RangeError,p:'/candidateDrafts',reason:'duplicate-id'},
+      {change:f=>{f.aRows.shift();},C:RangeError,p:'/entries/P11-N001',reason:'unknown-candidate-id'},
+      {change:f=>{f.locators.delete(ID);},C:RangeError,p:'/entries/P11-N001',reason:'unknown-candidate-id'},
+      {change:f=>{f.bRows[31]![1][2][0]+=1;},C:RangeError,p:'/entries/P11-N032',reason:'locator-mismatch'},
+      {change:f=>{object(object(f.backup.entries)['P11-N033']).confirmed=true;},C:RangeError,p:'/entries/P11-N033',reason:'incomplete-migrated'},
+      {change:f=>{object(object(f.backup.entries)['P11-N033']).rawGrowthTime='82sec';},C:RangeError,p:'/entries/P11-N033',reason:'incomplete-entry-filled'},
+    ];
+    for(const mutation of variants){const f=syntheticMigrationFixture(),state=new Map<string,Obj>(),snapshot=canonicalizeForOracle([...state]);mutation.change(f);assertError(()=>migratePriorCaptureForOracle(f.backup,f.aRows,f.bRows,f.locators,state,f.manifest,f.recordedAtUtc),mutation.C,mutation.p,mutation.reason);expect(canonicalizeForOracle([...state])).toBe(snapshot);}
+    const f=syntheticMigrationFixture(),duplicate=JSON.stringify(f.backup).replace('"version":1','"version":1,"version":1'),bytes=new TextEncoder().encode(duplicate);assertError(()=>readPriorCaptureForOracle(bytes,sha(bytes)),SyntaxError,'/version','duplicate-key');
+    const duplicateEntry=JSON.stringify(f.backup).replace('"entries":{','"entries":{"P11-N001":null,'),entryBytes=new TextEncoder().encode(duplicateEntry);assertError(()=>readPriorCaptureForOracle(entryBytes,sha(entryBytes)),SyntaxError,'/entries/P11-N001','duplicate-key');
+    for(const [key,value]of [['sourceFileSha256','f'.repeat(64)],['entryObjectCount',32],['migratedConfirmedCompleteCount',31],['migratedConfirmedIdSetSha256','f'.repeat(64)],['confirmedValuesOverwrittenDuringMigration',true],['originalVerificationTimeKnown',true]] as Array<[string,Json]>){const state=new Map<string,Obj>();assertError(()=>migratePriorCaptureForOracle(f.backup,f.aRows,f.bRows,f.locators,state,{...f.manifest,[key]:value},f.recordedAtUtc),RangeError,`/priorHumanCaptureMigration/${key}`,'literal-mismatch');expect(state.size).toBe(0);}
+  });
+  it('TC-SOURCE-AUDIT-004 frozen candidates, prior 128 fields and remaining 696 fields export with reader zero',()=>{
+    const state=humanWorkflowFixture(),reader=vi.fn(()=>{throw new Error('production corpus forbidden during human confirmation');});
+    expect(state.migrated.size).toBe(32);expect(state.events.filter(([,e])=>e.origin==='prior')).toHaveLength(128);expect(state.events.filter(([,e])=>e.origin==='new')).toHaveLength(696);
+    verifyHumanWorkflow(state,reader);const exported=exportVerifiedAudit(state,reader);expect(state.exported).toBe(true);expect(array(exported.observations)).toHaveLength(206);expect(reader).toHaveBeenCalledTimes(0);
+    // Post-export uses a new fixture, a new spy and no object/cache references
+    // from the confirmation fixture. The expected audit is immutable here.
+    const afterExport=clone(exported),postState:Obj={observations:array(afterExport.observations).map(v=>{const o=object(v);return {...object(o.normalizedSourceValues),sourceObservationId:o.sourceObservationId!,locator:clone(o.locator!),rawLabels:clone(o.rawLabels!)};})},postReader=vi.fn(()=>clone(postState));
+    expect(afterExport).not.toBe(exported);expect(postReader).not.toBe(reader);verifyExportedAuditAgainstCorpus(afterExport,postReader);expect(postReader).toHaveBeenCalledTimes(1);expect(reader).toHaveBeenCalledTimes(0);
+    const wrongPostState=edit(postState,['observations',0,'rawLabels','growthTime'],'999sec'),wrongPostReader=vi.fn(()=>clone(wrongPostState));assertError(()=>verifyExportedAuditAgainstCorpus(clone(exported),wrongPostReader),RangeError,'/observations','source-audit-mismatch');expect(wrongPostReader).toHaveBeenCalledTimes(1);expect(reader).toHaveBeenCalledTimes(0);
+  });
+  it('TC-SOURCE-AUDIT-004 individual freeze, completeness, timing, active-action and persistence mutations are reachable',()=>{
+    const variants:Array<{change:(s:WorkflowState)=>void;p:string;reason:string}>=[
+      ...(['aFrozen','bFrozen','comparisonFrozen'] as const).map(key=>({change:(s:WorkflowState)=>{s[key]=false;},p:'/candidateDrafts',reason:'candidates-not-frozen'})),
+      ...(['aRows','bRows'] as const).map(key=>({change:(s:WorkflowState)=>{s[key].pop();},p:'/candidateDrafts',reason:'wrong-count'})),
+      ...(['transcriberASetSha256','transcriberBSetSha256','comparisonSetSha256'] as const).map(key=>({change:(s:WorkflowState)=>{s.drafts[key]='f'.repeat(64);},p:`/candidateDrafts/${key}`,reason:'hash-mismatch'})),
+      {change:s=>{s.drafts.eachDraftObservationCount=207;},p:'/candidateDrafts/eachDraftObservationCount',reason:'wrong-count'},
+      {change:s=>{s.migrated.delete(ID);},p:'/migration',reason:'migration-id-set-mismatch'},
+      {change:s=>{object(s.migrated.get(ID)!.rawLabels).squareFieldOfView=canonicalFovRaw(string(object(s.migrated.get(ID)!.rawLabels).squareFieldOfView));},p:'/migration',reason:'migration-copy-mismatch'},
+      {change:s=>{s.events=s.events.filter(([key])=>key!==`${ID}/temperature`);},p:'/verification',reason:'incomplete-human-verification'},
+      {change:s=>{s.events.find(([key])=>key===`${ID}/temperature`)![0]='L23-F2-P11-N999/temperature';},p:'/verification',reason:'unknown-panel-or-field'},
+      {change:s=>{s.events.find(([key])=>key===`${ID}/temperature`)![0]=`${ID}/unknown`;},p:'/verification',reason:'unknown-panel-or-field'},
+      {change:s=>{s.entries.delete(ID);},p:'/verification',reason:'incomplete-human-verification'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').sourcePanelVisibleAt=3;},p:'/verification',reason:'pdf-not-visible-with-candidate'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').sourcePanelVisibleAt=NaN;},p:'/verification',reason:'pdf-not-visible-with-candidate'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').sourcePdfSha256='f'.repeat(64);},p:'/verification',reason:'source-pdf-mismatch'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').sourceLocator[2][0]+=1;},p:'/verification',reason:'source-locator-mismatch'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').explicitRawAction=false;},p:'/verification',reason:'incomplete-human-verification'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').explicitNormalizedAction=false;},p:'/verification',reason:'incomplete-human-verification'},
+      {change:s=>{workflowEvent(s,'L23-F2-P11-N033/temperature').persisted=false;},p:'/verification',reason:'unsaved-human-verification'},
+      {change:s=>{workflowEvent(s,`${ID}/temperature`).origin='new';},p:'/verification',reason:'confirmation-origin-mismatch'},
+    ];
+    for(const mutation of variants){const s=humanWorkflowFixture(),reader=vi.fn(()=>{throw new Error('forbidden reader');});mutation.change(s);assertError(()=>verifyHumanWorkflow(s,reader),RangeError,mutation.p,mutation.reason);assertError(()=>exportVerifiedAudit(s,reader),RangeError,mutation.p,mutation.reason);expect(s.exported).toBe(false);expect(reader).toHaveBeenCalledTimes(0);}
+  });
+  it('TC-SOURCE-AUDIT-004 rejects duplicate panel/field history before export without reading production corpus',()=>{
+    for(const key of [`${ID}/temperature`,'L23-F2-P11-N033/growthTime']){
+      const state=humanWorkflowFixture(),reader=vi.fn(()=>{throw new Error('forbidden reader');});
+      state.events.push([key,clone(workflowEvent(state,key))]);
+      expect(state.events).toHaveLength(825);expect(state.events.filter(([eventKey])=>eventKey===key)).toHaveLength(2);
+      assertError(()=>verifyHumanWorkflow(state,reader),RangeError,'/verification','duplicate-human-verification');
+      assertError(()=>exportVerifiedAudit(state,reader),RangeError,'/verification','duplicate-human-verification');
+      expect(state.exported).toBe(false);expect(reader).toHaveBeenCalledTimes(0);
+    }
+  });
+  it('TC-SOURCE-AUDIT-004 action table joins each final field to comparison, proposal or original backup',()=>{
+    const row:CandidateRow=[ID,[11,1,[10,20,30,40]],[['temperature','-15.0 °C',-15],['supersaturation','12.5 %',12.5],['growthTime','2 min',120],['squareFieldOfView','0.40 mm',400]]];
+    const frozenBefore=digest(candidatePreimage('A',[row]));
+    const exact:ActionBindings={comparison:comparisonMap([row],[clone(row)]),prior:new Map()};auditEntry(SYN_AUDIT_ENTRY,CTX,'',exact);
+    const corrections:[string,number,string][]=[['-3C',-3,'A/Bのtemperature rawが異なり、原PDFでは-3Cと読める'],['13%',13,'原PDFではsupersaturationは13%と読める'],['82sec',82,'原PDFではgrowthTimeは82secと読める'],['401µm',401,'原PDFではsquareFieldOfViewは401µmと読める']];
+    for(const [i,key]of SOURCE_KEYS.entries()){
+      const p=`/verification/fields/${key}`,corrected=clone(SYN_AUDIT_ENTRY),[raw,n,rationale]=corrections[i]!;
+      object(corrected.rawLabels)[key]=raw;object(corrected.normalizedSourceValues)[NORMAL_KEYS[i]!]=n;domain(object(corrected.normalizedSourceValues),CTX,'');
+      object(object(object(corrected.verification).fields)[key]).humanAction='corrected-proposal';object(object(object(corrected.verification).fields)[key]).rationale=rationale;auditEntry(corrected,CTX,'',exact);
+      assertError(()=>auditEntry(edit(corrected,['verification','fields',key,'humanAction'],'confirmed-proposal'),CTX,'',exact),RangeError,p+'/rationale','rationale-mismatch');
+      const wrongConfirm=edit(corrected,['verification','fields',key,'rationale'],null);object(object(object(wrongConfirm.verification).fields)[key]).humanAction='confirmed-proposal';assertError(()=>auditEntry(wrongConfirm,CTX,'',exact),RangeError,p+'/humanAction','proposal-action-mismatch');
+      const unchangedCorrection=edit(SYN_AUDIT_ENTRY,['verification','fields',key,'humanAction'],'corrected-proposal');object(object(object(unchangedCorrection.verification).fields)[key]).rationale=rationale;assertError(()=>auditEntry(unchangedCorrection,CTX,'',exact),RangeError,p+'/humanAction','proposal-action-mismatch');
+      const resolvedExact=edit(SYN_AUDIT_ENTRY,['verification','fields',key,'humanAction'],'resolved-disagreement');object(object(object(resolvedExact.verification).fields)[key]).rationale=rationale;assertError(()=>auditEntry(resolvedExact,CTX,'',exact),RangeError,p+'/humanAction','proposal-action-mismatch');
+      assertError(()=>auditEntry(edit(corrected,['verification','fields',key,'rationale'],'  \t\n'),CTX,'',exact),RangeError,p+'/rationale','rationale-required');
+      assertError(()=>auditEntry(edit(SYN_AUDIT_ENTRY,['verification','fields',key,'humanAction'],'preserved-prior-human-confirmation'),CTX,'',exact),RangeError,p+'/humanAction','missing-prior-confirmation');
+      assertError(()=>auditEntry(edit(SYN_AUDIT_ENTRY,['verification','fields',key,'candidateComparison'],'different'),CTX,'',exact),RangeError,p+'/candidateComparison','comparison-mismatch');
+      const other=clone(row);other[2][i]=[key,raw,n];const disagreement:ActionBindings={comparison:comparisonMap([row],[other]),prior:new Map()},resolved=clone(corrected),vf=object(object(object(resolved.verification).fields)[key]);vf.candidateComparison='different';vf.humanAction='resolved-disagreement';auditEntry(resolved,CTX,'',disagreement);
+      // A/B default, one-side correction and third value all retain the explicit
+      // resolved-disagreement action; none may silently choose a proposal.
+      for(const action of ['confirmed-proposal','corrected-proposal']){
+        const bad=edit(resolved,['verification','fields',key,'humanAction'],action);if(action==='confirmed-proposal')object(object(object(bad.verification).fields)[key]).rationale=null;
+        assertError(()=>auditEntry(bad,CTX,'',disagreement),RangeError,p+'/humanAction','disagreement-action-mismatch');
+      }
+      for(const side of [row,other]){const choice=clone(resolved);object(choice.rawLabels)[key]=side[2][i]![1];object(choice.normalizedSourceValues)[NORMAL_KEYS[i]!]=side[2][i]![2];auditEntry(choice,CTX,'',disagreement);}
+      const defaulted:ActionBindings={comparison:clone(disagreement.comparison),prior:new Map()};array(defaulted.comparison.get(ID)![i])[4]=[raw,n];assertError(()=>auditEntry(resolved,CTX,'',defaulted),RangeError,p,'different-with-default');
+    }
+    // Different A/B temperature values can also resolve to a third PDF value.
+    const thirdB=clone(row);thirdB[2][0]=['temperature','-14C',-14];const third=clone(SYN_AUDIT_ENTRY);object(third.rawLabels).temperature='-3C';object(third.normalizedSourceValues).temperatureC=-3;object(object(third.verification).fields).temperature={candidateComparison:'different',humanAction:'resolved-disagreement',humanConfirmedRawAndNormalized:true,rationale:'A/Bのtemperature rawが異なり、原PDFでは-3Cと読める'};auditEntry(third,CTX,'',{comparison:comparisonMap([row],[thirdB]),prior:new Map()});
+    for(const pair of [['123μm','123μm','exact'],['123µm','123µm','exact'],['123μm','123µm','canonical-unit-equivalent']]){
+      const a=clone(row),b=clone(row);a[2][3]=['squareFieldOfView',pair[0]!,123];b[2][3]=['squareFieldOfView',pair[1]!,123];const binding:ActionBindings={comparison:comparisonMap([a],[b]),prior:new Map()},final=clone(SYN_AUDIT_ENTRY);object(final.rawLabels).squareFieldOfView='123µm';object(final.normalizedSourceValues).squareFieldOfViewUm=123;object(object(object(final.verification).fields).squareFieldOfView).candidateComparison=pair[2]!;
+      auditEntry(final,CTX,'',binding);expect(a[2][3][1]).toBe(pair[0]);expect(b[2][3][1]).toBe(pair[1]);expect(array(binding.comparison.get(ID)![3])[4]).toEqual(['123µm',123]);
+      assertError(()=>auditEntry(edit(final,['rawLabels','squareFieldOfView'],'123μm'),CTX,'',binding),RangeError,'/rawLabels/squareFieldOfView','noncanonical-final-unit');
+      const correction=edit(final,['rawLabels','squareFieldOfView'],'124µm');object(correction.normalizedSourceValues).squareFieldOfViewUm=124;object(object(correction.verification).fields).squareFieldOfView={candidateComparison:pair[2]!,humanAction:'corrected-proposal',humanConfirmedRawAndNormalized:true,rationale:'原PDFではsquareFieldOfViewは124µmと読める'};auditEntry(correction,CTX,'',binding);
+    }
+    const f=syntheticMigrationFixture(),prior=new Map<string,Obj>();migratePriorCaptureForOracle(f.backup,f.aRows,f.bRows,f.locators,prior,f.manifest,f.recordedAtUtc);const original=clone(prior.get(ID)!);auditEntry(original,CTX,'',{comparison:comparisonMap(f.aRows,f.bRows),prior});
+    for(const key of SOURCE_KEYS){const p=`/verification/fields/${key}`;assertError(()=>auditEntry(edit(original,['verification','fields',key,'rationale'],'note'),CTX,'',{comparison:comparisonMap(f.aRows,f.bRows),prior}),RangeError,p+'/rationale','rationale-mismatch');}
+    const corrected=edit(SYN_AUDIT_ENTRY,['rawLabels','growthTime'],'82sec');object(corrected.normalizedSourceValues).growthTimeSeconds=82;object(object(corrected.verification).fields).growthTime={candidateComparison:'exact',humanAction:'corrected-proposal',humanConfirmedRawAndNormalized:true,rationale:'原PDFではgrowthTimeは82secと読める'};
+    for(const rationale of ['a@example.com','accountId=123','account_id : 123','userId=123','user_id:123','uid = 123','deviceName=pc','device_name : pc','hostname=pc','computerName=pc','machine_id:123','ACCOUNTID = 123','HOSTNAME = pc'])assertError(()=>auditEntry(edit(corrected,['verification','fields','growthTime','rationale'],rationale),CTX,'',exact),RangeError,'/verification/fields/growthTime/rationale','personal-information');
+    for(const name of ['name','email','accountId','deviceName','hostname'])for(const parent of [[],['verification'],['verification','fields','growthTime']] as string[][])assertError(()=>auditEntry(edit(corrected,[...parent,name],'private'),CTX,'',exact),TypeError,pointer([...parent,name]),'unknown-property');
+    assertError(()=>auditEntry(edit(corrected,['normalizedSourceValues','growthTimeSeconds'],83),CTX,'',exact),RangeError,'/growthTimeSeconds','unit-mismatch');
+    assertError(()=>auditEntry(edit(corrected,['verification','sourcePanelInspected'],false),CTX,'',exact),RangeError,'/verification/sourcePanelInspected','literal-mismatch');
+    assertError(()=>auditEntry(edit(corrected,['verification','fields','growthTime','humanConfirmedRawAndNormalized'],false),CTX,'',exact),RangeError,'/verification/fields/growthTime/humanConfirmedRawAndNormalized','literal-mismatch');
+    expect(digest(candidatePreimage('A',[row]))).toBe(frozenBefore);
+  });
+  it('TC-SOURCE-AUDIT-005 synthetic page identity, hash bindings, freeze and stale propagation',()=>{
     auditBindings(SYN_AUDIT_STRUCTURE,schemaOnlyCorpus(),SYN_ASSIGNMENT,1);
     for(const key of ['sourceEntrySetSha256','preAnnotationSplitAssignmentSha256','canonicalCorpusSha256','auditPayloadSha256'])assertError(()=>auditBindings({...SYN_AUDIT_STRUCTURE,[key]:'f'.repeat(64)},schemaOnlyCorpus(),SYN_ASSIGNMENT,1),RangeError,`/${key}`,'hash-mismatch');
     for(const key of ['sourcePdfSha256','sourceEntrySetSha256','canonicalCorpusSha256','auditPayloadSha256'])assertError(()=>auditBindings(edit(SYN_AUDIT_STRUCTURE,['approval',key],'f'.repeat(64)),schemaOnlyCorpus(),SYN_ASSIGNMENT,1),RangeError,`/approval/${key}`,'hash-mismatch');
     const pages=array(SYN_AUDIT_STRUCTURE.pages);expect(()=>auditBindings({...SYN_AUDIT_STRUCTURE,pages:[pages[1]!,pages[0]!,pages[2]!,pages[3]!]},schemaOnlyCorpus(),SYN_ASSIGNMENT,1)).toThrow(RangeError);
     for(const [path,v]of [[['pages',0,'panelCount'],2],[['pages',0,'sourceObservationIds'],['L23-F2-P12-N001']],[['observations',0,'locator','pdfPage'],12]] as Array<[(string|number)[],Json]>)expect(()=>auditBindings(edit(SYN_AUDIT_STRUCTURE,path,v),schemaOnlyCorpus(),SYN_ASSIGNMENT,1)).toThrow(RangeError);
-    for(const key of ['productionCorpusReadDuringCapture','productionGeneratorUsed','imageArtifactsCommitted'])expect(()=>auditRule(edit(SYN_AUDIT_STRUCTURE,['auditMethod',key],true),CTX,'')).toThrow(RangeError);
+    for(const key of ['candidatePrefillEnabledOnlyAfterBothDraftsFrozen','productionCorpusReadDuringHumanVerification','productionGeneratorUsed','imageArtifactsCommitted'])expect(()=>auditRule(edit(SYN_AUDIT_STRUCTURE,['auditMethod',key],key==='candidatePrefillEnabledOnlyAfterBothDraftsFrozen'?false:true),CTX,'')).toThrow(RangeError);
     expect(()=>auditRule(edit(SYN_AUDIT_STRUCTURE,['approval','decision'],'pending'),CTX,'')).toThrow(RangeError);
     expect(()=>auditRule(edit(SYN_AUDIT_STRUCTURE,['approval','approvedAtUtc'],'2026-09-29T12:00:00.1Z'),CTX,'')).toThrow(RangeError);
   });
-  it('TC-SOURCE-AUDIT-003 synthetic freeze order, annotation invariance, stale propagation and DFS cycle rejection',()=>{
-    freezeOrder(FREEZE_ORDER,SYN_ASSIGNMENT,clone(SYN_ASSIGNMENT));
-    const swapped=[...FREEZE_ORDER];[swapped[2],swapped[4]]=[swapped[4]!,swapped[2]!];expect(()=>freezeOrder(swapped,SYN_ASSIGNMENT,SYN_ASSIGNMENT)).toThrow(RangeError);
+  it('TC-SOURCE-AUDIT-005 fixed freeze order and non-cyclic stale propagation',()=>{
+    sourceAuditSequence(SOURCE_AUDIT_SEQUENCE,SYN_ASSIGNMENT,clone(SYN_ASSIGNMENT));
+    const swapped=[...SOURCE_AUDIT_SEQUENCE];[swapped[2],swapped[4]]=[swapped[4]!,swapped[2]!];expect(()=>sourceAuditSequence(swapped,SYN_ASSIGNMENT,SYN_ASSIGNMENT)).toThrow(RangeError);
     const annotated=clone(SYN_OBSERVATION);object(annotated.morphology).final={growthAxis:'mixed',basalBranchingLevel:0,hollowing:'present',confidence:'low'};annotated.projectedShape=clone(SYN_PROJECTED);
     expect(digest(sourceProjection(annotated))).toBe(digest(sourceProjection(SYN_OBSERVATION)));expect(digest(SYN_ASSIGNMENT)).toBe(SYN_AUDIT_STRUCTURE.preAnnotationSplitAssignmentSha256);
-    expect(()=>freezeOrder(FREEZE_ORDER,SYN_ASSIGNMENT,edit(SYN_ASSIGNMENT,['groups',0,'groupKey',0],-21))).toThrow(RangeError);
-    for(const node of ['source','assignment','corpus','auditObject']){const stale=staleFrom(node);for(const required of ['protocol','review','red','green','calibration'])expect(stale.has(required)).toBe(true);}
-    acyclic(HASH_GRAPH);for(const graph of [{...HASH_GRAPH,auditObject:['auditPayload','split']},{...HASH_GRAPH,corpus:['auditObject'],auditObject:['corpus','split']}])assertError(()=>acyclic(graph),RangeError,'/hashDependencies','cyclic-hash');
+    expect(()=>sourceAuditSequence(SOURCE_AUDIT_SEQUENCE,SYN_ASSIGNMENT,edit(SYN_ASSIGNMENT,['groups',0,'groupKey',0],-21))).toThrow(RangeError);
+    for(const node of ['candidateA','candidateB','comparison','backup','migratedIdSet','humanConfirmedSource','assignment','corpus','auditObject']){const stale=staleFromSourceAudit(node);for(const required of ['protocol','review','red','green','calibration'])expect(stale.has(required)).toBe(true);}
+    acyclic(SOURCE_AUDIT_DEPENDENCIES);for(const graph of [{...SOURCE_AUDIT_DEPENDENCIES,auditObject:['auditPayload','split']},{...SOURCE_AUDIT_DEPENDENCIES,corpus:['auditObject'],auditObject:['corpus','split']}])assertError(()=>acyclic(graph),RangeError,'/hashDependencies','cyclic-hash');
     expect(()=>auditBindings(SYN_AUDIT_STRUCTURE,{...schemaOnlyCorpus(),annotationApprovals:[]},SYN_ASSIGNMENT,1)).toThrow(RangeError);
   });
   schemaMutations('TC-SOURCE-AUDIT-001',SYN_AUDIT_STRUCTURE,auditRule);

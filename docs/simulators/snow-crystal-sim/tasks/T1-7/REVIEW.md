@@ -45,6 +45,68 @@ summary: "一次資料v1について206観測、PDF 12,317,042 bytes、SHA-256�
 ```
 
 ```yaml
+review_type: testcases
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:519c93484e8a8fe890fe49694ac75a196e9cdac78c0e4f11790eb0b6ab2ec92e
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:398
+    problem: 人間確認工程がproduction corpusを参照しないことを、宣言値以外では検証していない。
+    evidence: >-
+      TC-SOURCE-AUDIT-001はproductionCorpusReadDuringHumanVerification=falseをschema literalとして検査するが、
+      TC-SOURCE-AUDIT-004/005の状態fixtureにはproduction corpus accessorのthrowing stubまたは呼出し回数検査がない。
+      そのため、確認画面がcorpus.jsonから値を読み、manifestにはfalseを記録する実装でも、候補hash、表示時刻、
+      field確認、824件完全性の各検査を通過できる。これはDESIGN.md §6.1の「production corpusをsource oracleとして
+      採用しない」という独立性境界を機械的に保証しない。
+    required_change: >-
+      人間確認状態fixtureへproduction corpus読込み境界を注入し、候補表示、既存32件移行、各field確認・訂正、
+      export完了までaccessorをthrowing stubにして呼出し0回を検査する。確認値の入力元がfrozen A/B候補、
+      comparison、backup、原PDF操作だけであり、最終的なcorpusとの事後照合とは経路が分離されることを固定する。
+  - id: R-002
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:321
+    problem: A/B双方が同じU+03BCのFOV rawを持つexact分岐で、proposed/final rawをU+00B5へ正規化する契約が検査されない。
+    evidence: >-
+      DESIGN.md §6.1.1はexactであってもsquareFieldOfViewの有効なU+03BC suffixをU+00B5へ変換すると定める。
+      TESTCASESはcanonical-unit-equivalent分岐のU+00B5 proposalを明記する一方、exact分岐では単に
+      proposed=[raw,normalized]とし、このsynthetic境界例を持たない。固定証跡は全206 FOVが
+      A=U+03BC、B=U+00B5であるため、既知comparison hashだけではexact-U+03BC分岐を通らない。
+    required_change: >-
+      squareFieldOfViewについて、双方U+03BCでraw/normalizedが一致するexact正例を追加し、
+      candidate preimageのrawはU+03BCのまま、comparison proposedとfinal rawだけがU+00B5になることを検査する。
+      双方U+00B5は無変更、FOV以外やsuffix以外のmuは変換されない負例も同じ分岐表へ固定する。
+  - id: R-003
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:427
+    problem: 訂正・不一致理由の非PII要件を、rationale文字列の内容に対して検査していない。
+    evidence: >-
+      TESTCASESはPII propertyを拒否するとだけ規定するが、schema上の理由はrationaleという単一stringである。
+      したがってrationaleに氏名、email、account ID、端末名を直接入れても、追加property禁止、非空検査、
+      action整合性をすべて通過できる。DESIGN.md §6.1とD-10は非個人情報の理由を必須としている。
+    required_change: >-
+      少なくともemail、account ID、端末名など定義可能な禁止形式をrationaleへ入れたmutationを追加して拒否し、
+      理由には原資料上の差異だけを記録する制約を検査する。自由文で完全なPII検出を保証できない場合は、
+      許可された非PII reason codeと任意の限定補足へ契約を狭める。
+conditions: []
+rollback_to: testcases
+summary: >-
+  対象hashは指定値と一致した。独立再計算によりA/B各206件、candidate hash
+  de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732 と
+  b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3、
+  comparison hash 33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9、
+  exact 618・canonical-unit-equivalent 206・different 0、および移行ID集合hash
+  92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5を再現した。
+  backupもhash一致、33件中32件complete、P11-N033未完了、128 fieldすべてA/B整合を確認した。
+  既存32件のbytes/binary64保持、全206 panel・824 field確認、disagreement default禁止、
+  freeze順、非循環、旧第三blank転記方式の除去は概ね反映され、split/loss/protocol/holdoutケースは
+  差分上弱体化されていない。しかしproduction corpus非参照、exact-U+03BC正規化、非PII理由に
+  未検査経路が残るため承認できない。
+```
+
+```yaml
 review_type: design
 status: changes-requested
 reviewed_files:
@@ -1082,4 +1144,375 @@ summary: >-
   人間による能動確認、disagreementのdefault禁止と理由記録、第三blank転記ではない独立性限界が
   明記されている。旧design/testcase/test-code/Red/implementation証跡をstaleとし、
   修正版design承認後に順次再ゲートする規則も維持されている。
+```
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:31087002d9b47b0e5bdcb0be69bb3d62c9aab6d4be664b250523985d788d2b2b
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  対象hashは指定値と一致した。確認workflowでは候補表示、32件移行、確認・訂正、
+  途中保存、824 field完成後のexportまでproduction corpus accessorをthrowing spyで厳密に0回とし、
+  export後の全件照合は別関数・別fixture・別spyでreaderを1回だけ許すため、原資料oracle作成と
+  事後corpus照合が分離されている。U+03BC同士のexact候補をA/B preimageへ原code pointのまま保持しつつ、
+  proposed/finalだけU+00B5へ正規化する正例が追加され、U+03BC/U+00B5差も候補原文を保持する。
+  非FOV、末尾空白、unit suffix以外のmuはdifferentかつproposed=nullとなり、finalのcode point mutationも
+  拒否される。rationaleには正例とemail・account・端末識別子・schema外PII propertyのmutationがあり、
+  自由文中の全PIIを自動検出できるとは主張せず、残余をhuman source-auditorの承認境界に置いている。
+  独立再計算でA/B各206件、824 field、exact 618、canonical-unit-equivalent 206、different 0、
+  A/B/comparison hashがde2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732、
+  b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3、
+  33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9と一致した。
+  backupも固定hash、33 entry、32 complete、未完了P11-N033、移行ID集合hash
+  92e23ab4ae1ea2b1406296a11e94ab519a1c020fb2a54559acf4b4bf0fbc6ea5を再現し、
+  32件すべてでnormalizedはA/B双方、rawは少なくとも一方と一致した。
+  非影響契約も45 testcase IDに重複がなく、ring 690、最小rho² 9919、格子40021、
+  8 seed、形状代表値を再計算して維持を確認した。
+```
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts
+    hash: sha256:e45b1e41af76e799f283a1fe8b328ed5648f4a97a82e9c59720e50a29d5940a2
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:344
+    problem: A/B候補とcomparisonの既知hashが実際の206件の転記証跡から再計算されず、宣言値をそのまま信用している。
+    evidence: >-
+      candidateDraftRuleは任意の64桁hashを受理し、validateSourceAuditV1もcorpusの
+      transcriptionからA/B固定tupleとcomparisonを再構築しない。TC-SOURCE-AUDIT-002は
+      CANDIDATE_A/B/COMPARISON定数を同じliteralと比較するだけで、comparisonPreimageは
+      1件を渡して206件でないことによる失敗しか確認していない。このため、corpus側のA/B転記を
+      自己整合的に変更しても、既知3 hashを据え置いた成果物がREAL206を通過できる。
+    required_change: >-
+      corpus transcriptionから206件のA/B固定幅tupleを独立再構築し、field名・順序・tuple幅・
+      ASCII ID順・locator・raw code pointを検証したうえで3 hashを再計算して既知値へ一致させる。
+      exact 618、canonical-unit-equivalent 206、different 0も数え、各構成要素のmutationが
+      対応hashまたは比較検査で失敗することを追加する。
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:720
+    problem: LocalStorage backupの32件を無改変移行するoracleが実装されていない。
+    evidence: >-
+      テストはmanifestの件数と移行ID集合hashを確認し、1件のsynthetic rawだけを変更して
+      unit mismatchを起こしている。backup schema、33件中32件complete、P11-N033除外、
+      A/Bとの事前一致、raw UTF-8/code-unit一致、normalized binary64 bit一致、
+      copy前後tuple、失敗時の保存状態不変を検査しない。rawとnormalizedを同時に
+      自己整合的な別値へ変更したpreserved-prior-human-confirmationもauditEntryを通過する。
+    required_change: >-
+      承認済みTESTCASESのmigratePriorCaptureForOracle相当をtest-localに実装し、
+      SYN-MIGRATIONでcopy前後のraw bytes/code unitsとDataView binary64 bitsを比較する。
+      全拒否条件、候補による上書き禁止、P11-N033非移行、失敗前後の状態不変をmutationで証明する。
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:376
+    problem: 人間確認workflowが集計値だけの模型で、確認bias緩和策とproduction corpus経路分離を検証できない。
+    evidence: >-
+      workflowStateはA/Bのreadyと2 hashしか見ず、各206件、comparison hash freeze、
+      backup移行、PDF表示順、panel別・field別の明示操作を扱わない。exportThenCompareは
+      confirmedFields=824という整数だけでexportを許すため、実際には一つもpanelを表示・確認しなくても通る。
+      さらに同じreader spyをexport時に直接呼び、TESTCASESが要求する別関数・別fixture・別spyによる
+      export後照合と、確認からexport完了までの厳密な0回を分離していない。
+    required_change: >-
+      A/B各206件とcomparison freeze、sourcePanelVisibleAt<=candidateVisibleAt、
+      206 panel×4 fieldの個別操作、既存32件の移行、途中保存、824件完成後exportまでを持つ
+      状態fixtureを実装する。確認経路のproduction readerはexport完了まで0回とし、
+      verifyExportedAuditAgainstCorpusを別状態・別spyで1回だけ呼ぶテストへ分離する。
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:341
+    problem: candidateComparison、humanAction、最終値、rationaleの相互契約が不完全である。
+    evidence: >-
+      auditEntryはdifferent+confirmed-proposalなど一部だけを拒否し、exactでの
+      resolved-disagreement、differentでのcorrected-proposal、任意IDでの
+      preserved-prior-human-confirmation、proposalと同値のcorrected-proposal、
+      proposalと異なるconfirmed-proposalを受理する。canonical proposal/finalのU+00B5も拘束しない。
+      PII検査の/@/と単語account/deviceだけでは、指定されたaccountId=、user_id:、
+      deviceName=、hostname=、machine_id:などを検出できない。
+    required_change: >-
+      再構築したcomparison/proposedおよび移行backup tupleへ各fieldを結合し、
+      TESTCASESのaction表を完全に検証する。U+03BC/U+00B5の正例・限定負例、
+      final code-point mutation、空白rationale、指定されたemail/account/device label、
+      schema外PII propertyを個別mutationで拒否する。
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:491
+    problem: freeze順とstale依存graphが再設計前のままで、候補・comparison・migration変更の無効化を検査しない。
+    evidence: >-
+      FREEZE_ORDERにはA/B個別hash、comparison freeze、backup検証・32件移行、
+      全206 panelの人間確認が表現されていない。HASH_GRAPHにもcandidate A/B、
+      comparison、migration backup、migrated ID setのnodeがなく、これらを変更しても
+      approval、review、Red/Green、calibrationがstaleになることをテストしていない。
+    required_change: >-
+      承認済みDESIGNとTESTCASESの作成順・有向依存へfixtureとgraphを更新し、
+      A/B候補、comparison、backup、移行ID集合、人間確定sourceの各mutationから
+      必要な全下流証跡がstaleになること、および循環がないことを検証する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  対象hashは指定値と一致した。TypeScript型検査は成功し、対象Vitestは2339件Green、
+  5成果物それぞれのmissing-artifact assertion Red、成果物存在だけを条件とするREAL206の
+  1件skipとして実行された。独立再計算ではA/B各206件、exact 618、
+  canonical-unit-equivalent 206、既知3 hash、backupの33件中32件complete、
+  P11-N033未完了、移行ID集合hashを再現した。しかし現在のテストは、それらを成果物の実内容や
+  workflow状態から再構築せず、宣言定数・集計値・部分的mutationで自己充足しているため、
+  承認済みSOURCE-AUDIT契約を保護できない。
+```
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts
+    hash: sha256:76c4d7d00b9620b26fec9e8a462b17a7457f4cbd82419a3048a17c58844911fa
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:724
+    problem: 206件のA/B・comparison再構築経路は追加されたが、成果物不在時にも実行されるmutation感度テストがない。
+    evidence: >-
+      verifyFrozenCandidatesはcorpus transcriptionからA/Bとcomparisonを再構築し、既知3 hashおよび
+      exact=618、canonical-unit-equivalent=206、different=0を検査する。しかしこの経路を呼ぶのは
+      成果物存在時だけのTC-REAL-001であり、現在はskipされる。通常実行されるTC-SOURCE-AUDIT-002は
+      1行fixtureをcomparisonPreimageへ渡して件数エラーにするだけで、206件のID順、locator、
+      field順、tuple幅、raw code point、role、各構成要素のmutationに対するhash感度を実行していない。
+    required_change: >-
+      test-localの206件fixtureまたは凍結候補証跡から全再構築経路を成果物不在でも実行し、既知3 hashと
+      618/206/0を確認する。ID順、locator、field順、tuple幅、role、各raw/normalized code pointを
+      個別mutationし、対応hashまたはcomparison検査が失敗することを追加する。
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:387
+    problem: LocalStorage backup移行oracleとmutationテストが承認済み契約を満たさず、失敗時atomicityの検査も自己充足している。
+    evidence: >-
+      migratePriorCaptureForOracleはbackup raw bytesの固定SHA-256、version、roleを受け取らず検査できない。
+      locator、copy前後のUTF-8/code-unit列、DataView binary64 bits、移行後verification/actionも比較しない。
+      さらにline 745の全mutationは、成功済み32件を保持した同じstateへ再移行するため、先頭IDの
+      migration-conflictだけで必ず失敗し、個々のconfirmed、mu code point、-0、P11-N033、
+      unknown property条件や失敗途中のatomicityを実際には到達・検査していない。
+    required_change: >-
+      固定backup hash・version・role・33/32/P11-N033を検証し、空の独立stateごとに各mutationを実行する。
+      copy前後の4 rawをUTF-8 bytesとcode-unit列、4 normalizedをObject.isとDataView bitsで比較し、
+      locator、候補による上書き禁止、preserved-prior-human-confirmation、失敗前後state不変を
+      それぞれ到達可能なテストで証明する。
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:392
+    problem: 人間確認workflowが集計値だけで、206 panel×4 fieldの能動確認とproduction corpus隔離を検査していない。
+    evidence: >-
+      workflowStateはA/B readyと2 hashだけを扱い、各206件、comparison hash、backup移行、
+      sourcePanelVisibleAt<=candidateVisibleAt、panel/field別操作、途中保存を持たない。
+      exportThenCompareはconfirmedFields=824という整数だけで完了扱いにし、export処理内で同じreaderを
+      直接1回呼ぶ。承認済みTESTCASESが要求する確認開始からexport完了まで0回、およびexport後の
+      別fixture・別spyによるverifyExportedAuditAgainstCorpusの1回を分離していない。
+    required_change: >-
+      A/B各206件とcomparison freeze、32件移行、206 panel×4 fieldの個別イベント、
+      PDF/候補表示時刻、途中保存、824件完成後exportを表す状態fixtureへ置き換える。
+      確認・export完了まではproduction readerを0回とし、事後照合を別関数・別状態・別spyで
+      1回だけ呼ぶテストとして分離する。
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:341
+    problem: candidateComparison、proposal、final pair、humanAction、rationaleのaction表が結合されていない。
+    evidence: >-
+      auditEntryは再構築済みcomparison/proposedやbackup tupleを入力に持たないため、
+      exactでのresolved-disagreement、differentでのcorrected-proposal、任意IDでの
+      preserved-prior-human-confirmation、proposalと同値のcorrected-proposal、
+      proposalと異なるconfirmed-proposalを受理できる。canonical final rawのU+00B5も拘束しない。
+      PII検査は@または単語account/deviceだけで、accountId=、user_id:、deviceName=、
+      hostname=、machine_id:等の必須負例を検出しない。
+    required_change: >-
+      各fieldを再構築済みcomparison/proposedまたは移行backup pairへ結合し、TESTCASESのaction表を
+      全分岐で検証する。confirmed/corrected/resolved/preservedのfinal pair条件、
+      canonical U+00B5、空白rationale、指定email/account/device label、
+      schema外PII propertyの個別mutationを追加する。
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:507
+    problem: freeze順とstale依存graphが再設計後の候補・comparison・migration工程を表現していない。
+    evidence: >-
+      FREEZE_ORDERはsource-ab-sealed等の旧来の粗い8段階のままで、A/B個別seal、
+      comparison freeze、backup検証、32件移行、全206 panel確認を区別しない。
+      HASH_GRAPHにもcandidate A/B、comparison、migration backup、migrated ID set、
+      human-confirmed source entriesのnodeがなく、line 771はsource、assignment、corpus、
+      auditObjectだけをmutation起点としている。このため新しい上流証跡が変わっても
+      approval、review、Red/Green、較正がstaleになる契約を保護できない。
+    required_change: >-
+      DESIGNとTESTCASESの作成順および有向依存をfixtureへ反映し、A/B候補、comparison、
+      backup、移行ID集合、人間確定sourceの各mutationから必要な全下流証跡がstaleになることと、
+      完全なgraphが非循環であることを検証する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  対象hashと指定hashは一致し、TypeScript型検査は成功した。対象Vitestは2340件Green、
+  5件は各欠落成果物だけを理由とする期待Red、TC-REAL-001の1件は全成果物存在だけを条件とするskipだった。
+  独立再計算ではA/B各206件、既知3 hash、exact=618、canonical-unit-equivalent=206、
+  different=0を再現し、backupも固定SHA-256、33 entry、32 complete、P11-N033未完了を確認した。
+  ただし直前のR-001からR-005は部分実装に留まり、mutationが未実行または自己充足しているため、
+  承認済みTESTCASESを保護するtest-code gateとしては通過できない。
+```
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts
+    hash: sha256:c3a2fca438264622fd7db6c19cc71a13318263235d4d2beb63307a8d2f98f4ab
+findings:
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:392
+    problem: LocalStorage移行oracleは固定backupの真正性と無改変移行を検証せず、mutationも固有の拒否条件へ到達していない。
+    evidence: >-
+      migratePriorCaptureForOracleはsource file SHA-256、version、role、entryの完全schema、
+      locator、移行後verification/actionを検査しない。TC-SOURCE-AUDIT-003の各mutationは、
+      成功済み32件を保持した同じstateへ再移行するため、すべて先頭IDのmigration-conflictで失敗する。
+      confirmed=false、mu code point変更、-0、P11-N033 confirmed、unknown propertyの各条件は
+      実際には評価されず、失敗時atomicityの検査も自己充足している。
+    required_change: >-
+      固定backup hash・version・role・33件中32 complete・P11-N033を検証するtest-local fixtureを用い、
+      各mutationを空の独立stateから実行する。copy前後のraw UTF-8 bytes/code units、
+      normalized binary64 bits、locator、preserved-prior-human-confirmation、候補による上書き禁止を
+      個別に比較し、各固有拒否条件へ到達したうえで失敗前後state不変を確認する。
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:397
+    problem: 人間確認workflowは824という件数とID形式だけを検査し、凍結済み候補・移行済み32件・正確な206×4 event集合へ結合されていない。
+    evidence: >-
+      verifyHumanWorkflowは任意の正規表現適合IDを824個用意すれば通過でき、frozen A/B各206件、
+      comparison hash、backup migration、期待される206 ID集合との一致を受け取らない。
+      通常テストの負例もeventを1件削除するだけで、PDF表示順違反、明示操作なし、未保存、
+      候補freeze未完了、未知または欠落panel/fieldを個別に検出しない。production readerの
+      確認時0回と事後照合時1回は分離されたが、確認開始条件と完全event mapの契約は保護されない。
+    required_change: >-
+      A/B・comparisonの既知hash、移行済み32件、frozen 206 IDから期待824 keyを導出する独立workflow stateを作り、
+      event key集合の完全一致、sourcePanelVisibleAt<=candidateVisibleAt、field別explicit action、
+      persisted stateを検証する。各条件を一つずつ壊す到達可能なmutationと、export完了までreader 0回、
+      別fixtureによる事後照合reader 1回を維持する。
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:341
+    problem: candidate comparison・proposal・最終値・backup pair・humanActionのaction表が依然として結合されていない。
+    evidence: >-
+      auditEntryはcomparison/proposedまたは移行backupを入力に持たないため、exactでの
+      resolved-disagreement、proposalと同値のcorrected-proposal、proposalと異なる
+      confirmed-proposal、任意IDでのpreserved-prior-human-confirmationを受理できる。
+      canonical-unit-equivalentのfinal rawをU+00B5へ拘束せず、PII検査も単純な@と
+      account/device単語だけなので、accountId=、user_id:、deviceName=、hostname=、
+      machine_id:およびschema外PII propertyを検出しない。追加された負例は
+      different+confirmed-proposalとemail風文字列の2件だけで、承認済みaction表の全分岐を覆わない。
+    required_change: >-
+      各fieldを再構築済みcomparison/proposedまたは移行backup pairへ結合し、
+      confirmed/corrected/resolved/preservedのfinal raw・normalized条件とrationale条件を
+      全分岐で検証する。canonical U+00B5、空白rationale、指定されたemail/account/device label、
+      schema外PII propertyを個別mutationで拒否する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  指定hashは再計算値と一致した。TypeScript型検査は成功し、対象Vitestは2341件Green、
+  corpus.json・split.json・protocol.json・SHA256SUMS・SOURCE-AUDIT.jsonの欠落だけを理由とする
+  5件の期待Red、全成果物存在を条件とするREAL206の1件skipだった。通常実行されるgzip固定fixtureは
+  tmpの独立A証跡206件と一致し、そこから限定mu変換したBも独立B証跡と一致した。既知A/B hash、
+  comparison hash、exact 618・canonical-unit-equivalent 206・different 0を再現し、
+  206件の温度・過飽和度・時間・FOVの単位変換も独立検算で不一致0件だった。
+  新しいfreeze順とstale graphは候補A/B、comparison、backup、移行ID集合、人間確定sourceから
+  review・Red・Green・calibrationまでの推移集合を持ち、cycle負例も到達するため、直前のR-001とR-005は解消された。
+  旧workflowState、exportThenCompare、FREEZE_ORDER、HASH_GRAPH等のhelper残存もない。
+  ただしR-002、R-003、R-004はmutationが別条件で失敗するか、必要な状態結合自体がなく未解決である。
+```
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts
+    hash: sha256:06d324a129e172b437ed03a3c6490617f2be208fc88c44e42ba758db96fb4ccd
+findings:
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts:500
+    problem: 人間確認eventの重複を表現・拒否できず、824 fieldの完全なevent集合契約が未完成である。
+    evidence: >-
+      WorkflowState.eventsはMap<string, VerificationEvent>であり、同じpanel/field keyを二度setすると
+      後のeventが前のeventを無条件に上書きする。verifyHumanWorkflowもSet由来の期待keyとの
+      membershipとMap.sizeだけを検査するため、重複eventが発生した履歴を正常な824件として受理する。
+      line 999以降のmutationは欠落、未知panel、未知field、PDF表示順、raw/normalized操作、永続化を
+      個別検査するが、duplicate eventの到達可能なmutationと固有reasonがない。
+    required_change: >-
+      確認eventを重複回数が失われない配列またはkey別件数付き構造で保持し、frozen 206 IDから導いた
+      824 keyについて各keyの許容件数を明示して検証する。同一panel/field eventを重複させたfresh
+      fixtureが専用reasonで拒否され、exportされず、readerが0回のままであるmutationを追加する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  指定hashは公式hashスクリプトでも一致し、TypeScript型検査は成功した。対象Vitestは2350件中、
+  synthetic 2344件Green、5成果物それぞれのmissing-artifact assertionだけが期待Red、
+  REAL206が1件skipだった。固定gzip証跡はtmpの独立A 206件と完全一致し、独立再計算で
+  A hash de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732、
+  B hash b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3、
+  comparison hash 33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9、
+  exact 618、canonical-unit-equivalent 206、different 0を再現した。
+  A/B計1648 fieldのraw単位換算とnormalized値も不一致0件だった。R-001/R-005、backupの
+  schema・hash・32件無改変移行・atomic failure、action表、U+00B5、PII拒否、
+  reader分離、および旧helper残存0は維持されているが、duplicate event契約が未解決のため承認しない。
+```
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-schema-artifacts.test.ts
+    hash: sha256:ff9bfd0daf0c2f332d6a329a659e12d1abb94884314f9fc5c957d65b284d24c5
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  直前レビューの未解決findingは解消された。確認eventは重複履歴を保持するtuple配列となり、
+  frozen A/B comparisonの206 IDから導く824 keyを各1回に限定する。既存確認P11-N001と
+  新規確認P11-N033をそれぞれ重複させたfresh fixtureは専用reason
+  duplicate-human-verificationで検証・exportの双方が失敗し、exported=false、
+  production reader 0回を確認する。欠落、未知panel/field、PDF提示順、raw/normalizedの
+  明示操作、永続化、origin、候補freeze、32件無改変移行、action表、hash、stale伝播の
+  既存検査も維持されている。独立再計算では206 ID・824 field、A/B/comparison hash、
+  exact 618、canonical-unit-equivalent 206、different 0、raw単位換算不一致0を再現した。
+  TypeScript型検査は成功。対象Vitestは2351件中synthetic 2345件成功、計画済み成果物5件の
+  missing-artifact assertionだけが期待Red、REAL206は成果物完成前の許可済み1件skipだった。
+  重複event専用テストの単独実行も成功し、レビュー後の対象hashは指定値と一致した。
+```
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:db91dbcb45221a9da3ff4316f78c7432ae0a1f322dcbd2bbb8d7f8808ac90610
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:debda9d6c4ea0b7db2c3a7ac7a3f11a774594052e65b6ad3ac698d5ca2cb3e31
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  D-10承認時のDESIGNをcommit 786dd3bとbyte-for-byte照合し、hash
+  db91dbcb45221a9da3ff4316f78c7432ae0a1f322dcbd2bbb8d7f8808ac90610
+  が不変であることを確認した。DECISIONSの差分はD-11の17行だけで、対象を
+  libbrecht-2023-figure2-schema-artifacts.test.ts内の
+  TC-SOURCE-AUDIT-001..005およびTC-REAL-001のテストコード化に限定し、
+  通常DeliveryBuilderの初回・修正1回目・修正2回目と各レビューで残った同一種の
+  migration、206×4 workflow、action表の結合不足を記録している。D-11はD-07で同じ
+  ファイルに対して人間承認済みの高性能書込み担当例外と、人間の「必要なら高性能モデルへ
+  切り替えて続行」指示を再適用する工程判断であり、エージェント設計書の3回停止規則および
+  高性能モデル切替時の人間確認規則に整合する。変更境界、fresh Reviewer、期待Red、
+  非設計コミットゲートを維持し、SPEC/TASKSの要求・完了条件、SOURCE-AUDIT schema、
+  A/B凍結hash、32件無改変移行、206 panel全件確認、物理式、単位、適用範囲、数値法、
+  独立oracle、許容誤差を変更していない。TESTCASESも直近承認hash
+  31087002d9b47b0e5bdcb0be69bb3d62c9aab6d4be664b250523985d788d2b2b
+  と一致し、テストケース契約の変更はない。
 ```
