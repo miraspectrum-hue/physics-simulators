@@ -189,3 +189,78 @@
   切り替える。変更境界、承認済みDESIGN/TESTCASES、fresh Reviewer、期待Red、非設計自動コミットの
   各ゲートは変更しない。
 - 不採用案: 通常DeliveryBuilderで4回目を繰り返す。同じ未結合・到達不能mutationが3回続いたため採用しない。
+
+## D-12: source-audit確認ツール実装を高性能モデルへ切替
+
+- 状態: 人間の「必要なら高性能モデルへ切り替えて続行」指示の再適用（2026-10-10）
+- 対象: `tmp/snow-crystal-t1-7/source-audit-capture/` の一時確認ツール。production app、corpus、
+  DESIGN/TESTCASESの契約は変更しない。
+- 事実:
+  1. 通常DeliveryBuilderによる初回、修正1回目、修正2回目の3回で、候補hash、localhost限定、
+     画像token、共有validatorなどは改善した。
+  2. 3回目にも、固定実backup後半12件のU+03BC rawを候補Bだけに照合して移行後stateを拒否すること、
+     検証前に旧LocalStorageを上書きし得ること、action/migration/PDF証跡の完成validator迂回、
+     必須moduleのserver allowlist漏れが残った。
+  3. 同一の安全な移行・状態結合不足が3回反復したため、通常DeliveryBuilderで4回目を行わない。
+- 決定: この一時ツールの修正に限り、高性能モデルの書込みエージェントへ切り替える。旧LocalStorageを
+  実ブラウザで操作する前に、実backupのread-only検証、atomic migration、共有validator、module graph、
+  独立Reviewerの承認を必須とする。監査画面は承認後にだけ起動する。
+- 不採用案: 不完全な現画面で人間確認を再開する。既存32件を失う危険があるため採用しない。
+
+## D-13: 複数AI形態注釈草案の3回レビュー後停止と限定修正
+
+- 状態: 人間決定済み（2026-10-15）
+- 対象: 非規範・未採用の
+  `MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md`。現行 `DESIGN.md` §5.1 と D-03、画像、
+  LocalStorage、既存の人間確認結果は変更しない。
+- 事実:
+  1. 初回草案の独立レビューでは、観察値から現行enumへの写像に未定義組合せがあり、完全な
+     truth tableと相互制約が必要とされた。
+  2. 1回目の修正後レビューでは、branch対象が不可視だがbasal面は見える組合せを合法に表現できず、
+     同じ全組合せ被覆の不足が残った。
+  3. 2回目の修正後レビューでは、hollowing対象が十分見え、opening/rim/innerWallが全てclearだが
+     新成長への帰属がuncertainである1組だけが、合法とされながらどのlabelにも写らなかった。
+  4. 画像RGBA hash preimageとtransport状態行列にも、独立実装を一意にするための限定修正が3点残る。
+  5. 現行仕様は一切変更されておらず、草案をpilotやcorpusへ使用していない。
+- 停止理由: 「合法な全観察組合せを一つのlabelまたはschema-invalidへ送る」という同じ根本原因が、
+  初回作成と2回の修正を経た3回の独立レビューで反復したため、通常工程で自動的に4回目へ進まない。
+- 選択肢:
+  1. **推奨**: fresh ArchitectPhysicsへ、残る3 findingだけを小さく分割して限定修正させ、別のfresh
+     Reviewerで再確認する。実行可能なJSONL/hash契約を草案に残せる。
+  2. 草案を概念設計へ縮小し、完全schema、truth table、hash契約を後続の正式設計タスクへ分離する。
+     今回の文書は短くなるが、そのままpilotには使えない。
+  3. 既知findingを残したまま草案として受け取る。誤分類とprovenance不整合の可能性があるため非推奨。
+- 決定: ユーザーが選択肢1を承認した。fresh ArchitectPhysicsが未写像だったhollowing 1組、3種類の
+  RGBA hash preimage、画像transport状態行列だけを限定修正し、fresh Reviewerがhash
+  `fcfa38879c41ef626a16ab953977e5a29d6f1f809d676c50a4cbb1087a7ad097` の草案をfindingなしで
+  `approved` とした。草案は引き続き非規範・未採用であり、現行 `DESIGN.md` §5.1 と D-03を変更しない。
+
+## D-14: 複数AI形態注釈の24画像・案A pilot準備
+
+- 状態: 人間決定済み（2026-10-16）、準備設計のみ。pilot未実行
+- 対象: 非規範・未採用の `MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md` と
+  `PILOT-RUNBOOK.md`。現行 `DESIGN.md` §5.1、D-03、schema、画像、LocalStorage、既存human approvalは
+  この決定では変更しない。
+- 人間決定:
+  1. 最初のpilotは案Aを採用し、AI一致/highを含む24画像すべてを人間が最終確認する。
+  2. 24画像はFigure 2のPDF pp. 11–14から各6画像とし、同じ順序の12画像×2 batchで各annotatorへ渡す。
+  3. 独立annotatorはClaude Code（VSCode）、Codex（VSCode）、Gemini Chat（APIなし）を基本とする。
+  4. GitHub Copilotは、画面に表示された基盤modelが3 annotatorのfamilyと重複しないと記録できる場合だけ、
+     別familyのfresh adjudicator候補にする。重複または不明なら人間決定へ戻す。
+- transportの限定修正:
+  - 3 actorへ同じlocal blinded derivative bytesを渡し、送信前のfile hash、decoded RGBA hash、寸法、MIME、
+    transformなし、attachment previewを必須にする。
+  - provider受領bytes/pixelsが公開されないVSCode/chatでは `transportAssurance='local-input-only'` を許す。
+    この場合はprovider内部preprocessを必ず `unobservable`、policy version/evidenceを `null` と記録し、
+    provider/modelが受け取ったpixelsの同一性を主張しない。
+  - provider受領bytesまたはdecoded pixelsを検証できる場合は `verified-bytes` / `verified-pixels` として、
+    より強い保証を残す。`documented-no-transform` は、版付き公式policy artifactが受領後からmodel入力まで
+    変換なしを明示し、その一致hashを保存できる場合だけ許す。
+  - preview上のcrop、破損、向き変更、過度な縮小、mask欠落、画像/匿名ID対応欠落はreceipt公開の有無に
+    かかわらず停止する。
+- 理由: 実際に利用できるClaude Code/Codex/Gemini Chatはprovider受領hashを通常公開しないため、D-13時点の
+  `not-exposed => run停止` ではpilotを実行できない。一方、観測不能なprovider内部処理を同一pixelと断言する
+  こともできないため、local入力の固定と保証レベルの明示を分ける。
+- 限界: これはpilot準備の決定であり、3-agent方式を現行corpus工程へ正式採用する決定ではない。画像生成・
+  model実行前に `DESIGN.md` §5.1、D-03、schema、tests、approval workflowを正式改訂し、独立reviewと
+  必要な人間承認を通す。物理的分類定義、Reiter CA、較正値、現行human finalは変更しない。

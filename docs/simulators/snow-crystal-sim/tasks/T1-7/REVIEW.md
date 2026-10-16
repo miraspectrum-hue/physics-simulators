@@ -45,6 +45,72 @@ summary: "一次資料v1について206観測、PDF 12,317,042 bytes、SHA-256�
 ```
 
 ```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:83961364415a56e2ab9ef27b85e3c7c3ced5358552dd63d68769496e3b5ee7e6
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:2abf3ee49a9e4c5305ac7d6f5c5a031badcb69f3f1f136e179c870a38d5588de
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/candidate-data.js
+    hash: sha256:0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs
+    hash: sha256:a572e5f94edda9b8809184cfebb7a77806d4b7f6bc19c4fc5cfa4074c6cda2ba
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/generate-candidates.mjs
+    hash: sha256:f859c405ced21b26b297332ed6589b3b02fadf7b1f1cde5b2b2002352c3df761
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/index.html
+    hash: sha256:2eeeb1a5a851aad4a603900580fbec01774bd9f11b2c20d42391c07c11d1616f
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/pdf-controller.mjs
+    hash: sha256:103649d119df1f365eb7df60d715c51fa53242624bbe320f1b91acdec713e908
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/prior-pairs.mjs
+    hash: sha256:1318e78713420c6108a0b928b13c140217facb1f2ec210fae7c3a41b009a9174
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:69bcf01d60a29062a6338d140e96c7d8003062e7cdc65438cab62ce8641f0d3a
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:25f5337c048bedbfef123617f7e40f4879966104b0f923d0e6738e61e8a5dbc0
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/styles.css
+    hash: sha256:5e4fc0d5e96f062101c72600411331209d9a460de8aa3e0bf9ab7272301c1b07
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/synthetic-migration.fixture.mjs
+    hash: sha256:f139099bc1557fcddc5dfb8e4c68805efd9c4b5905612181842c243217f3afb9
+findings:
+  - id: R-001
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs:1
+    problem: 原資料として表示する4枚のpage rasterが、固定SHA-256のPDFから生成された画像であることを実行時に検証していない。
+    evidence: >-
+      app.js:66-73はpage番号からPNGの固定pathnameを組み立てるだけで、server.mjsはpathnameが正規表現に
+      一致すれば任意のfile bytesをimage/pngとして返す。source-audit-capture.test.mjs:206も200応答と
+      Content-Typeだけを検査するため、別の正常なPNGへ置換しても候補gate、server integration、画像decode、
+      人間確認、exportが通り、exportには引き続き固定PDF hash
+      20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af
+      が記録される。独立計算した現在の4画像hashはpage 11から順に
+      2354a7b5f79182ef4fd3debae6da006f8e940adc1b87ef2c75a249de0a77bb6d、
+      ae75d6d5c1f2f63d6cb4fbbca7bb3a915ee92467dd613544afe8a9d870a927c4、
+      dc09dc81664d87c03a8744d8777311c9db4483c9847dd2ba4e53f9af82bb41a2、
+      96ecd9a7bf05fa430df7af9eb7ba96896b01f8da4e795ad4eaa310283cf2c654
+      だが、これらを固定PDFからの検証済みrenderへ結び付けるmanifestまたはgateはrepository内に存在しない。
+      したがって「同じhashの原PDF panelを全206件で目視する」というD-10/TESTCASES契約を保証できない。
+    required_change: >-
+      固定PDFのbytes hashを確認して承認済み条件で再renderした4 rasterについて、pageごとのSHA-256と
+      pixel dimensionsを固定証跡として記録する。serverはlistenまたは配信前に4 fileのbytes hashと
+      dimensionsを検証し、不一致なら候補を表示できないようfail closedにする。決定的テストでは4つの
+      既知hashを独立に照合し、1 byte変更または別の正常PNGへの置換でserver/UI gateが停止することを検査する。
+conditions: []
+rollback_to: implementation
+summary: >-
+  過去3回のimplementation findingは解消されている。実添付をread-onlyで固定hash照合後に
+  migrateLegacyからvalidateStateへ通し、33 entry、32 confirmed、blank P11-N033、128 pairのUTF-8 bytes・
+  Unicode code unit・binary64 bits不一致0、A/B pair不一致0、移行ID hash一致を再現した。
+  検証後のatomic 1 write、write失敗時の旧raw不変、v2 reload/save/export共通validator、
+  action/domain/-0/PII、206 panel・824 field、JSDOM実app配線、画像load/paint/stale/failure、
+  candidate mutation、export、127.0.0.1限定serverとmodule graph・拒否後生存は独立実行で成功した。
+  9 JS/MJSの構文検査と決定的testもPASSし、A/B/comparison hash、618 exact、
+  206 canonical-unit-equivalent、1648 pairの単位換算、page件数50/54/54/48を再現した。
+  ただし、人間が確認する原画像自体が固定PDFへ暗号学的に結合されていないため、
+  source-oracleの正しさを保証できず承認できない。
+```
+
+```yaml
 review_type: testcases
 status: changes-requested
 reviewed_files:
@@ -1515,4 +1581,607 @@ summary: >-
   独立oracle、許容誤差を変更していない。TESTCASESも直近承認hash
   31087002d9b47b0e5bdcb0be69bb3d62c9aab6d4be664b250523985d788d2b2b
   と一致し、テストケース契約の変更はない。
+```
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:27c6ee4f9ae4ce8151a5944cd50dd47dc8d29cfb6aa970dfcc9e31ea8413cf32
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/candidate-data.js
+    hash: sha256:0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/generate-candidates.mjs
+    hash: sha256:f859c405ced21b26b297332ed6589b3b02fadf7b1f1cde5b2b2002352c3df761
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/index.html
+    hash: sha256:2c514925786527ef66aac92275051586983193dd9f0cc967780b066eac0c77ff
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:47905b4d6ab49dc626a9a074fb67fbecdaef6de26e86840e8e6c47e69d43f158
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:bc84d1ef554526f862f71b12593bc2a89c6a6cb2186135877b61400688ea0565
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:76171f06b34016b6d38853b68c439708d82a64887879da292d3e715638e7a760
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/styles.css
+    hash: sha256:5e4fc0d5e96f062101c72600411331209d9a460de8aa3e0bf9ab7272301c1b07
+findings:
+  - id: R-001
+    severity: critical
+    location: tmp/snow-crystal-t1-7/source-audit-capture/app.js:1
+    problem: version-1 LocalStorage migration is neither an exact preflight nor atomic, and a failed or partial load can overwrite the existing capture.
+    evidence: migrate() does not verify the fixed backup byte hash, version, exact role, 33-entry/32-complete shape, incomplete P11-N033, migrated-ID-set hash, unit conversions, candidate agreement, unknown IDs, or the complete set before constructing version 2. Invalid entries are silently skipped while migration metadata still asserts the fixed source hash and entry count. load() converts any JSON parse exception to blank(), and initialization immediately calls save(), replacing the prior LocalStorage value. This violates TC-SOURCE-AUDIT-003's bit-for-bit unchanged-on-failure rule and can destroy the user's prior work.
+    required_change: Preserve the exact original LocalStorage string, validate its UTF-8 SHA-256 and every fixed backup invariant before mutation, construct and verify the complete 32-entry migrated state in memory, and write version 2 only after all checks pass. On any failure, leave LocalStorage byte-for-byte unchanged, show a STOP state, and disable confirmation/export.
+  - id: R-002
+    severity: critical
+    location: tmp/snow-crystal-t1-7/source-audit-capture/app.js:1
+    problem: Candidates can be confirmed before the matching source panel is visible, and asynchronous image races can display a different panel from the current candidate.
+    evidence: update() renders and enables candidate fields before calling renderCrop(), and does not await it. renderCrop() clears the canvas and awaits only newly created Image objects; a cached-but-still-loading image is drawn immediately, while an older asynchronous render may later paint over a newer navigation. There is no observation token or loaded-image identity check. Thus sourcePanelVisibleAt can be later than candidateVisibleAt, and rapid navigation can pair one panel image with another observation's fields.
+    required_change: Load/decode and paint the exact observation crop before exposing or enabling its candidates, associate every render with an observation/navigation token, discard stale completions, await cached images that are still loading, and fail closed with confirmation controls disabled when the image cannot be displayed.
+  - id: R-003
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/app.js:1
+    problem: The completion/export gate does not enforce the approved comparison/action/final-value state machine and can export false verification evidence.
+    evidence: completeField() accepts any non-empty raw string and finite normalized number with a checked box. It does not require confirmed-proposal values to equal the frozen proposal, corrected-proposal values to differ and have valid unit conversion, resolved-disagreement for different comparisons, or preserved-prior-human-confirmation to originate from the migrated 32 entries. That preserved action is selectable on every new field. Raw/normalized unit consistency and -0 are not checked. validRationale() also misses required PII labels such as userId=, uid=, hostname=, computerName=, machine_id:, accountId=, and deviceName=. The exported migration evidence is hardcoded and omits the migrated ID-set hash, incomplete ID list, and originalVerificationTimeKnown.
+    required_change: Gate export through one authoritative validator implementing the complete TC-SOURCE-AUDIT-004 action/final/rationale/unit matrix; restrict preserved action to immutable migrated records; implement the specified PII patterns; reject -0 and inconsistent raw/normalized pairs; and export migration evidence computed from the successfully validated migration, including the required ID-set hash and incomplete-ID metadata.
+  - id: R-004
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs:1
+    problem: The deterministic test does not exercise the actual application migration, LocalStorage, panel-display ordering, field state machine, or export gate.
+    evidence: The test loads only candidate-data.js and uses separate simplified cmp(), migrate(), and gate() implementations. It checks one positive migrated entry and an empty gate, but never loads app.js. Consequently it passes while R-001 through R-003 remain present, and it does not cover the rejection/unchanged-state matrix required by TC-SOURCE-AUDIT-003/004. generate-candidates.mjs merely imports this same test.
+    required_change: Test the actual shared application logic or execute app.js in a deterministic DOM/browser harness. Add mutation coverage for every migration rejection with unchanged LocalStorage, the complete 32-entry backup mapping, PDF readiness and stale-render races, all action/final/rationale combinations, PII labels, 824-field/role/hash export gating, clear confirmation, reload persistence, and exported evidence fields.
+  - id: R-005
+    severity: medium
+    location: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs:6
+    problem: The tool described as local-only binds without a loopback host and serves the entire tmp directory rather than only required capture assets.
+    evidence: listen(port) uses the unspecified network address, while root resolves to repository tmp. An independent request successfully retrieved /snow-crystal-t1-7/source-extraction-a.json through this server even though it is outside source-audit-capture. Other files under tmp are likewise reachable to any network peer able to connect.
+    required_change: Bind explicitly to 127.0.0.1 or ::1 and allowlist only the capture application files plus the four required raster images, rejecting every other path.
+conditions: []
+rollback_to: implementation
+summary: Candidate integrity checks themselves were reproducible: both frozen originals and the bundle contain 206 matching observations, the independently recomputed hashes are de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732, b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3, and 33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9, with 618 exact, 206 canonical-unit-equivalent, and 0 different fields. All 1,648 A/B raw-to-normalized unit checks passed, syntax and the current deterministic test passed, the generator left both originals unchanged, and the supplied backup independently reproduced its fixed hash, 33/32 counts, P11-N033 incompleteness, and migrated-ID-set hash. Approval is blocked because migration can destroy prior data, source images are not reliably paired before confirmation, invalid field evidence can be exported, and the tests do not detect these failures.
+```
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:47905b4d6ab49dc626a9a074fb67fbecdaef6de26e86840e8e6c47e69d43f158
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:784ebf8cfcd00d5a4214c23938799422bae9ec9b66f9164adf010a511a34a2d0
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/candidate-data.js
+    hash: sha256:0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs
+    hash: sha256:6099d94f330f313165be35551f2a9976f1e9947189a2bd7daff7869db04fa13e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/generate-candidates.mjs
+    hash: sha256:f859c405ced21b26b297332ed6589b3b02fadf7b1f1cde5b2b2002352c3df761
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/index.html
+    hash: sha256:2eeeb1a5a851aad4a603900580fbec01774bd9f11b2c20d42391c07c11d1616f
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:fe4e7a57c64543feefbd044f652191cfe4c3e71bb312f58c60bbd1dc5907a980
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:16eed28c90f51efcbd13f8a3d164737a16658a6c37342e50bcfee9411af8340e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/styles.css
+    hash: sha256:5e4fc0d5e96f062101c72600411331209d9a460de8aa3e0bf9ab7272301c1b07
+findings:
+  - id: R-001
+    severity: critical
+    location: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs:9
+    problem: 固定hashと一致する実LocalStorage backupを移行できない。
+    evidence: >-
+      SHA-256が9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0cの
+      ユーザー再取得backupは、P11-N033を9個の既定propertyを持つblank/incomplete entryとして保存している。
+      migrateLegacyはP11-N033にpropertyが一つでもあれば
+      "P11-N033 must be blank"で拒否するため、この固定backupを独立実行すると必ず失敗した。
+      テストは実際の形ではなくP11-N033={}を生成しているため欠陥を検出しない。
+    required_change: >-
+      P11-N033について、実backupどおり4 raw空文字、4 normalized null、confirmed=falseの
+      完全schemaだけをblank/incompleteとして受理し、それ以外の形は拒否する。
+      実backupと同形のtest-local fixtureで33件、32 complete、P11-N033未完了、固定hash gate後の
+      32件無改変移行を検証する。
+  - id: R-002
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs:7
+    problem: exportで使うvalidatorが承認済みaction表、source domain、PII規則、既存32件の真正性を完全には強制しない。
+    evidence: >-
+      validateFieldはproposalと同値のcorrected-proposalを受理し、growthTime="-1sec"/-1も受理する。
+      validRationaleはaccount_id、user_id、device_nameの必須禁止labelを検出しない。
+      preserved=trueならbackup pairとのbytes/bits一致を確認せず、例えばtemperature="999C"/999でも
+      preserved-prior-human-confirmationとして受理する。さらにapp.js:3はversion 2状態を
+      entries objectの存在だけで信頼し、unknown propertyを含む改変状態も再検証しないため、
+      app.js:6のexport gateを偽造済みまたは壊れた保存状態が通過し得る。
+    required_change: >-
+      comparison/proposalまたは固定backup pairへ結合した単一のauthoritative validatorを作り、
+      confirmed/corrected/resolved/preservedの全action条件、correctedとproposalの差、
+      growthTime/FOVの正値を含むsource grammar/domain、-0、指定された全PII labelとschema外propertyを
+      検証する。version 2再読込時とexport直前にも206 ID、824 field、保存schema、移行32件の
+      backup一致と不変性を同じvalidatorで検証する。
+  - id: R-003
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs:1
+    problem: deterministic testが実アプリのLocalStorage、画像workflow、完全なaction/export gateを検証していない。
+    evidence: >-
+      テストはcore.mjsだけを直接呼び、app.jsを読み込まない。固定backupではなく期待hashを引数で差し替えた
+      簡略fixtureを使い、移行拒否行列、1回だけのatomic write、失敗時のstorage byte不変、
+      version 2再読込、32件全値、824 field、全action分岐、PII全形式、-0、保存・再読込、
+      sourcePanelVisibleAt順序、stale image completion、画像失敗、export内容を検査しない。
+      現テストはPASSする一方で、R-001とR-002の反例はいずれも到達した。
+    required_change: >-
+      appとtestが同じ共有production logicを通る構造を維持しつつ、実backup同形fixtureによる全移行条件と
+      atomic LocalStorage adapter、206×4 workflow、action matrix、PII、domain、reload、exportを検査する。
+      DOM/browser harnessまたは等価な注入可能境界で、画像decode/draw完了前のcontrols無効、
+      navigation tokenによるstale破棄、画像失敗時STOPも決定的に検査する。
+  - id: R-004
+    severity: medium
+    location: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs:1
+    problem: malformed percent-encoded pathが403/400で拒否されずローカルサーバーを終了させる。
+    evidence: >-
+      通常allowlist、4 raster、source-extraction拒否、encoded traversal拒否、127.0.0.1 bindは確認できた。
+      しかし/%ZZを要求するとtry外のdecodeURIComponentがURIErrorを投げ、Node processはexit code 1で終了した。
+    required_change: >-
+      URL解析とdecodeを例外処理内へ置き、不正encodingを400または403で終了させる。
+      allowlist外・encoded traversal・malformed encodingの各要求後もserverが稼働していることをテストする。
+conditions: []
+rollback_to: implementation
+summary: >-
+  全対象ファイルの構文と現行共有テストは成功した。独立再計算でも候補206件、A/B/comparisonの既知hash、
+  exact 618、canonical-unit-equivalent 206、different 0、A/B計1648 pairの単位換算不一致0、
+  page件数50/54/54/48を再現した。画像経路は候補を消してからcached pending loadをawaitし、
+  navigation tokenでstale completionを破棄し、draw後にだけmountする形へ改善されている。
+  serverも127.0.0.1 bind、アプリallowlist、4 raster限定、source-extractionとencoded traversalの拒否を確認した。
+  ただし固定hashの実backup自体を移行できず、最終validatorとテストに承認済み契約を通過させる穴が残るため、
+  implementation gateは承認できない。
+```
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:90a8735549b389b37e5919fc328fc1188541fabfe391b8d6bc592847af7dade6
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/candidate-data.js
+    hash: sha256:0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs
+    hash: sha256:89a61bdc1af4ced5ebaeceb1d2876004c762d61da6d0cd2aa3783243599f5068
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/generate-candidates.mjs
+    hash: sha256:f859c405ced21b26b297332ed6589b3b02fadf7b1f1cde5b2b2002352c3df761
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/index.html
+    hash: sha256:2eeeb1a5a851aad4a603900580fbec01774bd9f11b2c20d42391c07c11d1616f
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/pdf-controller.mjs
+    hash: sha256:103649d119df1f365eb7df60d715c51fa53242624bbe320f1b91acdec713e908
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:47905b4d6ab49dc626a9a074fb67fbecdaef6de26e86840e8e6c47e69d43f158
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:91b22d35568519ce0bcb8be8d06813197bab8bf01b14e13df4c5c8f4e415498a
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:7dc1b74818e5825b597b823f94a5c463972902725a0af2b9146730217e5bf7d4
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/styles.css
+    hash: sha256:5e4fc0d5e96f062101c72600411331209d9a460de8aa3e0bf9ab7272301c1b07
+findings:
+  - id: R-001
+    severity: critical
+    location: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs:8
+    problem: 固定hashの実バックアップから生成したv2状態をauthoritative validator自身が拒否する一方、appは検証前にその状態で旧LocalStorageを上書きする。
+    evidence: >-
+      SHA-256 9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c
+      の実添付をmigrateLegacyへ入力すると33件中32件をbyte/bit不一致0で移行できたが、
+      validateStateはL23-F2-P11-N021..N032の12件のsquareFieldOfViewをv2 fieldとして拒否した。
+      実バックアップはこの12件でU+03BCのrawを保持しA候補と一致するが、validateFieldのpreserved分岐は
+      全32件を候補Bとだけ照合している。app.js:3はmigrateLegacy後にvalidateStateを実行せず、
+      state=migrated; save()で同じkeyへ書くため、固定v1文字列は無効なv2で置換される。
+      保存済みfieldは画面上immutableなので修復できず、exportまたは次回reloadでSTOPする。
+    required_change: >-
+      preserved fieldを固定バックアップの各raw byte列・normalized binary64 bitsそのものへ結合し、
+      AまたはBのどちらと一致したかに依存せず32件を再検証する。移行結果全体を同じauthoritative validatorで
+      検証してから、LocalStorageへ一度だけatomic writeする。検証またはwrite失敗時は旧文字列を
+      byte-for-byte保持する。
+  - id: R-002
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs:8
+    problem: v2再読込・export用validatorが承認済みaction表、移行証跡、PDF表示状態を完全には強制しない。
+    evidence: >-
+      独立反例でcomparison=differentのfieldへaction=corrected-proposalを指定してもvalidateFieldがtrueとなったが、
+      TESTCASESのaction表ではdifferentに許されるのはresolved-disagreementだけである。また206件全てに
+      sourcePanelInspected=true、sourcePanelVisibleAt=null、migration=nullを設定した状態が
+      validateState(...,{complete:true})を通過した。さらに有効なsynthetic移行状態の
+      migration.sourceKindをwrong、entryObjectCountを999へ変えてもvalidateStateがtrueだった。
+      したがって改変したv2 LocalStorageから、固定バックアップ証跡や実際のpanel表示を欠く824-field captureを
+      完成扱いにできる。
+    required_change: >-
+      単一のauthoritative validatorでcomparisonごとのactionを表どおり限定し、固定移行証跡の全定数、
+      32件の保存pair、206 ID・824 field、schema外property、sourcePanel表示完了の証跡を検査する。
+      固定バックアップを使う本workflowではmigration=nullを完成状態として拒否し、v2 reload時とexport直前に
+      同じ検証を実行する。
+  - id: R-003
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs:1
+    problem: ローカルサーバーがapp.jsの必須moduleであるpdf-controller.mjsを配信しないため、実画面が起動できない。
+    evidence: >-
+      app.js:1は./pdf-controller.mjsをstatic importするが、serverのallowlistに同fileがない。
+      実サーバーへindex.htmlとapp.jsを要求すると200、pdf-controller.mjsは403となった。
+      そのためブラウザーはmodule graphを読み込めず、候補hash gate、LocalStorage移行、PDF表示、
+      STOP処理のいずれも開始できない。
+    required_change: >-
+      pdf-controller.mjsをcapture applicationの限定allowlistへ追加し、index.htmlから辿れる全module graphが
+      200で解決することをserver integrationで検査する。tmp内のその他のfileは引き続き拒否する。
+  - id: R-004
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs:1
+    problem: 現行テストは実バックアップ同形fixture、appの保存・再読込・export配線、実serverのmodule graphを通さないため、R-001からR-003を検出できない。
+    evidence: >-
+      テストは32件全ての値を候補Bから生成するため、実バックアップ後半12件のU+03BC rawを再現せず、
+      migrateLegacy後のvalidateState不一致を隠している。app.jsを実行せず、LocalStorageのwrite回数・失敗時不変、
+      v2 reload、export gateも検査しない。PdfPanelControllerは単体でstale/failureを検査するだけで、
+      appの実配線を通らない。server integrationもpdf-controller.mjsを要求しないため、テスト全体はPASSしても
+      実画面の必須moduleが403である。
+    required_change: >-
+      外部添付をapp/test依存にはせず、実バックアップと同じ33-entry schemaおよび32件の混在mu rawを持つ
+      test-local fixtureを用意する。共有production経路でhash後の完全移行、検証後のatomic one-write、
+      全拒否時のstorage不変、v2 reload、action表、206×4 completion、export内容を検査する。
+      注入可能DOM/storage境界または決定的browser harnessでappのPDF controller配線を実行し、
+      server testではindexから辿る全moduleを要求する。
+conditions: []
+rollback_to: implementation
+summary: >-
+  implementation gateは未承認。全JS/MJSの構文検査と現行共有テストは成功した。独立再計算では候補206件、
+  page件数50/54/54/48、A/B/comparison hash
+  de2d1e32eed414f020c1be76fc82b2209848da2b399aa1f00c96ecb55638f732、
+  b641538a2344cb348e62532cb6e48aaf3b9b5cf236fd703a51a7f1b3d9cdcfd3、
+  33c545adebfae122fea0d84985445f60eeb7f17ed1e0e9ba2cb99d7a34b6bad9、
+  exact 618、canonical-unit-equivalent 206、different 0、A/B計1648 pairの単位換算不一致0を再現した。
+  pdf-controller自体はdecode/loadとpaint完了前にreadyを呼ばず、tokenでstale完了を破棄し、failure時はfailへ進む。
+  serverもmalformed percentを400、encoded traversalとallowlist外を403とした後も200応答を継続した。
+  しかし固定実バックアップ移行後の状態がvalidatorと矛盾して旧保存を上書きし得ること、
+  export validatorの迂回、必須moduleの配信漏れ、およびそれらを検出しないテストが残る。
+```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:2abf3ee49a9e4c5305ac7d6f5c5a031badcb69f3f1f136e179c870a38d5588de
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/candidate-data.js
+    hash: sha256:0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs
+    hash: sha256:a572e5f94edda9b8809184cfebb7a77806d4b7f6bc19c4fc5cfa4074c6cda2ba
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/generate-candidates.mjs
+    hash: sha256:f859c405ced21b26b297332ed6589b3b02fadf7b1f1cde5b2b2002352c3df761
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/index.html
+    hash: sha256:2eeeb1a5a851aad4a603900580fbec01774bd9f11b2c20d42391c07c11d1616f
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/pdf-controller.mjs
+    hash: sha256:103649d119df1f365eb7df60d715c51fa53242624bbe320f1b91acdec713e908
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/prior-pairs.mjs
+    hash: sha256:1318e78713420c6108a0b928b13c140217facb1f2ec210fae7c3a41b009a9174
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-integrity.mjs
+    hash: sha256:86b6368ae417dd4da19a634b6b64da4e71db39daf5fa9a119cb5cafba5872dbf
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-integrity.test.mjs
+    hash: sha256:caa784056282b33b7c4bb9d5263419a935ea8c2ba0d52828b7cb787ed85383b6
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-manifest.mjs
+    hash: sha256:748e976f91ef006838f0b8f1c778a123870cdd8ffbdf56e41f22b49ba4752571
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:5749854d09a264a24de2cbc4e9966036306580a9013318157c06d9f8c2b08b6c
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:51942a8e19f4d137c205c2fa614d9da8cfed29c9f4b0af1d59929cc141a1e5d9
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:25f5337c048bedbfef123617f7e40f4879966104b0f923d0e6738e61e8a5dbc0
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/styles.css
+    hash: sha256:5e4fc0d5e96f062101c72600411331209d9a460de8aa3e0bf9ab7272301c1b07
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/synthetic-migration.fixture.mjs
+    hash: sha256:f139099bc1557fcddc5dfb8e4c68805efd9c4b5905612181842c243217f3afb9
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/verify-raster-provenance.mjs
+    hash: sha256:17af3049f801d532a0e1f8eb1b2cfebfae42402797aa3c1bd5f688e74c09370a
+  - path: tmp/snow-crystal-t1-7/source-2306.13087v1.pdf
+    hash: sha256:20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af
+  - path: tmp/pdfs/snow-crystal-t1-7/page-11-600dpi.png
+    hash: sha256:2354a7b5f79182ef4fd3debae6da006f8e940adc1b87ef2c75a249de0a77bb6d
+  - path: tmp/pdfs/snow-crystal-t1-7/page-12-600dpi.png
+    hash: sha256:ae75d6d5c1f2f63d6cb4fbbca7bb3a915ee92467dd613544afe8a9d870a927c4
+  - path: tmp/pdfs/snow-crystal-t1-7/page-13-600dpi.png
+    hash: sha256:dc09dc81664d87c03a8744d8777311c9db4483c9847dd2ba4e53f9af82bb41a2
+  - path: tmp/pdfs/snow-crystal-t1-7/page-14-600dpi.png
+    hash: sha256:96ecd9a7bf05fa430df7af9eb7ba96896b01f8da4e795ad4eaa310283cf2c654
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  一時source-audit確認ツールの直前R-001は解消された。
+  独立実行したverify-raster-provenance.mjsは固定PDFの12,317,042 bytesと指定SHA-256、
+  Node 24.14.1、pdfjs-dist 6.3.289、@napi-rs/canvas 1.0.6を確認し、
+  承認済み600 dpi・crop-box・PDF rotation・display・annotation無効・system font/eval無効・
+  白背景・sRGB条件でpage 11–14をメモリへ再renderした。
+  全4枚が5100×6601で、manifest記載PNGとbyte-for-byte一致し、終了コード0だった。
+  serverは全4枚のhash・dimensions・RGBA8 headerを検証するまでserver/socketを作成せず、
+  配信には同じ検証済み独立Buffer snapshotだけを使う。
+  raster-integrity.test.mjsの既知hash照合、1 byte改変、同寸法の別正常PNGへの置換、
+  missing/dimension異常のpre-listen拒否、検証後caller buffer変更からの配信保護が独立実行でPASSした。
+  source-audit-capture.test.mjsもPASSし、33/32件の混在mu移行、128 pairのbytes/bits保持、
+  検証後atomic one-write、失敗時storage不変、v2 reload、action/unit/-0/PII、
+  206 panel・824 field完成とexport、実app DOM/PDF readiness、
+  localhost限定serverの全module graphと拒否後生存が維持されている。
+  13 JS/MJSの構文検査も成功した。
+  独立再計算したA/B/comparison hash、618 exact・206 canonical-unit-equivalent、
+  page件数50/54/54/48は固定契約と一致する。
+  全読取り対象をscripts/hash-files.mjsでhashした。
+  本承認は一時確認ツールに限定され、原資料の人間全件確認、
+  最終SOURCE-AUDIT・corpus完成、注釈承認またはT1-7全体の完了を意味しない。
+```
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: AGENTS.md
+    hash: sha256:3318d6489da13b50fa38756529d24e5b30ec30a46aa4538a531c7f9c93edf160
+  - path: .agents/skills/simulator-review/SKILL.md
+    hash: sha256:b83713167175991fcd6614a19c39319a071c77eb0976840f23e38e250d49639e
+  - path: .agents/skills/simulator-review/references/review-schema.md
+    hash: sha256:6f68a8261fce196387be2d8aa8dce8674a1b03670b5754ed7402028c6d9f8104
+  - path: apps/snow-crystal-sim/AGENTS.md
+    hash: sha256:e823a1daf8e876e917a7875a8c166ea350f311dd42cf748dc8d4fded8972c747
+  - path: docs/agent-architecture-codex.md
+    hash: sha256:ff01e1071a3732a06d27d1b768a5ba762e421d3aaddc5b65d9ec65f9a015ddd2
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:db91dbcb45221a9da3ff4316f78c7432ae0a1f322dcbd2bbb8d7f8808ac90610
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:31087002d9b47b0e5bdcb0be69bb3d62c9aab6d4be664b250523985d788d2b2b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:0a7b1e21a8ef153c21fee319d89dd9731067e8a1518e255d7ec165500d95f0a8
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/EVIDENCE.md
+    hash: sha256:01f6fae8bf399871ec62dab7969649e3acff5c7a39982cb96ce8ca484202a3c0
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/REVIEW.md
+    hash: sha256:753f9a81eb8260e4d74f8e8bc44d48737793f413620b1eab52d90e2c4f2509d4
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/legacy-restore.mjs
+    hash: sha256:1a58845402b1c92babaa6a1f0f2acffa30bad619320f1a3a5503e0c3b453a769
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/restore-app.js
+    hash: sha256:a15e8ce218935bc24c685208310358bed693626e374740aa78066152d58eeb98
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/restore.html
+    hash: sha256:50494ac06eba2c02ce245de663c1441af2b279f040602364f61b6a6ef2e558ac
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/legacy-restore.test.mjs
+    hash: sha256:e00693a742cf1dd4d103926837d98a0a0eda7884da928394886e0a31ca4e77fa
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:85f38770a033dde2c6537399be6df2e3a625aca67c41faa08be347f584e54438
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:511853e83832cb24d262b15d46c7e087ef83dfb5447a6c566ab4283bdd2ace04
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs
+    hash: sha256:a572e5f94edda9b8809184cfebb7a77806d4b7f6bc19c4fc5cfa4074c6cda2ba
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:2abf3ee49a9e4c5305ac7d6f5c5a031badcb69f3f1f136e179c870a38d5588de
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-integrity.mjs
+    hash: sha256:86b6368ae417dd4da19a634b6b64da4e71db39daf5fa9a119cb5cafba5872dbf
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-integrity.test.mjs
+    hash: sha256:caa784056282b33b7c4bb9d5263419a935ea8c2ba0d52828b7cb787ed85383b6
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:25f5337c048bedbfef123617f7e40f4879966104b0f923d0e6738e61e8a5dbc0
+findings:
+  - id: R-001
+    severity: high
+    location: tmp/snow-crystal-t1-7/source-audit-capture/legacy-restore.mjs:28
+    problem: >-
+      Current-state equivalence accepts invalid non-finite values in the intentionally
+      blank P11-N033 record and consequently overwrites unexpected current state.
+    evidence: >-
+      Independently replaced the trusted JSON's first "temperatureC": null with
+      "temperatureC": 1e999. JSON.parse produces Infinity, but canonical(current)
+      serializes Infinity as null, making it equal to the trusted blank record.
+      currentIsEquivalentV1 returned true; controller.prepare and controller.restore
+      both returned ok:true, and injected storage recorded one write. P11-N033 must
+      contain literal null normalized fields, and unexpected current state must be
+      rejected with zero writes. Existing restore tests pass without exercising this case.
+    required_change: >-
+      Reject invalid current-state values before canonical comparison, or use a recursive
+      schema-aware equality check that preserves primitive types and distinguishes null
+      from non-finite numbers. Apply the same check at preparation and immediately before
+      writing. Add regression coverage for positive and negative overflow numbers in all
+      four P11-N033 normalized fields, including mutation after successful preparation;
+      require refusal, zero writes, unchanged stored bytes, and zero navigation.
+conditions: []
+rollback_to: implementation
+summary: >-
+  Independently ran legacy-restore.test.mjs, source-audit-capture.test.mjs, and
+  raster-integrity.test.mjs successfully. Syntax checks passed for legacy-restore.mjs,
+  restore-app.js, legacy-restore.test.mjs, server.mjs, core.mjs, and app.js.
+  Trusted backup validation confirms the fixed SHA-256, 10774 UTF-8 bytes, 33 entries,
+  32 confirmations, and blank P11-N033. Normal LF-equivalent restoration, explicit-click
+  wiring, one-write success, readback verification, write failure, and v2 refusal work.
+  Existing app/core hashes remain identical to their approved versions. Localhost binding,
+  raster preflight, immutable snapshot serving, and restricted asset allowlist remain intact.
+  However, the independently reproduced non-finite-to-null equivalence permits a prohibited
+  write, so the restore implementation is not approved. All listed files were hashed with
+  scripts/hash-files.mjs. No files or real browser LocalStorage were modified.
+```
+
+```yaml
+review_type: implementation
+status: approved
+reviewed_files:
+  - path: AGENTS.md
+    hash: sha256:3318d6489da13b50fa38756529d24e5b30ec30a46aa4538a531c7f9c93edf160
+  - path: .agents/skills/simulator-review/SKILL.md
+    hash: sha256:b83713167175991fcd6614a19c39319a071c77eb0976840f23e38e250d49639e
+  - path: .agents/skills/simulator-review/references/review-schema.md
+    hash: sha256:6f68a8261fce196387be2d8aa8dce8674a1b03670b5754ed7402028c6d9f8104
+  - path: apps/snow-crystal-sim/AGENTS.md
+    hash: sha256:e823a1daf8e876e917a7875a8c166ea350f311dd42cf748dc8d4fded8972c747
+  - path: docs/agent-architecture-codex.md
+    hash: sha256:ff01e1071a3732a06d27d1b768a5ba762e421d3aaddc5b65d9ec65f9a015ddd2
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:db91dbcb45221a9da3ff4316f78c7432ae0a1f322dcbd2bbb8d7f8808ac90610
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:31087002d9b47b0e5bdcb0be69bb3d62c9aab6d4be664b250523985d788d2b2b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:0a7b1e21a8ef153c21fee319d89dd9731067e8a1518e255d7ec165500d95f0a8
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/EVIDENCE.md
+    hash: sha256:01f6fae8bf399871ec62dab7969649e3acff5c7a39982cb96ce8ca484202a3c0
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/REVIEW.md
+    hash: sha256:67979bccd6ded10608e8b10994ab3d064025d674c69311c862d573b50fb5043a
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/legacy-restore.mjs
+    hash: sha256:afc2cb68bab782218c2da564c24b8b5161f2c462f38dc5be5ce72a9dc7e24050
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/restore-app.js
+    hash: sha256:a15e8ce218935bc24c685208310358bed693626e374740aa78066152d58eeb98
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/restore.html
+    hash: sha256:50494ac06eba2c02ce245de663c1441af2b279f040602364f61b6a6ef2e558ac
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/legacy-restore.test.mjs
+    hash: sha256:1f364487245a9a545257d03932544dcfda9506b633fc963af5c8f2c2cfe9cde2
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/server.mjs
+    hash: sha256:85f38770a033dde2c6537399be6df2e3a625aca67c41faa08be347f584e54438
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/README.md
+    hash: sha256:511853e83832cb24d262b15d46c7e087ef83dfb5447a6c566ab4283bdd2ace04
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/core.mjs
+    hash: sha256:a572e5f94edda9b8809184cfebb7a77806d4b7f6bc19c4fc5cfa4074c6cda2ba
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/app.js
+    hash: sha256:2abf3ee49a9e4c5305ac7d6f5c5a031badcb69f3f1f136e179c870a38d5588de
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/candidate-data.js
+    hash: sha256:0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-integrity.mjs
+    hash: sha256:86b6368ae417dd4da19a634b6b64da4e71db39daf5fa9a119cb5cafba5872dbf
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-integrity.test.mjs
+    hash: sha256:caa784056282b33b7c4bb9d5263419a935ea8c2ba0d52828b7cb787ed85383b6
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/raster-manifest.mjs
+    hash: sha256:748e976f91ef006838f0b8f1c778a123870cdd8ffbdf56e41f22b49ba4752571
+  - path: tmp/snow-crystal-t1-7/source-audit-capture/source-audit-capture.test.mjs
+    hash: sha256:25f5337c048bedbfef123617f7e40f4879966104b0f923d0e6738e61e8a5dbc0
+  - path: scripts/hash-files.mjs
+    hash: sha256:b20b691bb7bad6107b7de817f876cd566f95bc1c78305dcae4c85ed296f92295
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  Prior R-001 is resolved. Recursive equality preserves primitive types and rejects
+  non-finite numbers instead of serializing them as null. Independent probes covered
+  positive and negative JSON overflow in all four P11-N033 normalized fields at
+  preparation and after successful preparation immediately before writing: all 16
+  cases refused with zero writes, unchanged stored bytes, and zero navigation.
+  Independent getItem-failure probes at both gates also refused with zero writes,
+  unchanged bytes, and zero navigation. Trusted UTF-8 bytes independently reproduce
+  SHA-256 9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c
+  and length 10774; schema validation confirms 33 entries, 32 confirmations, and
+  intentionally blank P11-N033. LF/CRLF semantic equivalence, explicit-click wiring,
+  one exact write, readback verification before navigation, repeated-click refusal,
+  missing/partial/v2 rejection, write failure, and tampered readback pass.
+  Independently executed syntax checks for legacy-restore.mjs, restore-app.js,
+  legacy-restore.test.mjs, server.mjs, core.mjs, and app.js, plus all three restore,
+  source-audit-capture, and raster-integrity suites successfully. Restricted asset
+  serving, localhost binding, malformed-path refusal, raster verification before
+  server creation, and serving only verified byte snapshots remain intact.
+  Main app/core hashes match their previously approved versions. All listed files
+  were hashed with scripts/hash-files.mjs. No files or real browser LocalStorage
+  were modified; approval covers this temporary restore implementation only.
+```
+## 複数AI形態注釈プロトコル草案 限定修正レビュー（2026-10-15）
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md
+    hash: sha256:fcfa38879c41ef626a16ab953977e5a29d6f1f809d676c50a4cbb1087a7ad097
+findings: []
+conditions: []
+rollback_to: none
+summary: "限定修正3点を独立再検証した。hollowingは243組中93組（sufficient 46、limited 46、not-visible 1）だけが合法で、指定されたclear/clear/clearかつ帰属uncertainを含め全合法組が重複なく一意のlabelへ写像される。3種のRGBA hashはwidth/heightのuint32 little-endianと規定layoutのRGBA bytesを共通preimageとし、対応dimension検証および承認済みrasterization objectのLFなしJCS hash一致を要求している。ImageTransportEvidenceは27状態中3状態だけを有効とし、包含recordのderivative hash一致、共通RGBA preimage、not-exposed runの停止・全後続処理からの除外を一貫して規定している。非規範性、現行DESIGN/D-03の権威、人間承認、artifact DAGにも回帰はない。"
+```
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md
+    hash: sha256:a8f3f7935e169def302d5c633ea48661168776b25b4fb3b9decac35bc376e5d7
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/PILOT-RUNBOOK.md
+    hash: sha256:ed0360cac17f13c4b3f1964207dae601d0ac83377cbf2dfbd021d7eb23f0f9e7
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:7d27341534f87424e4da06b991471e6fa7795d10432cd4cd9481fe7228237b27
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md:311
+    problem: "D-14がlocal-input-only時に必須としたinternalPreprocessing='unobservable'をschemaとstate matrixが強制していない。"
+    evidence: "ImageTransportEvidenceV0はinternalPreprocessingに'unobservable'と'documented-no-transform'の両方を常時許し、81状態テストもこのfieldを列挙しない。そのためprovider受領bytes/pixelsを確認できないrunでもdocumented-no-transformを受理でき、DECISIONS.md:253の「provider/model受信pixel同一性を主張しない」という決定より強い保証を記録できる。"
+    required_change: "local-input-only/not-exposedではinternalPreprocessingをunobservableに固定する。documented-no-transformを許す状態、必要なprovider policy証跡、providerImagePolicyVersionのnull規則を明記し、それらを含む完全なtransport状態テストへ更新する。"
+  - id: R-002
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/PILOT-RUNBOOK.md:79
+    problem: "artifact-slot-planのfreeze時点が草案とrunbookで矛盾し、結果依存のadjudication・human approval slotを事前登録する決定規則がない。"
+    evidence: "runbookは全実行前に「必要なadjudication、人間承認slot」を登録する一方、草案§7.7は実行済みrunの後、承認開始前にplanをfreezeするとする。adjudication対象Qとhuman-batch/individual経路はconsensus後にしか確定しない。またrequiredForApprovalCoverage=trueの全slotにはactive terminalが必要なため、最大集合を事前登録すると未使用slotがcoverageを阻害し、必要分だけ登録すると実行前には決められない。"
+    required_change: "slot planを作る正確なphaseを一本化し、route確定前でも決定可能なoptional slot semanticsを定義するか、annotation/consensus用planとroute確定後のadjudication/approval用planを非循環に分離する。未使用slot、required flag、active root、snapshot hashの扱いを完全に定義する。"
+  - id: R-003
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md:1036
+    problem: "案A pilotの24件全件human final完了を表現・検証するcoverage artifactが定義されていない。"
+    evidence: "唯一のApprovalCoverageRecordV0はexpectedCountを206へ固定し、最終corpus用である。一方、runbookは24件のapproved/corrected finalが揃うまでpilotを未完了とするが、24件の凍結期待集合、active approval、重複・欠落・superseded recordを結合して完了を証明するrecord/hash契約がない。このままでは23件だけでもreport生成側がprose規則を実装し損なう余地がある。"
+    required_change: "pilot専用coverage recordを追加するか、coverage schemaをscope付きで一般化し、pilotでは凍結selectionの24 source ID、expectedCount=24、active batch/individual approvals、未知・重複・欠落・supersessionを機械検証する。206件のcorpus coverageとは明確に分離する。"
+conditions: []
+rollback_to: design
+summary: "非規範境界、24画像の各page割当、案Aの全24件人間確認、3 model familyの分離、Gemini手動原文保存、2D投影の限界は明確である。独立列挙でもgrowth 76組、hollowing 93組の合法写像件数を再現した。ただしtransport保証、route依存slot計画、24件approval coverageの3点はpilotのprovenanceと完了判定を一意に実装できないため修正が必要である。"
+```
+
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md
+    hash: sha256:9fb80aab68c95d5de6cf580d5953c3a70f0d5094f04309f6b380c8c27772b50b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/PILOT-RUNBOOK.md
+    hash: sha256:96fe04ca9c1c8f9323e1180749c94cf93d6a8ad23c93cfa70736f2cc6e0070d5
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:4ae396af475e132f3f68445c08a739f2805640e113acedd397112e2ec2f2be1b
+findings:
+  - id: R-001
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md:863
+    problem: "documented-no-transform の適用条件に attachmentMode を要求しているが、実際のrunへ結合される ImageTransportEvidenceV0 に添付方式がなく、policy evidenceの attachmentMode と実行時添付方式を照合できない。"
+    evidence: "ProviderImagePolicyEvidenceV0 は attachmentMode を必須とし、§5.3とPILOT-RUNBOOK.md:193-195も当該添付方式への適用を条件にする。一方、ImageTransportEvidenceV0とArtifactHeaderV0には実行時attachmentModeが存在しないため、972状態検査で「適用可能objectと一致」を機械的に判定できず、別の添付方式向けpolicyでも documented-no-transform の2状態を通せる。独立再計算では列挙数972・受理形5自体は一致したが、そのうちpolicy使用2形の適用可能性が未拘束である。"
+    required_change: "実行時attachmentModeをImageTransportEvidenceV0またはhash固定されたrun契約へ追加し、ProviderImagePolicyEvidenceV0.attachmentModeとの完全一致を必須にする。runbookにも記録手順を追加し、972状態テストの「適用可能objectと一致」がprovider/model/client/version/attachmentModeの全一致を意味するよう明記する。"
+conditions: []
+rollback_to: design
+summary: "local-input-only→unobservable＋policy null、transport 972状態中5状態の列挙、2段階slot planの非循環性、24件案A coverageと206件coverageの分離、各6画像/page、3 model family、Gemini手動provenance、非規範境界は確認できた。documented-no-transformだけはpolicyの添付方式を実runへ結合できないため承認不可。"
+```
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md
+    hash: sha256:a43bd6326c44a92d5534c7134c459edf5fb23a714581ebaaa5e1f262393b9cc2
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/PILOT-RUNBOOK.md
+    hash: sha256:b7fd79bebc5efc3eb20d2c52562da68c3ec31dc646a29f6fd1d09a267e3c4903
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:4ae396af475e132f3f68445c08a739f2805640e113acedd397112e2ec2f2be1b
+findings: []
+conditions: []
+rollback_to: none
+summary: "前回指摘を独立再検証した。実行時attachmentModeは各ImageTransportEvidenceV0内でartifact hashへ拘束され、documented-no-transformではprovider/model/client/version/policy versionとともにProviderImagePolicyEvidenceV0のattachmentModeへ完全一致する。transport直積を機械列挙して972状態中5状態のみ有効、967状態不正を再現した。annotation/consensus事前計画とconsensus後route計画は非循環に分離され、required/unused root、supersession、active snapshotを一意に定義している。案Aのpilot coverageは凍結した24匿名IDと24 source IDをactive batch/individual approvedまたはcorrected finalで各1回完全被覆し、未知・重複・欠落・rejected・spot-check・supersededを拒否する。現行DESIGN、物理式、単位、較正値、LocalStorageを変更しない準備設計の境界も維持されている。"
+```
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md
+    hash: sha256:a43bd6326c44a92d5534c7134c459edf5fb23a714581ebaaa5e1f262393b9cc2
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/PILOT-RUNBOOK.md
+    hash: sha256:8ad0f980ec3219290acec8f47fe092d72f173921de6a8418f31a47d8b09adac5
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:4ae396af475e132f3f68445c08a739f2805640e113acedd397112e2ec2f2be1b
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  前回承認後の変更はPILOT-RUNBOOK.md末尾の余分な空行1行の削除だけであり、
+  本文、schema、物理的分類、単位、raster契約、pilot手順の意味は変わっていない。
+  MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.mdとDECISIONS.mdは前回承認時のhashと
+  完全一致する。前回findingだった実行時attachmentModeとprovider policyの完全一致、
+  transport直積972状態中5状態だけの受理、2段階slot plan、案Aの24件human final完全被覆、
+  pilotと206件corpus coverageの分離も維持されている。物理式、Reiter CA、較正値、
+  LocalStorageおよび現行human finalへの変更はない。
 ```
