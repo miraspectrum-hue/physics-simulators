@@ -264,3 +264,73 @@
 - 限界: これはpilot準備の決定であり、3-agent方式を現行corpus工程へ正式採用する決定ではない。画像生成・
   model実行前に `DESIGN.md` §5.1、D-03、schema、tests、approval workflowを正式改訂し、独立reviewと
   必要な人間承認を通す。物理的分類定義、Reiter CA、較正値、現行human finalは変更しない。
+
+## D-15: 24画像・案A ensemble pilotの正式採用と安全なadjudicator fallback
+
+- 状態: 設計決定（2026-10-16）。pilot実行前
+- 人間決定: Figure 2の24画像で案Aを試し、準備を開始する。草案等の設計変更はcommitする。
+- 決定:
+  1. `DESIGN.md` §5.1Aを、24画像pilotだけに適用する正式契約として採用する。PDF pp. 11–14から各6画像、
+     Claude Code/Codex/Gemini Chat、12画像×2 batch、24件すべての人間finalを固定する。完全なartifact DAG、
+     schema、hash preimage、exact promptは規範artifact `MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md` のcontract ID
+     `t1-7-morphology-ensemble-pilot-contract/1` / protocol ID `morphology-ensemble-pilot/1`を取り込む。
+  2. pilotはcommit外sidecarであり、現行§5.1、D-03、`MorphologyAnnotationV1`、既存A/B、既存human final、
+     source audit、LocalStorageおよびproduction corpusを変更しない。pilot coverageは206件coverageの代用に
+     せず、残り182画像またはT1-8へ進む許可にも使わない。
+  3. 選定は画像作成前に、各page6件、proxy-stratum多様化、固定seed/hash algorithmでfreezeする。
+     proxyは対象選定だけに使い、annotatorへ見せず、正解またはground truthと呼ばない。
+  4. fresh adjudicatorは、不一致またはindeterminate routeだけに使う。GitHub Copilotは、画面表示された
+     基盤model familyが3 annotator familyのいずれとも重複せず、その表示名を記録できる場合だけ候補にする。
+     重複、不明、利用不能またはrun失敗ならAI adjudicationを省略し、該当IDを直接human individualへ送る。
+     Option Aでは全24件を人間が確認するため、このfallbackは安全要件を弱めない。
+  5. provider受領bytes/pixelsを公開しないclientでは、同一local bytes、送信前hash、transformなし、preview、
+     `internalPreprocessing=unobservable` を記録した `local-input-only` を許す。provider/modelへ同一pixelが
+     到達したとは主張せず、assurance別に結果を報告する。
+  6. pilotのmetricsは記述的・探索的である。結果後のthreshold、selection、prompt、schema、mapping変更を
+     同じ24件の採用性能として再主張しない。残り182件への展開またはcorpus移行には、新しい人間決定と
+     正式設計・test・reviewを要求する。
+- 物理検証上の限界: annotationは2D投影上のproject labelであり、三次元の成長軸、枝次数、空洞、c/a比、
+  論文著者の分類または物理的ground truthを確定しない。温度、過飽和度、時刻、視野寸法から画像にない構造を
+  補完しない。曖昧さは`indeterminate|null`として残す。
+- 著作権・privacy: PDF、crop、derivative、restricted mapping、raw chat/model response、PII、credential、
+  chat URLをcommitしない。task evidenceへ収録できるのはprivacy/copyright検査済みのhash、件数、集計、
+  制約、停止理由だけである。
+- 無効化と次gate: `DESIGN.md`のfresh reviewを要求する。`TESTCASES.md`、test-code review、期待Redは、
+  pilot sidecar validatorを追加する範囲だけstaleとする。既存source-audit、人間入力、production corpus契約、
+  既存test意図を消去・上書きしない。design承認・commit後にpilot分のtestcase review、test code review、
+  期待Red、validator Greenを順に完了するまで、画像作成とmodel実行を開始しない。
+
+## D-16: 正式pilot契約の3回レビュー後停止と残る2点
+
+- 状態: 人間判断済み（2026-10-16）
+- 対象: `DESIGN.md` §5.1Aと規範artifact
+  `MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md`。24画像・案A、production隔離、画像、LocalStorage、
+  既存人間確認結果は変更しない。
+- 反復した根本原因: 「規範プロトコルだけからartifact DAG、hash参照、promptと実行結果を
+  一意に再構成できること」の不足が、初回review、1回目修正後review、2回目修正後reviewの
+  3回で継続した。
+- 解消済み: 24件限定、各page6件、3 actor×2 batch、全24件human final、完全mapping、
+  transport 972状態、非循環batch input hash、literal route 64組、actor/family/slot拘束、
+  非重複adjudicatorまたはdirect-human fallback、正確promptと著作権・privacy境界。
+- 残る2点:
+  1. schema-invalidなmodel応答は正式slot artifactを作れないのに、現契約はそれを
+     supersession chainに入れるよう求め、retry後のactive terminalを合法に作れない。
+  2. promptへ挿入するrole別payload schema objectが、protocolのrole別schema file hashと
+     byte単位で結合されておらず、別schemaの挿入を機械的に拒否できない。
+- 選択肢:
+  1. **推奨**: fresh ArchitectPhysicsが残る2点だけを限定修正する。invalid responseは
+     slot/supersessionを消費しないimmutable attempt evidenceとして別管理し、最初のvalid wrapperを
+     rootにする。PromptVariablesにrole別schema file hashを追加し、protocol・canonical JSON・
+     rendered prompt・vision header間の完全一致を要求する。その後fresh Reviewerで再確認する。
+  2. retry契約を簡略化し、schema-invalidが1回でも出たactor/batchはパイロット全体を新versionで
+     最初からやり直す。状態は単純になるが、他の正常batchもやり直すため作業量が増える。
+  3. 現契約の不整合を既知の制約として残す。retryとpromptの再現性を保証できないため
+     非推奨であり、このままpilotを開始しない。
+- 推奨理由: 選択肢1は既存の24件・案A契約と安全境界を変えず、変更範囲が
+  retry状態とrole別schema hashの2点に限定できる。
+- 人間判断（2026-10-16）: 選択肢1（推奨案）を採用する。schema-invalid responseはslot artifact IDを
+  消費せずsupersession ledgerへ入れないimmutable attempt evidenceとして保存し、campaignごと最大3回、
+  3回目のinvalidでfail closedとする。最初のschema-valid wrapperだけが凍結root IDを取得する。
+  role別payload schemaは`PromptVariablesV1.schemaFileSha256`を介してprotocol、LFなしcanonical JSON、
+  rendered prompt evidence、vision headerへbyte単位で結合する。24画像・案A、actor選定、mapping、prompt本文、
+  production隔離、残り182件禁止は変更しない。

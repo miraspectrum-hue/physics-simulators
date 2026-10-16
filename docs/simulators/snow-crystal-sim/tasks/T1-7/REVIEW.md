@@ -2185,3 +2185,144 @@ summary: >-
   pilotと206件corpus coverageの分離も維持されている。物理式、Reiter CA、較正値、
   LocalStorageおよび現行human finalへの変更はない。
 ```
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:972bd6a89abd9897c99d356349a6f988239b8bee2a7a90f44d7660c349ab5826
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:89c7968c5655a519d2558824cd6c1d94f5322f25865172bcb97e8286d6cf6c5e
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md:601
+    problem: "§5.1Aを唯一の規範契約と宣言しているが、pilotのartifact DAG、active terminal、adjudicationおよびhuman coverageを一意に実装・検証するschemaとhash preimageが不足している。"
+    evidence: "非規範の草案にはannotation/adjudication artifact、consensus、candidate alias、2種類のslot plan、supersession ledger、active snapshot、human approvalの具体的schemaとpreimageがある一方、正式§5.1Aは名称と概略規則だけを記す。特にprotocolObjectSha256、schemaFileSha256、inputTableObjectSha256、upstreamSnapshotSha256のpreimageが未定義で、PilotHumanFinalV1には比較対象proposalやactive consensus/adjudicationへの参照がないため、DESIGN.md:707-714のproposal一致とactive approval完全被覆を機械的に再計算できない。PilotRunHeaderV1にもPilotImageTransportV1を結合するfieldがなく、DESIGN.md:475-476が要求するrun headerとtransportのattachment mode完全一致も、headerにattachmentModeが存在しないため検証不能である。"
+    required_change: "§5.1A内または明示的な規範artifactへ、protocol/input table、annotation/adjudication wrapper、consensus、candidate alias、両slot plan、supersession ledger、active snapshots、human approval、coverageまでの全required property、順序、hash preimage、参照制約を定義する。各画像transportをrun artifactへhash拘束し、実行時attachmentModeをheaderとtransportで照合可能にする。human finalは検証対象proposalとactive upstream artifactを一意に参照させ、24件coverageを元approvalから再計算できるようにする。"
+  - id: R-002
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md:391
+    problem: "3モデルへ同一promptを渡すことは要求しているが、正式なprompt template、renderer、protocol objectの内容が規範化されておらず、hashが一致する任意なpromptでpilotを実行できる。"
+    evidence: "§5.1AはrenderedPromptSha256とprotocolObjectSha256を記録するだけで、placeholder、置換規則、template bytes、annotator/adjudicator向け指示、候補入力形式を定義していない。唯一具体的なprompt templateとrendering契約はDESIGN.md:260-261が非規範とした草案にある。このため実装者ごとに異なる判断指示を採用してもschema上は通り、actor間比較、再実行、adjudicationの独立性を再現できない。"
+    required_change: "annotator用とadjudicator用の正確なprompt template、許可placeholder、canonical JSON挿入位置、UTF-8/NFC/LF規則、rendering preimage、候補匿名化入力を正式§5.1Aまたはhash固定された規範artifactとして定義する。非規範草案への参照だけで補わない。"
+conditions: []
+rollback_to: design
+summary: "24画像・各page6件、Claude/Codex/Geminiの独立実行、12件×2 batch、全24件の人間final、production corpus・loss・LocalStorageからの隔離、adjudicator失敗時のhuman fallback、探索的metrics、著作物・PII境界、限定invalidatonは上位仕様とD-14/D-15に整合する。物理分類は2D project labelに限定され、曖昧さも保持される。独立全列挙でgrowth 243中76、branch 2304中44、hollowing 243中93、confidence 81中27、transport 972中5の期待件数を再現した。しかし正式契約だけではartifact DAGとpromptを決定的に構築・監査できないため、design gateは不通過とする。"
+```
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:7874c60875bef838db7757e76c5e0c123ffb87cc049f3a926d3861ba210911d5
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:740a443eb8ae42f92c1d5a03a01ba6b8a3a24a6ba5d06cb040402632372c0541
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:0cd449f012ab5beeb74f9431928cae40bd9ce59f1b055b971730131e2cfda46f
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:297
+    problem: "BatchInputTableV1のobject hash契約が自己参照になり、vision artifact headerにも同hashを格納するpropertyがない。"
+    evidence: "全property requiredかつtop-level object全体のLFなしJCSをhashすると規定する一方、BatchInputTableV1自身がbatchInputTableObjectSha256を含む。さらに495行はvision runでこのhashをnon-nullにしてprompt variablesと一致させるよう要求するため、hash値を入れるとpreimageが変わる循環になる。nullをpreimageにする例外や専用wrapperは定義されていない。加えてArtifactHeaderV1にはbatchInputTableObjectSha256が存在ず、495行と1090–1095行が要求するheader上のbatch-input参照を機械検証できない。"
+    required_change: "BatchInputTableV1から自己hash propertyを除き外部で直接JCS hashを計算するか、自己fieldを含まない専用preimageを明示する。ArtifactHeaderV1へartifact kind別にnon-null/nullを拘束したbatchInputTableObjectSha256を追加し、PromptVariablesV1、canonical JSON、ordered image inputおよび実在するtable objectと完全一致させる。"
+  - id: R-002
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:726
+    problem: "consensus categoryからrouteへの規範記述がDESIGN §5.1A.6と矛盾する。"
+    evidence: "ConsensusCategoryV1の宣言順ではcategory 2がlabel-exact-nonhigh-or-confidence-differs、category 4がmulti-field-or-uncertainだが、727–728行はcategory 4をhuman-individual、category 2/3をadjudicationへ送る。DESIGN.md:655–660はmulti-field-or-uncertainとsingle-field-disagreementをadjudication、label-exact-nonhigh-or-confidence-differsをhuman-individualと固定している。したがってordinal解釈ではcategory 2と4が逆になり、第二slot plan、candidate alias、adjudication件数を異なる結果へ導く。"
+    required_change: "ordinalの「category 1..4」を廃止し、4つのcategory literalごとにDESIGN表と同じrouteを明記する。D/U/L/O/Hの全排他的predicateについてcategoryとrouteを同時に検査する完全なtruth-table testを要求する。"
+  - id: R-003
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:652
+    problem: "第一slot planとvision headerがannotator actor・batch・model familyの固定対応を機械的に拘束しないため、3独立familyというpilotの中核条件を検証できない。"
+    evidence: "AnnotationConsensusSlotPlanV1のslotはartifactKind、logicalSlot、batchIdだけでactorIdを持たない。VisionGeneratorV1.actorIdは3 annotatorとadjudicatorを同じunionで許し、modelFamilyは任意stringである。protocol objectにぬannotatorIdsとannotatorFamiliesの別々の配列があるが、両者の対応、plan slotとの対応、annotation-runではadjudicator-1禁止、adjudication-runではadjudicator-1必須というcross-field規則がない。716–718行の配列順だけでは、headerのactor/familyがそのslotに正しいことを一意に立証できない。"
+    required_change: "第一planのannotation slotへactorIdを必須化し、6 slotを3 actor×2 batchの固定tupleとして定義する。protocol上でactorIdと要求model familyを一対一に結び、annotation/adjudicationのartifact kind、slot、header generator.actorId、modelFamilyを完全一致させるcross-field制約を追加する。"
+conditions: []
+rollback_to: design
+summary: >-
+  24画像限定、各page 6件、案Aの全24件人間final、production corpus・LocalStorage・既存承認からの隔離、
+  safe human fallback、2D project annotationの限界、著作権・PII境界、限定invalidatonは上位設計と
+  D-03/D-15に整合する。一次資料の206観測・c-axis needle上の既知条件画像という位置づけも確認した。
+  独立列挙ではgrowth 76/243、branch 44/2304、hollowing 93/243、confidence 27/81、transport product 972を再現し、
+  protocol fileとexact prompt templateはUTF-8・BOMなし・NFC・LF・末尾LFおよびplaceholder個数を満たした。
+  しかしbatch input hashの循環とheader参照欠落、consensus routeの矛盾、actor-family-slot拘束不足により、
+  現在の規範contractから同一の実行DAGとpilot結果を一意に再構成できないため承認できない。
+```
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:d4e0bdf5d92a6c82d3d01d074d66a8f0d68488dbfa1825a7fea3c66198a90a90
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:740a443eb8ae42f92c1d5a03a01ba6b8a3a24a6ba5d06cb040402632372c0541
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:f710318380d9adbcdc6624600b70554413b1a0ce5a2d6237f4a3e88aa9af8803
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:832
+    problem: >-
+      schema-invalidなmodel応答後のretry規則と、supersession chainの適格条件が両立せず、
+      annotation slotを有効なterminalへ回復できない。
+    evidence: >-
+      第一slot planは実行前にrootArtifactIdを固定する一方、selectActiveはsupersessionのold/new
+      artifact ID・file hashが実在しschema-validであることを要求する。ところが1309–1310行は、
+      Markdown fence、不正JSON、欠落IDまたはschema違反のbatchにも新artifact IDとsupersessionを
+      作って再実行するよう要求する。失敗応答にはschema-validなannotation artifactが存在しないため、
+      ledgerが要求するsupersededArtifactFileSha256を合法に作れない。失敗rootを上書き・再利用すれば、
+      新IDとimmutable/supersession規則に反する。
+    required_change: >-
+      invalid attempt用のschema-valid immutable artifact kind/statusを定義してledgerとactive選択へ組み込むか、
+      invalid raw-response attemptはslot artifactを消費せず別attempt evidenceとして保存し、最初のvalid
+      wrapperだけが凍結rootArtifactIdを取得すると明記する。どちらの場合もretry、ledger、root、
+      active-terminalの完全な状態遷移とtestを固定する。
+  - id: R-002
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:1174
+    problem: >-
+      promptへ挿入するmodel payload schema objectが、protocol objectで凍結したrole別schema fileへ
+      明示的にhash結合されていない。
+    evidence: >-
+      protocol objectはannotationPayloadSchemaFileSha256と
+      adjudicationPayloadSchemaFileSha256を保持するが、PromptVariablesV1は独立した
+      modelPayloadSchemaObjectSha256とmodelPayloadSchemaCanonicalJsonだけを持つ。1189–1206行は
+      canonical JSONと隣接object hashの一致を要求するだけで、annotator roleをannotation schema fileへ、
+      adjudicator roleをadjudication schema fileへ結ぶbyte-preimage規則がない。このため別のschema objectを
+      自己整合するhashとともにpromptへ挿入しても、明示されたcross-field検査だけでは拒否できない。
+    required_change: >-
+      promptRoleごとに対応するprotocol schema-file hashを固定し、
+      SHA-256(UTF-8(modelPayloadSchemaCanonicalJson) || LF)がそのfile hashと一致し、
+      LFなしcanonical JSON hashがmodelPayloadSchemaObjectSha256と一致することを規範化する。
+      またはrole別schemaFileSha256をPromptVariablesV1へ追加し、protocol、variables、rendered prompt、
+      vision header間の完全一致を要求する。
+conditions: []
+rollback_to: design
+summary: >-
+  前回の3 findingは解消されている。BatchInputTableV1はself-hashを持たず、header・prompt variables・
+  canonical JSON・保存table・ordered image inputへ結合された。consensusは4つのcategory literalとrouteを
+  直接対応させ、D/U/L/O/H全64組が重複なく分類された。第一planは3 actor×2 batchの固定6 tupleで、
+  actor-family-kind-slot-header制約と、適格adjudicatorまたはdirect-human fallbackも定義された。
+  独立再計算ではgrowth 76/243、branch 44/2304、hollowing 93/243、confidence 27/81、
+  consensus 64/64、transport 5/972を再現し、exact promptのplaceholder数、UTF-8 BOMなし、
+  NFC、LF、最終LFも一致した。24件全human coverage、production/LocalStorage隔離、2D投影上の
+  不確かさ、残り182件を許可しない境界も維持され、物理式・単位・較正値は変更されていない。
+  ただしretry DAGとprompt-schema bindingの2点が決定的再現性を阻害するためdesign gateは不通過である。
+```
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:ee83c180289af05e44b3c00513c4d24006d41749133298e3c093e42533e5fc77
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+findings: []
+conditions: []
+rollback_to: none
+summary: D-16 option 1 is recorded and both limited fixes are complete. Invalid responses are immutable sidecar evidence outside the slot DAG, use non-circular evidence/file hashes, do not consume slot IDs or ledger entries, enforce contiguous attempts with a three-submission limit, assign the frozen root only to the first valid wrapper, and fail closed. Role-specific schema bytes are bound without circularity through protocol file hashes, LF-free JCS object hashes, PromptVariables, rendered-prompt evidence, exact rendered prompt hashes, and vision headers. Independent enumeration reproduced growth 76/243, branch 44/2304, hollowing 93/243, confidence 27/81, and transport 5/972; the primary Figure 2 source still supports the 206-observation provenance boundary. The 24-image Option A scope, exact prompt text, actor-family mapping, full human review, production and LocalStorage isolation, and prohibition on the remaining 182 images are unchanged.
+```

@@ -131,3 +131,21 @@ ui_acceptance: not-required
   `9fd9708029f553e386dfd2dece8df5f8237d5c8b586502d90bfbe93b8bb47f0c`: version 1,
   role `human-source-auditor`, 33 entries, 32 complete/confirmed entries, and blank/incomplete `P11-N033`.
   The test suite does not depend on the external attachment path and does not commit the backup.
+
+## D-15 morphology ensemble pilot formal-design preflight
+
+- Date: 2026-10-16
+- Branch/head before edits: `feature/snow-crystal-sim` at
+  `29464032136bc47b7f438812792ca41e0071642c`.
+- Staged changes before edits: none.
+- The working tree already contained unrelated unstaged/untracked changes outside the T1-7 formal-pilot
+  design boundary. They were not staged, modified, discarded, or included.
+- Baseline command: `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`.
+  - Architecture check and TypeScript typecheck passed.
+  - Vitest reported 12 files, 2,462 tests passed, one permitted `TC-REAL-001` skip, and exactly five
+    pre-existing `TC-RED-001` failures.
+  - The five failures are the already recorded expected assertions for missing `corpus.json`, `split.json`,
+    `protocol.json`, `SHA256SUMS`, and task-doc `SOURCE-AUDIT.json`.
+  - No new syntax, type, dependency, environment, or unrelated test failure was present.
+- This preflight does not treat the expected Red as baseline Green and does not authorize image generation,
+  external model submission, corpus replacement, or LocalStorage changes.

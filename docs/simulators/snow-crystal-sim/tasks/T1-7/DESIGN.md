@@ -248,6 +248,540 @@ A/B は全206点をそれぞれ判定する。`draftStatus='exact-agreement'` �
 該当 loss component から除外するが、観測点自体を削除しない。この手順は人間承認済み project
 annotation を作るものであり、著者付与ラベルへ provenance を変更しない。
 
+### 5.1A 24画像・3モデル形態注釈pilotのsidecar契約
+
+本節は、D-14で選択された案Aを**24画像だけで評価するpilot**を正式に許可する。現行§5.1、
+`MorphologyAnnotationV1`、`AnnotationApprovalV1`、D-03、既存A/B草案、既存の人間確認値および
+206件corpusの完成条件は変更しない。pilotのAI出力、人間final、coverage、metricsはすべて
+`corpus.json` と別のsidecarであり、production annotation、split、loss、baseline、holdout、
+T1-8/T1-10入力へjoinまたはcopyしてはならない。pilotは残り182画像の実行、既存値の上書き、
+または206件の承認被覆を許可しない。
+
+`MORPHOLOGY-ENSEMBLE-ANNOTATION-DRAFT.md` と `PILOT-RUNBOOK.md` は背景・例・操作上の補助として参照できるが、
+引き続き非規範である。scope・物理的限界・安全要件は本節を正とし、草案/runbookで上書きしない。
+本節は `MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md` のcontract ID
+`t1-7-morphology-ensemble-pilot-contract/1`、protocol ID `morphology-ensemble-pilot/1` を、artifact
+schema、hash preimage、DAG、promptの規範契約として明示的に取り込む。scope、物理的限界、安全要件、禁止事項は
+本節を正とし、serializable property名・型・null/order・DAG・hash preimage・exact prompt bytesは同protocolを
+唯一の正とする。本節中のTypeScript blockは意味上のprojectionであって、単独のserialization schemaではない。
+意味が矛盾する場合は一方で補完せず停止して設計reviewへ戻す。両文書は互いのcontent hashを本文へ埋め込まず、
+review/evidenceが外側から各file hashを記録するため、文書hashの自己参照・相互参照cycleを作らない。
+
+#### 5.1A.1 固定scope、保管境界、選定
+
+- populationはFigure 2の24画像に固定し、PDF page 11、12、13、14から各6画像を選ぶ。
+- 3 annotatorは `annotator-1=Claude Code (Claude family)`、
+  `annotator-2=Codex (OpenAI family)`、`annotator-3=Gemini Chat (Google family)` とする。
+- artifact上のactor/family literalは一対一に
+  `annotator-1↔claude`、`annotator-2↔openai`、`annotator-3↔google` とし、交換、兼任、別familyを拒否する。
+- 各annotatorは同じ順の12画像×2 batchを、actor×batchごとのfresh contextで処理する。
+- 人間確認集合は24件すべて、AIだけでfinalにする集合は空である。
+- PDF、page raster、crop、blinded derivative、restricted source map、raw model response、chat export、
+  sidecarの個票はrepository外の `PILOT_WORK_ROOT` に置く。`PILOT_WORK_ROOT` はrepository/workspaceの
+  子孫であってはならない。`EVIDENCE.md`へ後で収録できるのは、著作物、自由記述の画像説明、source
+  mapping、PII、credentialを含まないartifact hash、件数、集計指標、制約および停止理由だけである。
+
+画像作成前に `PilotSelectionPlanV1` をJCSでfreezeする。planはsource PDF hash、本節のprotocol ID、
+候補集合hash、proxy入力hash、literal seed
+`snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/selection`、次の選定algorithm ID、24のslot、
+各slotのsource ID/page/page-local slot/proxy signatureを持つ。
+
+```ts
+interface PilotSelectionPlanV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-selection/1';
+  readonly protocolId: 'morphology-ensemble-pilot/1';
+  readonly sourcePdfSha256:
+    '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+  readonly algorithmId: 'page-proxy-round-robin-hash-v1';
+  readonly selectionSeed: 'snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/selection';
+  readonly candidateSetObjectSha256: Sha256Hex;
+  readonly proxyInputObjectSha256: Sha256Hex;
+  readonly slots: readonly {
+    readonly ordinal: number; // 0..23
+    readonly sourceObservationId: SourceObservationId;
+    readonly pdfPage: 11 | 12 | 13 | 14;
+    readonly pageSlot: 1 | 2 | 3 | 4 | 5 | 6;
+    readonly proxySignature: readonly [
+      'basal-dominant' | 'c-axis-dominant' | 'mixed' | 'indeterminate' | 'disagreement',
+      0 | 1 | 2 | 3 | null | 'disagreement',
+      'present' | 'absent' | 'indeterminate' | 'disagreement',
+      'high' | 'medium' | 'low' | 'disagreement',
+    ];
+    readonly selectionKeySha256: Sha256Hex;
+    readonly batchOrderKeySha256: Sha256Hex;
+  }[];
+}
+```
+
+```text
+selection algorithm ID = page-proxy-round-robin-hash-v1
+proxy signature = [growthProxy, branchingProxy, hollowingProxy, confidenceProxy]
+selectionKey = SHA-256(UTF-8(
+  "snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/selection\0" +
+  JCS([pdfPage, proxySignature, sourceObservationId])
+))
+batchOrderKey = SHA-256(UTF-8(
+  "snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/batch-order\0" +
+  sourceObservationId
+))
+```
+
+proxy入力は、選定時点でfreeze済みの既存D-03 annotator A/B voteだけとする。各fieldが完全一致ならその値、
+異なれば`disagreement`へ投影し、human finalを選定へ読まない。A/Bの片方、field、全206 IDのいずれかが
+欠ける場合は補完せず停止する。proxyを物理的真実、論文著者ラベル、human final、pilot評価の正解と呼ばず、
+annotator/adjudicatorへ渡さない。pageごとに完全proxy signatureで
+候補をgroup化し、各group内を `(selectionKey,sourceObservationId)` 昇順にする。候補へgroup内0始まりrankを
+付け、page内全候補を `(rank,selectionKey,sourceObservationId)` 昇順にして先頭6件を選ぶ。この規則は、
+利用可能なproxy stratumをまず広く含め、足りないslotだけ同じstratumの次候補で埋める。page候補が6件未満、
+proxy入力/hashが不完全、24 source IDに未知・重複がある場合は `selection-invalid` で停止する。選定後の
+画像差替え、proxy変更、slot変更は同じplanを更新せず、新protocol/planとしてpilotを最初からやり直す。
+
+candidate-set hashのpreimageはschema/version/source PDF hashと206行の
+`[sourceObservationId,pdfPage,pagePanelOrdinal]`（ID ASCII昇順）を持つJCS object、proxy-input hashの
+preimageは同じ206 IDについてA vote、B vote、上記proxy signatureを持つJCS objectとする。A/B vote hashも
+preimageへ含める。page内選定順を`pageSlot=1..6`とし、選定24件は
+`(batchOrderKeySha256,sourceObservationId)`で再排序して`ordinal=0..23`を付ける。batch-01はordinal 0..11、
+batch-02は12..23とし、pageやproxy stratumの連続をannotatorへ意図的に見せない。
+
+#### 5.1A.2 blinded derivativeと同一入力
+
+原PDFは§2.1のraw SHA-256と一致させ、page rasterは§9.2の `figure2-projection-v1` literal
+（PDF.js 6.3.289、`@napi-rs/canvas` 1.0.6、Node 24.14.1、600 dpi、sRGB、RGBA8、top-left）で作る。
+選定済みlocatorをpixel boundsへ変換したsource cropから、温度、過飽和度、成長時間、視野寸法および
+page/panel文字だけをopaque gray `[127,127,127,255]` の重複しないinteger rectangleでmaskする。
+crop、padding、回転、反転、補間、超解像、denoise、sharpen、contrast/gamma/color変更、生成補完、
+匿名IDのpixel描画を禁止する。rectangle外のRGBA bytesはsource cropとbit-for-bit同一でなければならない。
+
+locatorのPDF user-space 4 cornerへPDF.js viewport transform `[a,b,c,d,e,f]` をbinary64で適用し、device座標の
+`minX,minY,maxX,maxY` から `x0=floor(minX), y0=floor(minY), x1=ceil(maxX), y1=ceil(maxY)` を得る。
+`0<=x0<x1<=pageWidth`、`0<=y0<y1<=pageHeight` を要求し、clamp、別丸め、paddingを行わない。cropは
+page RGBAの各row `[x0,x1)` を `y0..y1-1` 順にcopyする。
+
+共通RGBA hashのpreimageはuint32 little-endianのwidth、uint32 little-endianのheight、続けてtop-left、
+top-to-bottom、row-majorのRGBA8 bytesとする。PNG file bytesとdecoded RGBAを別々にSHA-256でfreezeし、
+width、height、MIME `image/png`、mask rectangle、tool/versionをblinded manifestへ保存する。人間は送信前に
+24件すべてについて、条件文字が読めず、maskが結晶/seedと重ならず、外周/先端が欠けていないことを確認する。
+
+PNG codec IDは `canonical-rgba8-png-stored-deflate/1` とする。PNG signature後にIHDR、IDAT、IENDを各1個、
+この順で置き、IHDRはRGBA/8-bit/non-interlaced、各scanline filterは0、IDATはzlib `78 01` と最大65535 byteの
+stored DEFLATE blockだけを使う。ancillary/ICC/EXIF/text/time chunkを禁止する。validatorはPNGのbyte contract、
+decode後寸法/RGBA、file hash、RGBA hashを独立に再計算する。
+
+```ts
+interface PilotBlindedManifestV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-blinded-manifest/1';
+  readonly protocolId: 'morphology-ensemble-pilot/1';
+  readonly selectionPlanObjectSha256: Sha256Hex;
+  readonly sourcePdfSha256:
+    '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
+  readonly entries: readonly {
+    readonly anonymousImageId: string;
+    readonly anonymousFilename: `${string}.png`;
+    readonly widthPx: number;
+    readonly heightPx: number;
+    readonly derivativeFileSha256: Sha256Hex;
+    readonly derivativeRgbaSha256: Sha256Hex;
+    readonly maskRectanglesPx: readonly (readonly [number, number, number, number])[];
+    readonly codecId: 'canonical-rgba8-png-stored-deflate/1';
+    readonly transformTool: string;
+    readonly transformToolVersion: string;
+  }[]; // anonymousImageId昇順、厳密に24件
+  readonly batches: readonly [
+    { readonly batchId: 'batch-01'; readonly orderedAnonymousImageIds: readonly string[] },
+    { readonly batchId: 'batch-02'; readonly orderedAnonymousImageIds: readonly string[] },
+  ]; // 各12件、重複なし、全entryを被覆
+}
+```
+
+restricted mapは同じ24匿名ID/filenameをsource ID、page/panel locator、source crop file/RGBA hash、crop bounds、
+page raster hashへ一対一で結ぶ。source ID、locator、source filename/path、条件値をblinded manifestへ入れない。
+匿名ID/filenameへpage、条件、元IDを符号化せず、絶対path、drive letter、usernameを両manifestへ保存しない。
+
+同じbatchでは3 actorへ同じPNG file bytes、同じ順序、同じrendered prompt bytes、同じschema/protocol、
+同じinput tableを渡す。actor workspaceには当該12 PNGと凍結済み入力だけを置き、repository、source ID、
+page、条件値、restricted map、他actor出力、既存A/B、人間finalを置かない。
+
+#### 5.1A.3 transportとrun provenance
+
+各actor×batch runは、provider、product、画面表示model ID、model family、公開されるmodel version/snapshot
+（不明なら`null`）、client/tool/version、実際の `attachmentMode`、model configuration、開始/終了UTC、
+protocol/schema/prompt/input/manifest hashを記録する。providerまたは画面表示model IDを記録できなければ
+runを開始しない。
+
+```ts
+interface PilotRunHeaderV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-run/1';
+  readonly protocolId: 'morphology-ensemble-pilot/1';
+  readonly artifactId: string;
+  readonly logicalSlot: string;
+  readonly actorId: 'annotator-1' | 'annotator-2' | 'annotator-3' | 'adjudicator-1';
+  readonly batchId: 'batch-01' | 'batch-02' | 'adjudication-01' | 'adjudication-02';
+  readonly modelAttemptPolicyId: 'model-response-attempt-max-3-fresh-context/1';
+  readonly campaignIdSha256: Sha256Hex;
+  readonly attemptNumber: 1 | 2 | 3;
+  readonly provider: string;
+  readonly product: string;
+  readonly displayedModelId: string;
+  readonly modelFamily: string;
+  readonly modelVersion: string | null;
+  readonly clientTool: string;
+  readonly clientVersion: string | null;
+  readonly attachmentMode: string;
+  readonly modelConfiguration: Readonly<Record<string, string | number | boolean | null>>;
+  readonly protocolObjectSha256: Sha256Hex;
+  readonly promptRole: 'annotator' | 'adjudicator';
+  readonly schemaFileSha256: Sha256Hex;
+  readonly modelPayloadSchemaObjectSha256: Sha256Hex;
+  readonly promptVariablesObjectSha256: Sha256Hex;
+  readonly renderedPromptEvidenceObjectSha256: Sha256Hex;
+  readonly renderedPromptSha256: Sha256Hex;
+  readonly batchInputTableObjectSha256: Sha256Hex;
+  readonly blindedManifestObjectSha256: Sha256Hex;
+  readonly rawResponseSha256: Sha256Hex;
+  readonly responseCaptureMethod: 'client-written-file' | 'manual-visible-text-copy';
+  readonly responseEditedAfterCapture: false;
+  readonly startedAtUtc: string;
+  readonly completedAtUtc: string;
+  readonly expectedRecordCount: number;
+}
+```
+
+UTCはfractional secondなしRFC 3339、ID/stringはNFC非空、count/dimensionは正のsafe integerとする。
+model configurationで指定不能または非公開の値を推測して埋めない。
+
+prompt roleはannotation=`annotator`、adjudication=`adjudicator`へ固定する。role別payload schema fileは
+LFなしJCS canonical JSON `S`に最終LFを厳密に1個付けたbytesだけとし、schema object自身へfile/object hashを
+埋め込まない。`SHA-256(UTF-8(S)||LF)` はannotatorならprotocolのannotation schema file hash、adjudicatorなら
+adjudication schema file hashおよび`PromptVariablesV1.schemaFileSha256`と一致させる。
+`SHA-256(UTF-8(S))` は`modelPayloadSchemaObjectSha256`と一致させる。protocol、prompt variables、
+rendered prompt evidence、run headerのrole/file hash/object hashは完全一致し、保存schema bytes、variables、
+exact templateからrendered prompt hashを再計算できなければrunを開始しない。serializable propertyとpreimageの
+完全な契約は規範protocol §14を正とする。このbindingはprompt本文または判断規則を変更しない。
+
+各画像はupload直前にlocal file hash、decoded RGBA hash、width/height、MIMEをmanifestと再照合し、
+`clientSideTransform='none'` を要求する。operatorはattachment previewでfull frame、匿名IDとの対応、
+向き、mask、外周/先端を確認する。明白なcrop、破損、向き変更、過度な縮小、mask欠落、ID対応欠落が
+あればrun全体を拒否する。
+
+```ts
+type TransportAssurance = 'verified-bytes' | 'verified-pixels' | 'local-input-only';
+type ProviderReceipt = 'byte-identical' | 'decoded-rgba-identical' | 'not-exposed';
+
+interface PilotImageTransportV1 {
+  readonly attachmentMode: string; // NFC、非空
+  readonly uploadMimeType: 'image/png';
+  readonly uploadedFileSha256: Sha256Hex;
+  readonly uploadedRgbaSha256: Sha256Hex;
+  readonly uploadedWidthPx: number;
+  readonly uploadedHeightPx: number;
+  readonly clientSideTransform: 'none';
+  readonly attachmentPreview: 'full-frame-visible-no-obvious-corruption';
+  readonly providerReceipt: ProviderReceipt;
+  readonly providerReceivedFileSha256: Sha256Hex | null;
+  readonly providerReceivedRgbaSha256: Sha256Hex | null;
+  readonly transportAssurance: TransportAssurance;
+  readonly internalPreprocessing: 'unobservable' | 'documented-no-transform';
+  readonly providerImagePolicyVersion: string | null;
+  readonly providerImagePolicyEvidenceSha256: Sha256Hex | null;
+}
+```
+
+receipt/hash/assuranceの許可行は次の3行だけである。
+
+| receipt | file hash | RGBA hash | assurance | preprocessing / policy |
+|---|---|---|---|---|
+| `byte-identical` | manifest file hashと一致 | `null` | `verified-bytes` | `unobservable/null/null`、または適用可能な公式policy付き `documented-no-transform` |
+| `decoded-rgba-identical` | `null` | manifest RGBA hashと寸法/layoutが一致 | `verified-pixels` | 上と同じ |
+| `not-exposed` | `null` | `null` | `local-input-only` | 必ず `unobservable/null/null` |
+
+最初の2行はpolicy tupleが `(unobservable,null,null)`、または適用可能な公式policyを持つ
+`(documented-no-transform,nonempty-version,matching-evidence-hash)` のどちらか、3行目は前者だけなので、
+transport全体では5 stateだけがvalidである。testはreceipt 3値、file/RGBA受領hash各3状態
+（null/期待一致/well-formed不一致）、assurance 3値、preprocessing 2値、policy version 2状態、policy evidence
+3状態の直積972組を列挙し、上記5 stateだけを受理する。policy evidenceのprovider、model ID、client/tool/version、
+attachment mode、policy versionおよびpolicy content hashはrun header/transport/保存policy bytesと完全一致させる。
+
+`local-input-only` は「同じlocal bytesを送信した」ことだけを保証し、provider/modelが同じpixelsを受け取った
+とは主張しない。`documented-no-transform` はprovider/model/client/version/attachment modeへ適用される
+版付き公式policy bytesと一致hashを保存できる場合だけ許す。それ以外の組合せ、hash不一致、受領hash二重記録、
+local検査/preview不合格はschema-invalidである。pilot reportはassurance別に件数と結果を分け、
+`local-input-only` runからprovider受信pixel同一性を根拠とする性能主張を行わない。
+
+Gemini Chatはbatchごとにfresh chatを使い、画面に表示された回答本文だけをUTF-8/LFで文字変更なく
+`manual-visible-text-copy` する。capture UTC、表示model名、raw response SHA-256をtrusted wrapperへ記録し、
+account、chat URL、画面全体exportは保存しない。Markdown fence、前後説明、欠落ID、不正JSONを人間が
+修復してはならない。schema-invalidなbatchはslot artifact IDを消費せず、supersession ledgerへ入れず、
+規範protocol §8.1のimmutable `InvalidAttemptEvidenceV1`だけを作る。raw response本文はrepository外へ保存し、
+evidence/repositoryへはhash、byte length、列挙error、prompt/run/input参照だけを置く。
+
+model submissionはrootまたはreplacement materialization campaignごとに最大3回、invalid後はfresh contextとする。
+attempt 1/2 invalidは同じ凍結入力で再送できるが、attempt 3 invalidはfail closedである。最初のschema-valid
+wrapperだけが事前planのroot artifact IDを取得し、その前のinvalid attemptとのsupersession edgeは作らない。
+activeなschema-valid wrapperを後に置換するときだけ、新artifact IDと通常の一本鎖supersessionを使う。
+replacement作成中のinvalid responseは現activeを置換せず、ledger entryも作らない。required annotation rootが
+3回で作れなければpilotを停止する。adjudicationは3回失敗後、既存のsafe fallback規則に従って新しい第二planを
+`skipped-direct-human`でfreezeした場合だけ再開できる。attempt evidenceの型、非循環ID/file hash、状態遷移、
+禁止edge、完全test matrixは規範protocol §8.1を正とする。
+
+#### 5.1A.4 構造化観察と決定的mapping
+
+modelは匿名ID、次の観察、3 field分類、field別confidence、最小confidence、field別200文字以内の短い
+画像根拠だけを返す。長いchain-of-thought、温度等の条件推定、run header/hashを返させない。
+
+```ts
+type ObservationStateV1 = 'clear' | 'absent' | 'uncertain';
+type BranchStateV1 = ObservationStateV1 | 'not-applicable';
+type VisibilityV1 = 'sufficient' | 'limited' | 'not-visible';
+type PilotConfidenceV1 = 'high' | 'medium' | 'low';
+
+interface PilotObservationV1 {
+  readonly seedCrystal: 'clear' | 'uncertain' | 'not-visible';
+  readonly seedNewGrowthSeparation: 'clear' | 'uncertain' | 'not-applicable';
+  readonly growthTargetVisibility: VisibilityV1;
+  readonly branchingTargetVisibility: VisibilityV1;
+  readonly hollowingTargetVisibility: VisibilityV1;
+  readonly newBasalPlane: ObservationStateV1;
+  readonly newAxialGrowth: ObservationStateV1;
+  readonly facetedOutline: BranchStateV1;
+  readonly primaryArmOrSector: BranchStateV1;
+  readonly sidebranch: BranchStateV1;
+  readonly secondGenerationBranch: BranchStateV1;
+  readonly cavityOpening: ObservationStateV1;
+  readonly cavityRim: ObservationStateV1;
+  readonly cavityInnerWall: ObservationStateV1;
+  readonly cavityBelongsToNewGrowth: 'clear' | 'uncertain' | 'not-applicable';
+  readonly visibilityLimitations: readonly (
+    | 'blur' | 'overlap' | 'reflection-or-refraction' | 'occlusion'
+    | 'low-contrast' | 'edge-cropped' | 'seed-overlap' | 'view-angle'
+    | 'mask-overlaps-crystal' | 'other'
+  )[];
+  readonly otherLimitation: string | null;
+}
+
+interface PilotClassificationV1 {
+  readonly growthAxis: 'basal-dominant' | 'c-axis-dominant' | 'mixed' | 'indeterminate';
+  readonly basalBranchingLevel: 0 | 1 | 2 | 3 | null;
+  readonly hollowing: 'present' | 'absent' | 'indeterminate';
+  readonly fieldConfidence: {
+    readonly growthAxis: PilotConfidenceV1;
+    readonly basalBranchingLevel: PilotConfidenceV1;
+    readonly hollowing: PilotConfidenceV1;
+  };
+  readonly confidence: PilotConfidenceV1;
+}
+
+interface PilotModelAnnotationPayloadV1 {
+  readonly anonymousImageId: string;
+  readonly observations: PilotObservationV1;
+  readonly classification: PilotClassificationV1;
+  readonly evidence: {
+    readonly growthAxis: string;          // NFC 1..200
+    readonly basalBranchingLevel: string; // NFC 1..200
+    readonly hollowing: string;           // NFC 1..200
+  };
+}
+```
+
+`visibilityLimitations` は重複なしの上記enum順とし、`other`を含むときだけNFC 1..120文字の
+`otherLimitation`、含まないときは`null`を要求する。model payloadはbatchの12匿名IDをmanifest順で
+ちょうど1回ずつ持ち、追加propertyを禁止する。
+
+seedの合法性は、`seedCrystal=clear`ならseparation `clear|uncertain`、`uncertain`なら`uncertain`、
+`not-visible`なら`not-applicable`だけとする。branch tuple
+`B=(primaryArmOrSector,facetedOutline,sidebranch,secondGenerationBranch)` の合法値は、
+`N=not-applicable,C=clear,A=absent,U=uncertain` として次の10個だけである。
+
+```text
+(N,N,N,N), (A,C,N,N), (A,A,N,N), (A,U,N,N), (U,N,N,N),
+(C,N,A,N), (C,N,U,N), (C,N,C,A), (C,N,C,U), (C,N,C,C)
+```
+
+`branchingTargetVisibility=not-visible` では `B=(N,N,N,N)` だけを許す。basalが`absent`のときも
+同tupleだけを許す。cavity 3観察が全`absent`なら帰属は`not-applicable`、1つ以上`clear`なら帰属は
+`clear|uncertain`、clearなしで1つ以上`uncertain`なら帰属は`uncertain`だけとする。
+`growthTargetVisibility=not-visible`ならbasal/axialを両方`uncertain`、
+`hollowingTargetVisibility=not-visible`ならcavity 3値と帰属をすべて`uncertain`に固定する。
+
+branch visibility/basal/Bの合法文脈は次の表を完全な定義とする。
+
+| branch visibility | new basal | 合法B |
+|---|---|---|
+| `sufficient` | `clear` | 10合法tupleから`(N,N,N,N)`を除く9個 |
+| `sufficient` | `uncertain` | 10個すべて |
+| `sufficient` | `absent` | `(N,N,N,N)`だけ |
+| `limited` | `clear|uncertain` | 10個すべて |
+| `limited` | `absent` | `(N,N,N,N)`だけ |
+| `not-visible` | `clear|uncertain|absent` | `(N,N,N,N)`だけ |
+
+合法入力は次へ排他的かつ完全に写像する。
+
+- `growthAxis`: visibility `sufficient`で `(basal,axial)=(clear,absent)` は`basal-dominant`。
+  `(absent,clear)`かつseed separation clearは`c-axis-dominant`、`(clear,clear)`かつseed separation clearは
+  `mixed`。それ以外、またはvisibilityが`limited|not-visible`なら`indeterminate`。
+- `basalBranchingLevel`: visibility `sufficient`かつbasal clearのとき、
+  `(A,C,N,N)->0`、`(C,N,A,N)->1`、`(C,N,C,A)->2`、`(C,N,C,C)->3`、残る合法tupleは`null`。
+  それ以外は`null`。
+- `hollowing`: visibility `sufficient`でopening/rim/inner wallが全clearかつ帰属clearだけ`present`、
+  3値全absentかつ帰属not-applicableだけ`absent`。全clear・帰属uncertainを含む残りの合法値と
+  visibility `limited|not-visible`は`indeterminate`。
+- 各field confidenceは`high|medium|low`。最終confidenceは3 field confidenceの最小値
+  (`low < medium < high`)とし、平均や多数決で引き上げない。
+
+元seedを新しいc軸成長へ数えない。溝、反射、単なる鋸歯、粒状付着をsidebranchへ数えない。暗い線、
+白い窓、段差、陰影だけをhollowingへ数えない。これらは2D投影上のproject annotationであり、三次元の
+枝次数、空洞、c/a比または物理的ground truthを復元しない。曖昧さを`indeterminate|null`に送る。
+
+mapping validatorはenum直積を全列挙し、growth 243中76、branch 2304中44、hollowing 243中93、
+confidence 81中27だけをschema-validとして各1 labelへ写像し、それ以外を拒否する。期待件数、未分類0件、
+二重分類0件をtest fixtureへ固定し、代表例だけのtestで代用しない。
+
+#### 5.1A.5 immutable artifact、slot、validator
+
+pilot protocol IDは `morphology-ensemble-pilot/1`、schema rootは
+`snow-crystal-morphology-pilot/1` とする。JSON objectはRFC 8785 JCS、JSONLは各行JCS、UTF-8、BOMなし、
+LFのみ、空行なし、最終LF1個とする。全stringはJCS前にNFC、numberは有限で`-0`禁止、SHA-256は
+lowercase 64 hexとする。object hashはLFなしJCS bytes、file hashは最終LF込みfile bytesであり、相互に
+代用しない。artifactはimmutableで、再実行は新ID/fileと、旧→新の同一logical slot・一本鎖の
+supersession recordを作る。ただしschema-invalid raw responseはslot artifactではなく§5.1A.3の
+`InvalidAttemptEvidenceV1`であり、新ID/supersessionを作らない。最初のschema-valid root作成後に
+schema-valid wrapperを置換する場合だけsupersessionを適用する。上書き、branch、cycle、未知hash、
+plan外artifactを拒否する。
+
+二段階planを用いる。
+
+1. 最初のmodel run前に、3 actor×2 batchの6 annotation slotと24件を被覆するconsensus 1 slotの計7 slot、
+   各expected匿名ID集合、root artifact IDを `annotation-consensus-slot-plan.json` へfreezeする。
+2. 7 active terminalとconsensus hash確定後、adjudication/human approval作成前に、最大20件ずつの
+   adjudication slot最大2個、human batch slot、human individual slotを
+   `post-consensus-route-slot-plan.json` へfreezeする。unused adjudication/batch slotはrootなし・空集合hash・
+   理由付きとする。human individual slotは常にrequiredとし、batchからの個別修正を受けられる。
+
+各headerはprotocol/schema/manifest/ordered input/prompt/model/client/transport/raw response hashと
+expected countをtrusted coordinatorが付ける。modelにhash、時刻、provider metadataを生成させない。
+batchは12匿名IDがmanifest順に過不足なく1回ずつ存在し、全recordがJSON/schema/mapping/hash/transportを
+通った場合だけacceptedとする。1件でも不正ならbatch全体を拒否し、有効な一部だけをconsensusへ混ぜない。
+trusted validatorはtempへ書き、再parse・再hash後にatomic renameする。
+
+実行前に少なくとも次のvalidatorと独立testがGreenでなければ、crop生成またはmodel送信へ進まない。
+
+1. selection planのpage quota、algorithm再計算、候補/proxy/slot hash
+2. source crop、mask外pixel不変、PNG decode、file/RGBA hash、manifest/restricted map分離
+3. protocol/role別schema file/object hash/prompt evidence/input table、同一batch bytes、workspace漏洩禁止
+4. annotation/adjudication payload、12件coverage、全enum直積mapping、transport state
+5. invalid-attempt最大3回の状態遷移、active slot/supersession DAG、consensus/route plan、candidate匿名化
+6. human final、24匿名ID↔24 source IDの一対一join、pilot coverage
+
+hash不一致、unknown/duplicate/missing ID、schema違反、partial batch、prompt/schema変更、blinding漏洩、
+別actor出力の露出、raw response編集、PII/credential、既存人間入力へのwriteを検出した時点でfail closedとする。
+既存LocalStorage、source-audit UIおよび過去approvalはread/write対象外である。
+duplicate keyまたはJSON/JSONL構文違反は`SyntaxError`、型・required/unknown property・enum違反は`TypeError`、
+件数・順序・値域・hash・相互参照・mapping・coverage違反は`RangeError`とし、最初のerrorで停止する。errorは
+少なくともartifact、logical slot、batch、anonymous/source ID（判明時）、field、reasonを持ち、値のclamp、drop、
+暗黙補完をしない。
+
+#### 5.1A.6 consensus、adjudication、人間final
+
+activeな3票から `D`（3 morphology fieldの不一致数）、`U`（いずれかindeterminate/null）、
+`L`（いずれかfield/final confidence low）、`O`（構造化観察のJCS不一致）、`H`（全field/final confidence high）
+を決定的に計算する。evidence自由文の差は`O`へ含めず別reportとする。
+
+| predicate | category | route |
+|---|---|---|
+| `!U && !L && !O && D==0 && H` | `label-exact-all-high` | `human-batch` |
+| `!U && !L && !O && D==0 && !H` | `label-exact-nonhigh-or-confidence-differs` | `human-individual` |
+| `!U && !L && !O && D==1` | `single-field-disagreement` | `adjudication` |
+| `U || L || O || D>=2` | `multi-field-or-uncertain` | `adjudication` |
+
+route truth tableは`D∈{0,1,2,3}`と`U,L,O,H∈{false,true}`の64組を固定順で全列挙し、各組が上の
+predicateのちょうど1つだけに一致すること、category/routeが上表と一致することを検証する。未分類、二重分類、
+欠落、重複、別routeを拒否し、代表例だけのtestで代用しない。
+
+fresh AI adjudicationは`single-field-disagreement`と`multi-field-or-uncertain`だけに限る。候補と
+actor/modelの対応をX/Y/Zへhashで匿名化し、
+同じblinded image、構造化候補、protocolだけをfresh contextへ渡す。GitHub Copilotを使えるのは、実行画面に
+表示された基盤model familyがClaude/OpenAI/Googleの3 familyと重複せず、その表示名とclient versionを
+記録できる場合だけである。重複または不明、利用不能、run失敗の場合、AI adjudicationを省略して対象IDを
+直接human individualへ送る。別familyを推測して補わない。adjudicationは常にadvisoryで、候補選択、
+新しい値、`retain-human-review` のいずれもhuman finalへ自動昇格しない。
+
+人間はhash一致原PDFの該当panelと、3票、consensus、存在する場合だけadjudicationを比較し、24 source ID
+すべてに `approved|corrected` のfinal voteを残す。`label-exact-all-high`は一覧でbatch承認できるが、
+値を変えるIDはbatchから外してindividual `corrected` と根拠を記録する。
+`label-exact-nonhigh-or-confidence-differs`、`single-field-disagreement`、`multi-field-or-uncertain`はindividualとし、
+AI候補を選ぶ義務はなく`indeterminate|null`へ修正できる。rejected/未確認/spot-checkはfinal coverageへ
+数えない。
+
+```ts
+interface PilotHumanFinalV1 {
+  readonly anonymousImageId: string;
+  readonly sourceObservationId: SourceObservationId;
+  readonly mode: 'batch-summary' | 'individual-source-pdf';
+  readonly outcome: 'approved' | 'corrected';
+  readonly final: {
+    readonly growthAxis: 'basal-dominant' | 'c-axis-dominant' | 'mixed' | 'indeterminate';
+    readonly basalBranchingLevel: 0 | 1 | 2 | 3 | null;
+    readonly hollowing: 'present' | 'absent' | 'indeterminate';
+    readonly confidence: 'high' | 'medium' | 'low';
+  };
+  readonly rationale: string | null; // correctedではNFC 1..500、batch approvedではnull
+  readonly approvalRole: 'human-morphology-auditor';
+  readonly approvedAtUtc: string;
+  readonly upstreamSnapshotSha256: Sha256Hex;
+}
+
+interface PilotApprovalCoverageV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-coverage/1';
+  readonly coverageScope: 'pilot-24';
+  readonly expectedCount: 24;
+  readonly blindedManifestObjectSha256: Sha256Hex;
+  readonly restrictedMappingObjectSha256: Sha256Hex;
+  readonly annotationConsensusSlotPlanObjectSha256: Sha256Hex;
+  readonly postConsensusRouteSlotPlanObjectSha256: Sha256Hex;
+  readonly supersessionLedgerFileSha256: Sha256Hex;
+  readonly cutoffSequence: number;
+  readonly expectedAnonymousIdSetSha256: Sha256Hex;
+  readonly expectedSourceIdSetSha256: Sha256Hex;
+  readonly activeApprovalArtifactRefs: readonly {
+    readonly logicalSlot: string;
+    readonly artifactId: string;
+    readonly artifactFileSha256: Sha256Hex;
+  }[];
+  readonly coveredFinals: readonly PilotHumanFinalV1[]; // source ID昇順、厳密に24件
+}
+```
+
+`mode=batch-summary` はactive consensusが`label-exact-all-high`で、`outcome=approved`、提案とfinalが
+JCS一致、rationale `null` の場合だけ許す。異なるfinalはbatchから除外し、`mode=individual-source-pdf`、
+`outcome=corrected`、NFC 1..500文字の非個人情報rationaleにする。individualの`approved`も原PDFを見た
+能動確認の根拠として同じ非空rationaleを要求し、proposalとfinalをJCS一致させる。
+
+`PilotApprovalCoverageV1` は凍結manifest/restricted map由来の期待24匿名ID・24 source IDを、指定ledger/
+cutoffのactive batch/individual `approved|corrected` finalが各1回だけ覆る場合にだけ生成する。
+unknown、重複、欠落、rejected、spot-check、superseded/non-terminal approval、mapping不一致を拒否する。
+このrecordのscopeは必ず`pilot-24`で、§5.1の206件coverage、`annotationApprovals`、corpus completeまたは
+T1-8入力の証拠として受理しない。
+
+#### 5.1A.7 評価、停止、次工程
+
+reportはactor/field/transport assurance別に、coverage、schema-invalid attempt、rejected/superseded valid run、3者exact、
+pairwise confusion、branchのpairwise quadratic-weighted Cohen kappa、indeterminate/null、visibility limitation、
+human finalとのdisagreement、adjudication resolution、operator/human作業時間を分子・分母付きで示す。
+二項率の95% intervalはtwo-sided Wilson (`z=1.959963984540054`) とし、分母0はreason付きundefinedにする。
+kappaは`0..3`の両方non-nullだけを使い、除外数を併記する。human finalは本pilotのoperational referenceであり、
+論文著者の正解または物理的ground truthとは呼ばない。
+
+pilotには採用pass/fail閾値を置かない。全metricsは24件に対する記述的・探索的結果であり、206件への
+性能保証ではない。結果閲覧後のthreshold、selection rule、prompt、schema、mapping変更は探索的と明記する。
+残り182画像への展開、pilot finalのproduction corpus移行、案Bへの変更には、pilot report後の人間決定と、
+新しい正式DESIGN/DECISIONS/TESTCASES/reviewを必須とする。同じ24件で変更後の採用性能を再主張しない。
+
+本節の正式化により、既存のDESIGN reviewはstaleとなる。`TESTCASES.md`、test-code reviewおよび期待Redは、
+**本pilot sidecarのschema、validator、selection、transport、mapping、slot、coverageを追加する範囲だけ**staleで
+ある。既存§5.1の206件corpus契約、source-audit、転記、split/loss/holdoutの承認済みtest意図・実装・人間入力を
+削除、弱化、再入力または上書きしない。次のgateは、本DESIGNのfresh review承認とdesign commit後、
+pilot sidecar分の`TESTCASES.md`改訂・fresh review、test code実装review、期待Red、validator Greenである。
+その全てが完了するまで画像作成、外部AI送信およびpilot runを開始しない。
+
 ### 5.2 dimensionless projected shape
 
 ```ts
@@ -1350,6 +1884,9 @@ version-control上の監査承認を凍結点とする。loss の期待値は pr
 - morphology annotation は論文著者のラベルではなく、論文自身が熟練を要すると述べる人間判断
   である。§5.1 の独立2-agent草案と人間承認手順は `DECISIONS.md` D-03 で解決済みであり、未承認
   draft を較正の正解として使わない。
+- §5.1Aの24画像pilotは、§5.1のproduction annotationを変更しないcommit外sidecar評価である。
+  pilot coverage、人間finalまたはAI consensusを、206件corpus完成、較正入力または残り182件の実行許可へ
+  読み替えない。
 - checkpoint平均は未知の画像scaleを周辺化する製品上の近似であり、物理時刻・実寸の復元でも
   Figure 2の成長段階モデルでもない。
 
