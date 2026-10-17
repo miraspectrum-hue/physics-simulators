@@ -149,3 +149,43 @@ ui_acceptance: not-required
   - No new syntax, type, dependency, environment, or unrelated test failure was present.
 - This preflight does not treat the expected Red as baseline Green and does not authorize image generation,
   external model submission, corpus replacement, or LocalStorage changes.
+
+## D-18 morphology ensemble pilot test-code approval and expected Red
+
+- Date: 2026-10-17.
+- Approved test-code files:
+  - `libbrecht-2023-figure2-morphology-pilot.test.ts`:
+    `9b491f872fa9e15c31f8a608f6b4430431b0dc1996b9d7c492e10d62fdff3bd5`
+  - `pilot-oracle.mjs`:
+    `880a740bbc34357614a14f156348aae02b67e0828970cd99dda171acbbd953a3`
+  - `pilot-images.mjs`:
+    `9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1`
+  - `pilot-contract-fixtures.mjs`:
+    `aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b`
+  - `pilot-workflow-fixtures.mjs`:
+    `117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f`
+  - `pilot-state-cases.mjs`:
+    `cf41f7b241757236cd4e3b8bb97ebb58d974ed311d03761ed434b4b16a35c96a`
+  - `pilot-schema-cases.mjs`:
+    `95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c`
+  - `pilot-metrics-isolation.mjs`:
+    `06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb`
+- Fresh independent test-code review status: `approved`, with no findings or conditions.
+- The conformance registry contains 15,056 cases. The dependency boundary self-check contains 710 rejected,
+  81 allowed, and 15 path cases. The filesystem guard contains 17 positive and 62 negative cases.
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 13 tests passed, no tests skipped, and exactly one expected failure.
+  - The only failure is `TC-PILOT-RED-001`, asserting that test-only implementation artifact
+    `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs`
+    does not yet exist.
+- Typecheck command: `npm.cmd run typecheck --workspace apps/snow-crystal-sim`.
+  - Result: exited 0.
+- All seven pilot support modules passed `node --check`.
+- Full expected-Red command: `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`.
+  - Architecture and typecheck passed.
+  - Vitest reported 2,475 tests passed, one pre-existing permitted skip, and exactly six expected failures.
+  - Five failures are the previously recorded missing production artifacts: `corpus.json`, `split.json`,
+    `protocol.json`, `SHA256SUMS`, and task-doc `SOURCE-AUDIT.json`.
+  - The sixth is the new pilot validator missing-artifact assertion above.
+  - No syntax, type, module-resolution, dependency, environment, or unrelated regression was present.

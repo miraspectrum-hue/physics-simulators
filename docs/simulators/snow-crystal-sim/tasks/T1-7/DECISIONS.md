@@ -334,3 +334,67 @@
   role別payload schemaは`PromptVariablesV1.schemaFileSha256`を介してprotocol、LFなしcanonical JSON、
   rendered prompt evidence、vision headerへbyte単位で結合する。24画像・案A、actor選定、mapping、prompt本文、
   production隔離、残り182件禁止は変更しない。
+
+## D-17: pilot test-codeの3回未達と実装担当の切替候補
+
+- 状態: 人間判断済み（2026-10-16）
+- 対象: `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts` と、
+  必要な場合に追加するtest専用support moduleだけ。production code、画像、LocalStorage、既存testは変更しない。
+- 実施済みの試行:
+  1. 通常DeliveryBuilderによる初回実装は、期待Redとtypecheckを成立させたが、将来validatorを呼ばず、
+     test内local helperだけを検査していたため、空のvalidator実装でも通過できる状態だった。
+  2. 同じ担当による修正は、`validatePilot(caseName, fixture)` の動的API要求を追加したが、承認済み
+     testcaseが要求する完全なfixture、mutation、provenance DAGを実装しきれなかった。
+  3. fresh DeliveryBuilderによる再実装は、206候補の選定、PNG/CRC/Adler/stored DEFLATE境界、
+     branch/confidenceの一部oracle、invalid response provenanceを改善したが、transport 972状態、
+     22 schema、run/attempt、consensus/slot/ledger/adjudication、approval/coverage、isolation/metrics、
+     validator mutation coverageが未完成のまま残った。
+- 反復した根本原因: 承認済みTESTCASESが求める独立したliteral fixture、mutation集合、完全な
+  provenance DAGを、簡略fixtureとtest内helperへ置き換えてしまうことが3回続いた。
+- 現在地: typecheckは成功し、対象testは19件成功＋将来validator欠落による期待Red 1件である。
+  ただしtest-code reviewは`changes-requested`で、test-code gateは未承認、commitも未実施である。
+- 選択肢:
+  1. **推奨**: pilot test-codeだけを高性能モデルの書き込み担当へ切り替える。R-001〜R-010を
+     小さなtest専用support moduleへ分割し、writerを直列化して順に完成させる。承認済みDESIGN、
+     TESTCASES、期待Red、独立reviewなど既存gateは維持する。
+  2. TESTCASESを「選定・画像bytes」「mapping・transport・prompt」「run・DAG・approval・isolation」の
+     3 test fileへ正式分割し、testcase reviewからやり直す。通常DeliveryBuilderを維持できるが、
+     設計・reviewの手戻りとgate数が増える。
+  3. test範囲を縮小する。正式pilot契約の保証を弱めるため非推奨であり、design reapprovalが必要になる。
+- 推奨理由: 選択肢1は設計と受入条件を弱めず、未完成部分だけを小さく分割して高性能担当へ移せる。
+  productionや既存の人間確認結果へ影響せず、最短でtest-code gateへ戻れる。
+- 人間判断（2026-10-16）: 選択肢1（推奨案）を採用する。pilot test-codeだけを高性能モデルの
+  書き込み担当へ切り替え、R-001〜R-010をtest専用support moduleへ分割して直列に完成させる。
+  承認済みDESIGN、TESTCASES、期待Red、独立reviewなど既存gateを維持し、production code、画像、
+  LocalStorage、既存test、人間確認結果は変更しない。
+
+## D-18: oracle再利用防止の3回未達とfail-closed方式への切替候補
+
+- 状態: 人間判断済み（2026-10-17）
+- 対象: pilot validatorがtest専用oracle、fixture、test本体を読み、入力を検証せず期待値を再生することを
+  防ぐdependency gate。production code、設計、物理分類、画像、LocalStorage、人間確認結果は変更しない。
+- 解消済み: R-002〜R-010、22 schema全到達制約、approval別closure、全二項率Wilson、validator call単位の
+  write監査は独立reviewで解消確認済み。対象Vitestは13 Green＋missing-validator期待Red 1件、typecheck成功。
+- 3回反復した根本原因:
+  1. 初回reviewではvalidatorが同じdirectoryのoracle/fixture registryをimportして期待値を再生できた。
+  2. 修正後reviewでは`node:module`のnamespace/default importから`createRequire`を得る経路が残った。
+  3. 追加修正後reviewではcomputed key、computed destructuring、`bind`/`call`、comma alias、
+     `Reflect.get`、`process.getBuiltinModule('module')`による同等の動的loader経路が残った。
+- 現在の問題: JavaScriptの動的な値伝播を個別にtaint追跡する方式では、別表現のloader取得経路を
+  完全に列挙しにくい。既知攻撃例を増やすだけでは、新しい同等表現が再び抜ける可能性がある。
+- 選択肢:
+  1. **推奨**: dependency gateをfail-closedな静的import allowlistへ置き換える。validatorとその依存closureは
+     literalなstatic `import`だけを許し、許可されたbuiltinとvalidator専用moduleだけを正規化済みpathで列挙する。
+     `node:module`/`module`、`createRequire`、`require`、dynamic `import()`、`process.getBuiltinModule`、
+     `eval`/`Function`、非literal specifierは表現方法にかかわらず拒否する。既知の全攻撃例と正常static importを
+     自己検査し、fresh Reviewerで再確認する。
+  2. validatorを隔離child processで実行し、test support directoryへのfilesystem readとmodule loadを
+     OS/process境界で拒否する。静的解析への依存は減るが、sandbox、Windows対応、実行時間、保守負荷が増える。
+  3. 現在のtaint追跡をさらに拡張する。変更は局所的だが、JavaScriptの別表現を追い続ける構造が残るため非推奨。
+- 推奨理由: 選択肢1は「許可した構文と依存だけ通す」ため、未知のloader表現を既定で拒否できる。
+  validatorはtest専用の限定artifactなので、一般的なJavaScript module表現を許す必要がなく、変更範囲も
+  `pilot-oracle.mjs`とその自己検査に限定できる。
+- 人間判断（2026-10-17）: 選択肢1（推奨案）を採用する。dependency gateをfail-closedな
+  静的import allowlistへ置き換え、validatorと依存closureにはliteralなstatic importだけを許可する。
+  動的loader、非literal specifier、評価系APIは表現方法にかかわらず拒否し、既知攻撃例と正常な
+  allowlist内static importを自己検査した後、fresh Reviewerで再確認する。

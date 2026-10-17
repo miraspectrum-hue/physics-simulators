@@ -2326,3 +2326,468 @@ conditions: []
 rollback_to: none
 summary: D-16 option 1 is recorded and both limited fixes are complete. Invalid responses are immutable sidecar evidence outside the slot DAG, use non-circular evidence/file hashes, do not consume slot IDs or ledger entries, enforce contiguous attempts with a three-submission limit, assign the frozen root only to the first valid wrapper, and fail closed. Role-specific schema bytes are bound without circularity through protocol file hashes, LF-free JCS object hashes, PromptVariables, rendered-prompt evidence, exact rendered prompt hashes, and vision headers. Independent enumeration reproduced growth 76/243, branch 44/2304, hollowing 93/243, confidence 27/81, and transport 5/972; the primary Figure 2 source still supports the 206-observation provenance boundary. The 24-image Option A scope, exact prompt text, actor-family mapping, full human review, production and LocalStorage isolation, and prohibition on the remaining 182 images are unchanged.
 ```
+```yaml
+review_type: testcases
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:3c11ed81e0fbb3ac648879eecf122a1fec7afb522e4313911ca9c2b76da77d73
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:ee83c180289af05e44b3c00513c4d24006d41749133298e3c093e42533e5fc77
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+findings:
+  - id: R-001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:1274
+    problem: Canonical PNG coverage exercises only a 3x2 image whose zlib stream uses one stored DEFLATE block; it does not cover the mandatory 65535-byte block boundary used by real pilot images.
+    evidence: The independently recomputed 94-byte PNG and its SHA-256 are correct, but the testcase has no 65535/65536-byte or multi-block fixture and no explicit BFINAL, LEN/NLEN, block-order, or single-IDAT boundary mutation. An encoder or validator that mishandles every realistic multi-block derivative could therefore pass this gate.
+    required_change: Add independent exact-byte fixtures at the stored-block boundary and for at least three blocks, including literal expected hashes, and reject wrong BFINAL, LEN/NLEN complements, missing/extra/reordered blocks, bad Adler-32, and splitting into multiple IDAT chunks.
+  - id: R-002
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:1396
+    problem: Invalid-attempt tests do not bind InvalidAttemptEvidenceV1 to the immutable raw-response bytes or test its required timestamp ordering.
+    evidence: The normative protocol requires rawResponseSha256 and rawResponseByteLength to match the stored response and requires startedAtUtc <= completedAtUtc <= responseCapturedAtUtc. TC-PILOT-ATTEMPT-001 mutates the evidence ID/file hash and forbids embedded raw text, but has no raw-response hash/length mismatch, zero or unsafe length, or reversed/equal-boundary timestamp cases. Falsified attempt provenance could pass while retry state tests remain green.
+    required_change: Add a test-owned immutable raw-response byte fixture, independently recompute its hash and byte length, test all valid timestamp equalities/orderings, and reject hash mismatch, length mismatch, zero/non-safe length, and each timestamp inversion.
+  - id: R-003
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:1344
+    problem: Exact byte-to-hash binding is specified only for the annotator and adjudicator payload schemas, while the protocol object contains hashes for the remaining schema files without corresponding file-byte tests.
+    evidence: MorphologyPilotProtocolV1 lists schema-file hashes for selection, manifests, tables, artifacts, ledger, invalid-attempt evidence, snapshots, approvals, and coverage. TC-PILOT-PROMPT-001 explicitly verifies only the role-specific payload schema files. A protocol object with stale, swapped, missing, or unrelated non-role schema-file hashes could pass despite being unreproducible.
+    required_change: Add a schema-bundle fixture covering every schemaFiles property, recompute each hash from canonical UTF-8 JCS plus one LF, and reject missing files, swapped references, object/file-hash substitution, and one-byte changes in either each file or each protocol reference.
+conditions: []
+rollback_to: testcases
+summary: Existing source-audit, scoring, and holdout cases are not weakened, and independent checks reproduced the stated PNG/RGBA hashes, prompt hashes, mapping counts, transport 972/5 count, consensus partition, and Wilson interval. Approval is blocked by three boundary and provenance gaps in the new pilot cases.
+```
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:404400dcd37f9d2769b3a3a042fdd92fd530706d99e927bdfc82bb527c48ff5b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:ee83c180289af05e44b3c00513c4d24006d41749133298e3c093e42533e5fc77
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The three previously blocking gaps are resolved without weakening existing
+  cases. TC-PILOT-DERIVATIVE-001 now fixes exact stored-DEFLATE fixtures at
+  65535 and 65536 bytes and at three blocks, integrates one-, two-, and
+  three-block canonical PNG fixtures, and requires rejection of BFINAL,
+  LEN/NLEN, block-order, Adler-32, and multiple-IDAT mutations. Independent
+  byte construction reproduced all six stated zlib/PNG hashes and lengths,
+  including PNG SHA-256
+  c0b5b070084e0f58cea7b60449ea1a99719c619adfdd6375a4cf2c686c60dc07,
+  eb8d1eca0e065338a3a6ca9c04898568af22ec4e013530c5d9ef869664fed154,
+  and c0a06dbe2d0e810ae986be96cdd6db45dc42050367599d27d9d89c68c3bee333.
+  TC-PILOT-ATTEMPT-001 binds immutable raw-response bytes to hash and byte
+  length; the independently recomputed nine-byte fixture hash is
+  60498ebafa3f473a2a72c1242e8c3202bf50a6d81dfc721958be1550f46faf33.
+  It covers all four valid equality/order classes, all six strict
+  permutations, each inversion predicate, unsafe lengths, and immutable-file
+  mutations. TC-PILOT-SCHEMA-001 exactly enumerates the same 22 schemaFiles
+  properties as the normative protocol, independently derives LF-free JCS
+  object hashes and JCS-plus-LF file hashes, and applies missing, swapped,
+  object/file-substitution, per-file byte, and per-reference mutations to
+  every property. The expected Red remains one computed-path missing-artifact
+  assertion and cannot degrade into module-resolution, syntax, dependency, or
+  network failure. No physical equations, units, validity ranges, numerical
+  tolerances, production data, or existing testcase acceptance criteria were
+  changed.
+```
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:404400dcd37f9d2769b3a3a042fdd92fd530706d99e927bdfc82bb527c48ff5b
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:c10d75b2c9a18e82c17c8329cf1c5c1b768bd6412aed57e662ae6354a0b5a8f6
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:1
+    problem: The suite never exercises the validator implementation it is intended to specify.
+    evidence: Lines 1-2 explicitly exclude the future validator; lines 75-205 test only local helper functions and self-constructed objects. Lines 207-210 dynamically import the validator only after it exists but ignore every export and perform no conformance call. An empty side-effect-free module would turn the sole Red Green while every invalid implementation behavior remained undetected.
+    required_change: Keep the single missing-artifact assertion as the only pre-implementation Red, but after existence is true dynamically load a specified validator API and run every positive fixture and mutation against that API, comparing its results with independent test-local literal oracles.
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:28
+    problem: TC-PILOT-SELECTION-001 and TC-PILOT-SELECTION-002 do not implement the approved 206-candidate selection and blinding contracts.
+    evidence: The fixture contains only 24 already-selected source IDs with six ordinals per page, uses anon-01 rather than the required img-001 form, and has no 52/52/51/51 candidate population, eight proxy signatures per page, selection-key oracle, round-robin ranking, pageSlot, literal selected snapshot, or mutation cases. The manifest at lines 83-87 contains only three properties and does not test filenames, relative paths, dimensions, mask/codec/tool data, forbidden properties, traversal, actor inventory, or one-to-one batch coverage.
+    required_change: Build the complete SYN-PILOT-24 206-row candidate/proxy fixture and independent literal selection snapshot, then exercise the validator with every selection, manifest, restricted-map, path, leakage, inventory, count, order, and hash mutation required by TC-PILOT-SELECTION-001..002.
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:90
+    problem: TC-PILOT-DERIVATIVE-001..002 omit the exact PNG, raster, crop, mask, and upload-byte oracle.
+    evidence: The test hashes an unrelated 2x1 byte array and merely checks that the result has SHA-256 syntax. It never asserts the required RGBA hash ce498a4..., canonical 94-byte PNG hash facaaab2..., exact PNG bytes, CRC32, Adler32, stored-DEFLATE boundaries at 65535/65536/65537 and three blocks, viewport rounding, exterior-pixel invariance, PNG chunk restrictions, or prescribed mutations. Upload evidence is a local object equality plus an intentionally false JPEG comparison, not 24 validator-checked attachment records.
+    required_change: Implement the independent PNG/DEFLATE/CRC/Adler oracle and all fixed hashes, lengths, boundaries, crop/mask mutations, decode checks, and 24-item upload evidence mutations exactly as specified in TC-PILOT-DERIVATIVE-001..002.
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:119
+    problem: The supposedly exhaustive morphology mapping tests are semantically malformed and do not verify valid/invalid tuple sets.
+    evidence: The loops pass clear/absent/uncertain as visibility while mapGrowth, mapBranch, and mapHollow require the unenumerated literal sufficient; consequently all 243 growth loop rows map to indeterminate, all 2304 branching rows map to null, and all 243 hollowing rows map to indeterminate. Seed/separation or new-basal context is ignored. The required valid/invalid counts 76/167, 44/2260, 93/150, and 27/54 are never asserted, and payload-local constraints and forbidden visual shortcuts are absent.
+    required_change: Encode the protocol's legal observation tuples independently, assert every required valid/invalid count and exactly one mapping for each legal tuple, compare every row with the validator, and add all payload, confidence, context, and shortcut mutations from TC-PILOT-MAPPING-001..004.
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:104
+    problem: TC-PILOT-TRANSPORT-001 checks only a simplified local truth function, not the full transport contract.
+    evidence: Although 972 combinations and an accepted count of five are produced, policy is reduced to a boolean and evidence to an arbitrary hash. Received RGBA dimensions/layout, saved policy bytes, provider/model/client/version/attachment mode bindings, upload evidence, mixed header modes, double receipt hashes, transform/preview failures, and false claims about local-input-only are not validated or mutated.
+    required_change: Construct the five exact normative transport records and the complete 972-row independent expected set, invoke the validator for every row, and add all out-of-product policy, receipt, dimension/layout, upload, transform, preview, and reporting mutations required by the testcase.
+  - id: R-006
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:143
+    problem: TC-PILOT-PROMPT-001..003 and TC-PILOT-SCHEMA-001 do not bind the normative protocol, 22 named schema files, or exact prompt bytes.
+    evidence: The test invents schema-01.json through schema-22.json in an array instead of checking the 22 required protocol properties and distinct schema objects/files. It does not distinguish JCS object hashes from LF-terminated file hashes or test BOM/CRLF/swap/mutation cases. The prompt is a short invented string using ${...}, not the normative 4531-byte and 3133-byte templates with hashes d5d5f557... and 21c13a7d.... The protocol document is never read; its path is only checked for a filename substring at line 197.
+    required_change: Add duplicate-aware parsing and independent JCS/file-byte hashing for every named schemaFile property and mutation, extract and verify both exact normative templates and placeholder sets, and validate prompt variables, rendered evidence, batch tables, headers, run hashes, and attachment order through the validator.
+  - id: R-007
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:155
+    problem: TC-PILOT-RUN-001..002 and TC-PILOT-ATTEMPT-001 cover only counts and one toy retry sequence.
+    evidence: Run fixtures omit provider, product, displayed model, client/tool, attachment mode, timestamps, raw capture, prompt/schema/input hashes, campaign isolation, workspace inventory, atomic JSONL validation, and all batch-rejection mutations. Attempt testing covers only invalid-invalid-valid and a constant false assertion; it omits the six required sequences, immutable raw-file revalidation, first-valid root identity, invalid-evidence schema, attempt numbering, campaign/preimage binding, all UTC equalities/permutations, ledger/snapshot exclusion, replacement atomicity, and annotation/adjudication fail-closed behavior.
+    required_change: Implement all six attempt sequences and exact raw-byte fixture against the validator, including filesystem mutation checks and UTC permutations, and supply complete six-run/72-record atomic fixtures with every identity, provenance, capture, independence, and rejection mutation specified by TC-PILOT-RUN-001..002 and TC-PILOT-ATTEMPT-001.
+  - id: R-008
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:168
+    problem: Consensus, slot planning, supersession, snapshots, DAG, and adjudication contracts are replaced by toy structures.
+    evidence: The consensus test generates category/route with its own route function and checks only that a newly computed digest looks like a hash; it has no literal truth-table hash, record-derived D/U/L/O/H, confidence/observation semantics, or mutations. The slot test has only seven strings and a five-node toy graph, with no second plan, Q partition, unused slots, ledger chains/cutoffs, active terminals, snapshots, artifact hashes, or normative DAG. Adjudication accepts the placeholder other-family and a simple skipped object without GitHub Copilot display metadata, eligibility/skip reasons, candidate aliases, candidate-table redaction, partition coverage, cross-field actions, or replacement plan.
+    required_change: Add the fixed 64-row consensus oracle and record derivation, both normative slot plans, all ledger/snapshot/DAG fixtures and mutations, and complete fresh-family/direct-human adjudication fixtures through the validator.
+  - id: R-009
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:187
+    problem: TC-PILOT-APPROVAL-001..002 do not verify human approval provenance, active upstream state, or exact source-derived coverage.
+    evidence: The test constructs a non-normative object containing only source IDs and approved decisions. It lacks the required 8 batch plus 16 individual fixture, approved/corrected/rejected rules, rationale constraints, proposal/final/hash bindings, source ordering, upstream consensus/adjudication snapshots, ledger terminal resolution, approval/file/record/coverage hashes, restricted-map pairing, and all inactive, superseded, missing, duplicate, 23/25, and production-206 isolation mutations.
+    required_change: Implement the complete normative approval records, active-source resolution, source-map-derived exact-24 coverage snapshot, independent hashes, and every approval/coverage mutation required by TC-PILOT-APPROVAL-001..002.
+  - id: R-010
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:193
+    problem: Isolation and metrics tests do not exercise side effects, production boundaries, or the required descriptive aggregations.
+    evidence: Isolation only computes a parent-directory path and checks that two constant strings omit forbidden words; it does not invoke the validator, snapshot repository/production/LocalStorage sentinels, stub network access, enforce output allowlists, test traversal/writes, or verify atomic temp behavior. Metrics calculate one Wilson interval, then use expect(1).toBe(1) instead of computing kappa, and omit actor/field/transport coverage, attempts, supersession, confusion matrices, indeterminate/limitations, human disagreement, adjudication, timing, zero-denominator behavior, and report-language/migration mutations.
+    required_change: Run all synthetic validation under an isolated temp root with repository and sentinel before/after hashes plus throwing network stubs, exercise every forbidden-output mutation, and independently compute and validate all TC-PILOT-METRICS-001 aggregates and non-promotion/reporting constraints.
+conditions: []
+rollback_to: test-code
+summary: The targeted run produced exactly one missing-validator Red and 19 nominal passes with no skips or direct network calls, but those passes test simplified local helpers rather than the future validator. Major required fixtures, exact byte/hash oracles, exhaustive valid/invalid mappings, mutations, provenance chains, and isolation checks are absent, so this test-code gate cannot constrain or validate the implementation.
+```
+## test-code review: morphology ensemble pilot high-performance rebuild
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:1fa082406ad8ddcade458ad499c3642ece3a15d37f8f116ca0673d0f1ca86fc0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:ce5ea444051675eb5ffdfe166264d44577d1994c8bb1594cf38748a78f0416b1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:1854e77dee87e54492489f0179ad7c295e1dd2b83d4065583d294119bbf211b4
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:148840725a0bfa980f838b5b9d6fed2db9e78142310813341ff4b407370be51a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:a4c61d15826fb8b66996d63909385e2bcb5e99af0040f8282d0beace9f8d04fd
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:dfed271db176995a18b04dccff5c50ecc8eefaf49fb0e9db3ed2a6d161ebc21b
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:137
+    problem: "全fixtureをvalidatorへ渡すようになったが、validatorによるtest oracle再利用を防げず、入力を検証しないreplay実装でも全ケースを通過できる。"
+    evidence: "`cases` registryと各caseのexpected/errorClass/reason/fieldはpilot-oracle.mjsから公開され、validator予定位置と同じdirectoryからimport可能である。validatorは共有moduleのcasesを呼出順に読み、positiveではexpectedを返し、negativeでは記録済みclass/messageを投げるだけで、fixture内容を一切検証せず通過できる。main loopは固定登録順で、validatorの依存先検査、oracle module隔離、順序変形によるanti-replay検査がない。"
+    required_change: "validatorからpilot-oracleおよびfixture support moduleへの直接・推移的importを禁止して機械検査し、case registryをvalidatorから参照不能にする。さらに固定呼出順replayを検出できるよう、同一caseの順序変更・再実行・独立metamorphic入力を含むconformance runnerを追加する。"
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs:33
+    problem: "全22 schemaのproperty mutationがrequired/type/null中心で、同じ型の不正enum・const・formatやartifact union全memberを拘束していない。"
+    evidence: "string propertyのnegativeは値をboolean falseへ変えるだけで、例えばprotocol.serialization.hashAlgorithm='sha1'のようなsame-type const違反を作らない。hashの長さ・小文字hex、IDのNFC/長さ/禁止文字、UTC形式も全schema propertyへ適用されない。またartifact schemaはheader、consensus、adjudication、human approval、coverageだけをexerciseSchemaへ渡し、annotation record、ledger metadata、ledger recordを欠く。したがってstring型だけ確認してconst/formatを無視するschema validatorや、未提示union memberを無検査にするvalidatorが通過できる。"
+    required_change: "22 schemaの全到達propertyについてsame-type enum/const/format/boundary mutationを追加し、Sha256Hex、ID、UtcSeconds、safe integer等の共通制約を拘束する。artifactとledgerの全union memberをpositiveおよびproperty mutation walkへ含める。"
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs:99
+    problem: "fresh modeのbatch-summary approval positive fixtureが、参照していないadjudication artifactをactive upstream snapshotへ含めている。"
+    evidence: "upstreamFreshは6 annotation、consensus、adjudicationを常に含み、makeApprovalsはbatch-summaryとindividual-source-pdfの両方へ同じsnapshot hashを使用する。batch-summaryの8 targetはlabel-exact-all-highのactive consensusだけをproposalとして参照し、adjudicationを参照しない。規範protocol §11とTC-PILOT-SLOTS-003は対象approvalが参照するconsensus/adjudicationと推移的annotation closureを過不足なく要求するため、このpositiveは余分なadjudication itemを持つ。適合validatorはpositiveを拒否せざるを得ない。"
+    required_change: "approvalごとに必要な推移的closureを独立導出し、fresh batch snapshotからadjudicationを除外する。individual snapshotだけに実際に参照するadjudication artifactを含め、余分・欠落双方のmutationを追加する。"
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs:78
+    problem: "metrics/report fixtureが各二項率のWilson 95% intervalを含まず、承認済み評価契約を拘束していない。"
+    evidence: "aggregateはcoverage、exact、human disagreement、adjudication resolution等を分子・分母で返すがinterval fieldを生成しない。wilson(12,24)の独立primitive caseはあるものの、metricsまたはpilot-reportへ結合されていないため、全率のintervalを欠くvalidatorがそのままexpectedと一致する。DESIGN §5.1A.7とTC-PILOT-METRICS-001は二項率へz=1.959963984540054のtwo-sided Wilson、分母0へreason付きundefinedを要求する。"
+    required_change: "metrics/reportの各二項率にWilson intervalまたはzero-denominator reasonを含め、分子・分母との再計算一致、代表値、分母0、interval改変mutationをvalidatorへ通す。"
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs:46
+    problem: "隔離guardはvalidation directory内のwriteを記録するだけで検査せず、negative caseやvalidation-only caseの副作用を見逃す。"
+    evidence: "guardEffects.writesはmain testで一度もassertされず、afterAllのisolatedSnapshotもinputs directoryだけを比較する。したがってvalidatorがnegative fixtureで出力を作ってから例外を投げる、要求外fileをvalidation directoryへ残す、全validation caseで任意fileを書く実装でも通過できる。個別に不存在を確認するのはisolation-atomic-failureのfinal fileだけであり、TC-PILOT-ISOLATION-001のoutput allowlistとfail-closed無出力を満たさない。"
+    required_change: "各validator call前後でvalidation directoryをsnapshotし、writeを許可するisolation positiveだけにexact temp/final pathとatomic sequenceを限定する。全negativeおよびvalidation-only caseではwrite 0、失敗後はtemp/finalとも不存在、未知output basenameも拒否することを検査する。"
+conditions: []
+rollback_to: test-code
+summary: "権威3文書のhashは承認値と一致した。独立再計算でmapping valid数76/44/93/27とWilson(12,24)=[0.3142742581957335,0.6857257418042665]を再現した。対象Vitestは13 Greenとmissing validator artifactだけの期待Red 1件、typecheckとarchitecture checkは成功し、workspace全体は2475 Green・1 skip・既知5件とpilot 1件の計6期待Redだった。R-002〜R-010の大部分は完全fixtureと7553登録caseへ拡張されたが、oracle replay防止、schema同型mutation、approval closure、Wilson report結合、失敗時write隔離に未解決欠陥があるためtest-code gateは不合格とする。"
+```
+
+## test-code re-review: morphology ensemble pilot oracle isolation
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:1a892f8b458724793a289135c8a1105d51509aa40629cf785bf5bad46b98280a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:ba8cb2eca46ac53075bf9a93cdfbea524f903bad16bf156c51fb2fe671e4e862
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:cf41f7b241757236cd4e3b8bb97ebb58d974ed311d03761ed434b4b16a35c96a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs:101
+    problem: "validatorのtest oracle依存検査をnode:moduleのnamespace import経由で迂回でき、共有case registryを直接requireするvalidatorが許可される。"
+    evidence: "独立したvirtual dependency graphで `import * as m from 'node:module'; const r=m.createRequire(import.meta.url); r('./pilot-oracle.mjs')` を検査したところ、assertValidatorDependenciesは例外を出さず、nodesにはvalidatorだけ、edgesは空を返した。実装はnamed importのcreateRequireだけをfactoryとして追跡し、namespace/default importのproperty accessを追跡しない。これによりvalidatorはrandom順・再実行を問わず共有cases/expected/error情報を読んでreplayでき、全conformance検査を実入力検証なしで通過できる。"
+    required_change: "node:moduleのnamespace/default/named aliasおよびcreateRequireのproperty accessから生成された全require aliasを追跡し、直接・推移的なpilot support/test importを拒否する。上記namespace-import例とdefault-import例をdependencyGateOracleへ追加し、いずれもoracle-import-forbiddenで停止することを確認する。"
+conditions: []
+rollback_to: test-code
+summary: "権威3文書のhashは承認値と一致した。前回指摘の全22 schema到達・artifact 8/ledger 3 union member、approval別closure、全二項率Wilson/zero-denominator、validator call単位のwrite監査は修正されている。node --checkとtypecheckは成功し、対象Vitestは13 Greenとmissing-validatorだけの期待Red 1件、verify-fastは2475 Green・1 skip・既知5件とpilot 1件の計6期待Redだった。しかしoracle依存検査に実証可能なrequire迂回が残り、validatorが共有expected registryを再利用できるためtest-code gateは通過できない。"
+```
+
+## test-code final review: morphology ensemble pilot oracle isolation
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:1a892f8b458724793a289135c8a1105d51509aa40629cf785bf5bad46b98280a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:ada009eb14a7c0d767f7b4c9c4855c98038356e00383856520265c43608fe339
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:cf41f7b241757236cd4e3b8bb97ebb58d974ed311d03761ed434b4b16a35c96a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs:107
+    problem: "dependency gateには、今回追加した48例と同等のcreateRequire取得経路でoracle依存を迂回できる経路がまだ残っている。"
+    evidence: "追加された8形式×3禁止対象×直接・推移の48攻撃例は対象Vitest内で成功し、同じ8形式でnode:cryptoを読む正常例も誤拒否されなかった。しかし独立virtual graph検査では、`const key='createRequire'; const f=m[key]`、computed destructuring、`.bind`、`.call`、comma alias、`Reflect.get(m,'createRequire')`、および`process.getBuiltinModule('module').createRequire(...)`から生成したrequireで`./pilot-oracle.mjs`を読む全7例が例外なく許可され、いずれもnodes=1・edges=0となった。特にexpressionKindはElementAccessExpressionを文字列literalの場合だけ追跡し、CallExpressionはFACTORY自身の直接呼出ししか伝播せず、process.getBuiltinModuleも追跡しない。このためvalidatorは共有cases/expected/error情報へ到達し、実入力を検証しないreplay実装でconformance検査を通過できる。"
+    required_change: "validatorの全依存closureについてfail-closedな静的import allowlistを採用し、少なくとも`node:module`/`module`と`process.getBuiltinModule('module')`による動的loader取得を禁止するか、computed-key定数伝播、destructuring、bind/call/apply、Reflect.get、comma/alias chain、process.getBuiltinModuleまでtaint追跡する。上記各経路をpilot support/testの3禁止対象について直接・推移の自己検査へ追加し、すべてoracle-import-forbiddenになることと、node:crypto等の許可済みstatic依存が通ることを確認する。"
+conditions: []
+rollback_to: test-code
+summary: "前回R-002〜R-010の対象ファイルは同一hashで回帰はなく、node --checkとtypecheckは成功した。対象Vitestは13 Greenとmissing-validatorだけの期待Red 1件で、verify-fastも2475 Green・1 skip・既知5件とpilot 1件の計6期待Redだった。追加された48攻撃例と正常builtin例は有効だが、実証可能な同等loader迂回が残るためoracle isolationはまだ成立せず、test-code gateは承認できない。"
+```
+
+## test-code review: D-18 fail-closed static import allowlist
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:1a892f8b458724793a289135c8a1105d51509aa40629cf785bf5bad46b98280a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:50a6dcb1e6341e4e4413315a94a9c1c44830b959f4634313109cad52d300bc58
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:cf41f7b241757236cd4e3b8bb97ebb58d974ed311d03761ed434b4b16a35c96a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs:97
+    problem: "static import先は列挙されたが、builtinのimport形式とexport名が無制限なため、validatorはnode:fs経由でtest oracleを直接読める。D-18のoracle再利用防止は成立していない。"
+    evidence: "独立virtual-source検査で `import {openAsBlob} from 'node:fs'` を使用してpilot-oracle.mjsを読むvalidatorを渡すと、assertValidatorDependenciesは拒否せずnodes=1、builtins=['node:fs']を返した。Node v24.14.1で同じopenAsBlobをguardEffects下から実行するとpilot-oracle.mjsの42616文字を読み出せた一方、guardEvents、writes、networkCallsはいずれも0だった。dependencyGateOracleの478 reject、28 allow、15 path fixtureは成功するが、この経路を含まない。"
+    required_change: "builtinごとに必要なnamed exportと許可形式をexact allowlist化し、default/namespace importおよびopenAsBlob等の未監視read APIを拒否する。許可するfilesystem readはguardEffectsが禁止対象basenameを検査できるAPIだけに限定し、openAsBlobによる直接・推移的oracle/support/test読出しを自己検査へ追加する。これができない場合はD-18選択肢2相当のfilesystem sandboxが必要。"
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs:67
+    problem: "許可されたnode:fs/node:fs/promisesにはeffect guardが監視しない書込みAPIが残り、validation外の未知出力を作るvalidatorでも副作用検査を回避できる。"
+    evidence: "guardEffectsはcopyFile/link系をpatchするが、fs.cpSync、fs.promises.cp、mkdtemp系をpatchまたは拒否しない。独立virtual-source検査ではcpSyncとfs/promisesのcpを使うvalidatorがどちらもdependency gateを通過した。repositorySnapshotはtracked fileだけ、ownSnapshotはpilot-*とtest本体だけを対象とするため、別名のuntracked outputは終了時検査でも捕捉されない。"
+    required_change: "filesystem builtinのexact named-export allowlistからcp/cpSync/mkdtemp等の不要な書込み能力を除外し、許可された全書込みAPIがcall単位guardを通ることを機械検査する。少なくともcpSync、fs.promises.cp、未許可basenameへの新規untracked出力をnegative自己検査へ追加する。"
+conditions: []
+rollback_to: test-code
+summary: "path normalization、case folding、traversal、symlink/realpath検査、dynamic loader・非literal・re-export・CJS・評価系・未知構文の既定拒否は確認できた。対象Vitestは13 Greenとmissing-validatorだけの期待Red 1件、typecheckと全MJSのnode --checkは成功し、独立再構築したconformance registryは15056件だった。しかしbuiltin module単位のallowlistが広すぎ、実証可能なoracle readと未監視writeが残るためtest-code gateは承認できない。"
+```
+
+## test-code re-review: D-18 builtin named-export allowlist
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:e4f6269d985b6df20a9f1999c37c2659c448a28e2ba0dc5b17bbb93172fcb42d
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:c6f556476fcc731d1ba10ec6c9dcd153dad298aad6ccd7814d6ad528f19cd86b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:cf41f7b241757236cd4e3b8bb97ebb58d974ed311d03761ed434b4b16a35c96a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs:115
+    problem: "node:assert/strictの許可export `ok`から、禁止したdefault exportと未許可exportへ到達できるため、D-18のexact named-export allowlistになっていない。"
+    evidence: "Node v24.14.1では`ok.strict === default export`であり、`ok`には`fail`、`Assert`、`CallTracker`など22個のmodule APIがpropertyとして公開される。独立virtual-source検査で`import {ok as permitted} from 'node:assert/strict'; permitted.fail(...)`を直接validatorと推移helperの双方へ配置したところ、assertValidatorDependenciesは拒否せずbuiltins=['node:assert/strict']を返した。構文上のdefault/namespace/side-effect importは拒否される一方、同じdefault capabilityがこの経路で取得できる。"
+    required_change: "最小修正としてVALIDATOR_BUILTINSから`ok`を除外し、必要な真偽検査は`strictEqual`またはvalidator内の通常分岐で行う。`ok.strict`、`ok.fail`、`ok.Assert`を直接・推移helper双方で拒否する自己検査も追加する。あるいはbuiltin import bindingからのproperty accessを個別member allowlistで制限する。"
+conditions: []
+rollback_to: test-code
+summary: "D-18のfilesystem対策は大幅に改善されている。dependency gateは696 reject・83 allow・15 path case、filesystem guardは全8 APIについて17 positive・62 attack、独立再構築registryは15056件だった。openAsBlob、cp/cpSync、mkdtemp、stream、FileHandle、promises object、未許可出力、root外read/write、symlink/junction、path alias、未追跡descriptorは拒否され、relative validator closureにも同じ規則が適用される。対象Vitestは13 Greenとmissing-validatorだけの期待Red 1件、typecheckと全MJSのnode --checkは成功し、verify-fastは2475 Green・1 skip・既知5件とpilot 1件の計6期待Redだった。R-002〜R-010の回帰は認めなかったが、`ok`経由でexact export境界を迂回できるためtest-code gateはまだ承認できない。"
+```
+
+## test-code final approval: D-18 exact named-export allowlist
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:9b491f872fa9e15c31f8a608f6b4430431b0dc1996b9d7c492e10d62fdff3bd5
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:880a740bbc34357614a14f156348aae02b67e0828970cd99dda171acbbd953a3
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:cf41f7b241757236cd4e3b8bb97ebb58d974ed311d03761ed434b4b16a35c96a
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb
+findings: []
+conditions: []
+rollback_to: none
+summary: "D-18の限定契約を独立再検証した。node:assert/strictのokはallowlistから除外され、strictEqual/deepStrictEqualだけが直接・推移closureで許可される。ローカル合成fixtureでもok.fail/ok.strictは直接・推移とも拒否され、必要なnamed importは受理された。Node v24.14.1上の18 named exportについて、native own/inherited property・accessor・symbolを再帰監査した結果は2564 properties、2 accessors、216 symbols、許可外module capability露出0、検査不能accessor 0で、除外したokのnegative controlも機能した。static dependency自己検査は710 reject・81 allow・15 path、filesystem guardは8 capability・17 positive・62 negative、独立再構築registryは15056件だった。literal static import、exact builtin export、relative path closure、realpath/symlink、動的loader・評価系・未知構文の拒否、およびcall単位のread/write/network guardを確認した。対象Vitestは13 Greenとmissing-validatorだけの期待Red 1件、typecheckと7 MJSのnode --checkは成功した。verify-fastは2475 Green・1 skipで、既知5 artifact Redとpilot validator欠落Redの計6件だけが失敗した。schema全22件、approval closure、全二項率Wilson、side-effect検査および従前R-002〜R-010に回帰は認めない。"
+```
+
+## design refresh review: D-17 and D-18 decision status
+
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:6a242076b9c5534fe365767a2db5063f19a9a241dba90ed07a1585a16e4fcf7a
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+findings:
+  - id: R-001
+    severity: low
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md:340
+    problem: "D-17とD-18の状態が「人間判断待ち」のままだが、各節末尾には推奨案を採用した人間判断が記録されている。"
+    evidence: "D-17は同ファイル366行付近に2026-10-16の採用判断、D-18は同ファイル400行付近に2026-10-17の採用判断を持つため、状態欄と決定本文が矛盾し、実装担当切替およびdependency gate切替の承認状態を一意に判定できない。"
+    required_change: "D-17とD-18の状態を、それぞれ記録済みの日付を維持した「人間判断済み」へ更新する。決定内容、DESIGN、規範protocolは変更しない。"
+conditions: []
+rollback_to: design
+summary: "D-17/D-18はtest-code担当とfail-closedなvalidator依存境界だけを変更し、24画像案A、3 actor、12件×2 batch、全24件human final、mapping・prompt・schema・transport、production隔離、残り182件禁止、2D project label、非ground-truth、単位・不確かさ・indeterminate境界を弱めていない。唯一の未解決点は、採用済み判断に対する状態欄の不整合である。"
+```
+
+## design refresh approval: D-17 and D-18 decision status
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:b5f30d1327c070ee30d3d09033e3249b4c74930cf32fbd2ebe95bcb38e410b36
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+findings: []
+conditions: []
+rollback_to: none
+summary: D-17とD-18は人間判断日を維持して「人間判断済み」へ修正され、本文の採用内容と状態が一致した。DESIGN.mdと規範プロトコルは不変であり、24画像・3 actor・12件×2 batch・全24件human final、productionおよびLocalStorage隔離、残り182件の実行禁止を維持している。分類は2D画像上のproject annotationであって論文著者ラベルや物理的ground truthではなく、不確実な3D形態をindeterminate/nullへ送る境界にも回帰や矛盾はない。
+```
+
+## testcase refresh approval: D-17 and D-18 decisions
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:404400dcd37f9d2769b3a3a042fdd92fd530706d99e927bdfc82bb527c48ff5b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:b5f30d1327c070ee30d3d09033e3249b4c74930cf32fbd2ebe95bcb38e410b36
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  D-17はpilot test-codeの担当切替、D-18はtest-only validatorのdependency
+  gateをfail-closedな静的import allowlistへ変更する実装保証だけであり、承認済み
+  TESTCASESのR-001〜R-010相当のselection、PNG、transport、全mapping、22
+  schema、prompt、run/retry、DAG、approval、isolation、metrics、期待Red、
+  独立oracle・mutation・count・toleranceを削減または変更していない。15,056件の
+  conformance registryを含む下流test-code保証を弱める決定もない。DESIGNおよび
+  規範protocolとの24画像・全24 human final・production隔離・残り182件非昇格の
+  境界は一致する。物理分類は引き続き2D project annotationでありground truthを
+  主張せず、indeterminate/nullを維持する。独立再計算でもgrowth 76/243、branch
+  44/2304、hollowing 93/243、confidence 27/81およびWilson区間
+  [0.3142742581957335,0.6857257418042665]は規範値と整合した。
+```
