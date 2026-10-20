@@ -803,9 +803,20 @@ export const templates = { annotator: template(15), adjudicator: template(16) };
 export const placeholders = ['{{PROTOCOL_CANONICAL_JSON}}', '{{MODEL_PAYLOAD_SCHEMA_CANONICAL_JSON}}', '{{BATCH_INPUT_TABLE_CANONICAL_JSON}}', '{{CANDIDATE_PAYLOAD_CANONICAL_JSON}}'];
 export function render(role, vars) {
   const names = ['protocolCanonicalJson', 'modelPayloadSchemaCanonicalJson', 'batchInputTableCanonicalJson', 'candidatePayloadCanonicalJson'];
-  let text = templates[role];
-  for (let i = 0; i < (role === 'annotator' ? 3 : 4); i++) text = text.replace(placeholders[i], vars[names[i]]);
-  return text;
+  const source = Buffer.from(templates[role], 'utf8');
+  // Locate tokens only in the original template: inserted JSON can itself
+  // contain placeholder strings, which must remain literal bytes (protocol §14).
+  const ranges = placeholders.slice(0, role === 'annotator' ? 3 : 4).map((token, i) => {
+    const bytes = Buffer.from(token, 'ascii'), start = source.indexOf(bytes);
+    assert(start >= 0); assert.equal(source.indexOf(bytes, start + bytes.length), -1);
+    return { start, end: start + bytes.length, value: Buffer.from(vars[names[i]], 'utf8') };
+  }).sort((a, b) => a.start - b.start);
+  const chunks = []; let offset = 0;
+  for (const { start, end, value } of ranges) {
+    chunks.push(source.subarray(offset, start), value); offset = end;
+  }
+  chunks.push(source.subarray(offset));
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 // Complete test schemas are transcribed from the normative TypeScript declarations,

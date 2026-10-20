@@ -2791,3 +2791,30 @@ summary: >-
   44/2304、hollowing 93/243、confidence 27/81およびWilson区間
   [0.3142742581957335,0.6857257418042665]は規範値と整合した。
 ```
+## test-code approval: post-commit fixture corrections
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:9b491f872fa9e15c31f8a608f6b4430431b0dc1996b9d7c492e10d62fdff3bd5
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:aa44ccb8dbe32db9c357a42108b7bf15d413b7afa169739f531d234fa9c20e6b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-images.mjs
+    hash: sha256:9d0fd79526f004eade44c13829d85088aca8a0e279ee2bc61e4d4235d7c87af1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-metrics-isolation.mjs
+    hash: sha256:06aa92cd86c0cf45738db621aea75d99de5b53e9215d1857201ba3126cad08bb
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:2c57ea859545e745ed64b96bd1be018ce9e514cd39d9ef24cfa078f6b76e88da
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:95150ce11bcad306a46b2f30aa0cc22e25bfa6197183de2bbbf535878e70767c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:ed59776afec32828b403cb8f85d0d72f4503905a134dd0223a9c71be69477f09
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:117804178890a33d5c1f7fa6275d4ea070472f21bb41cb8c3d2ceadfcdf1272f
+findings: []
+conditions: []
+rollback_to: none
+summary: "前回承認後の変更を独立再検証した。slot-plans fixtureのrestrictedMapはschemaとprotocol・manifest・selection-plan hashへ結合された24件で、anonymous/source IDはいずれも24件一意、source IDのASCII昇順集合からhuman-individual全24件、consensus categoryとの結合からhuman-batch集合を再導出できる。individual-23負例はこの根拠を保持してplan内hashだけを不一致にし、top-level selectionPlan、sourceIds、固定期待hashを追加していない。rendererは元template上の一意なASCII byte rangeを出現順に一回だけ置換し、annotator 2件とadjudicator 1件の全positiveで独立single-pass実装とbyte/hash一致した。挿入protocol JSON内のplaceholder文字列は保存され、旧sequential実装とは全件hashが異なる。annotatorのorder負例2件もpositiveと異なるrendered/JCS結合hashになり、no-opではない。8ファイルからregistryを独立再構築して15056件（positive 1031、negative 14025）を確認し、schema、mapping、transport、run、DAG、approval、isolation、metricsの件数に回帰はない。D-18 self-checkは710 reject、81 allow、15 path case、native builtin capability exposure 0で成功し、7 support moduleのnode --checkと対象diffのwhitespace検査も成功した。実装中validatorはreview対象およびoracleから除外した。"
+```

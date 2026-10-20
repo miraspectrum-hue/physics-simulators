@@ -189,3 +189,29 @@ ui_acceptance: not-required
     `protocol.json`, `SHA256SUMS`, and task-doc `SOURCE-AUDIT.json`.
   - The sixth is the new pilot validator missing-artifact assertion above.
   - No syntax, type, module-resolution, dependency, environment, or unrelated regression was present.
+
+## Post-commit pilot fixture correction and refreshed expected Red
+
+- Date: 2026-10-18.
+- The approved test implementation exposed two fixture-construction defects before implementation review:
+  - `slot-plans` lacked the normative restricted mapping needed to derive the exact 24 source-observation IDs;
+  - rendered prompts used sequential replacement, which could rewrite placeholder text inside an inserted JSON value
+    and make an order mutation identical to its positive fixture.
+- The limited correction adds only the normative `restrictedMap` to the slot-plan fixture and performs prompt
+  substitution once over placeholder byte ranges from the original template. It does not add source-ID answer arrays,
+  fixed expected hashes, or implementation-derived values.
+- Fresh independent test-code review approved all eight test/support files. The registry remains exactly 15,056 cases:
+  1,031 positive and 14,025 negative.
+- To refresh Red without changing the implementation, the four uncommitted validator modules were moved to a
+  validated temporary directory inside the workspace, both commands were executed, and the files were restored in a
+  `finally` block.
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 13 tests passed, no tests skipped, and exactly one expected failure.
+  - The only failure was `TC-PILOT-RED-001` at line 152, the missing
+    `libbrecht-2023-figure2-morphology-pilot-validator.mjs` assertion.
+- Full expected-Red command: `node scripts/verify-fast.mjs --workspace apps/snow-crystal-sim`.
+  - Architecture and typecheck passed.
+  - Vitest reported 2,475 tests passed, one existing permitted skip, and exactly six expected failures.
+  - Five are the existing missing production artifacts and the sixth is the missing pilot validator.
+  - No syntax, type, dependency, module-resolution, environment, or unrelated regression was present.

@@ -68,7 +68,7 @@ export function attemptCases(c,w,workRoot){
 function rehashEvidence(f){const{invalidAttemptEvidenceId,...body}=f.evidence;void invalidAttemptEvidenceId;f.evidence.invalidAttemptEvidenceId=whash('invalid-attempt-evidence-id',{evidenceWithoutInvalidAttemptEvidenceId:body});f.evidenceFilename=`${f.evidence.invalidAttemptEvidenceId}.json`;f.evidenceBytes=fileBytes(f.evidence);f.evidenceFileSha256=sha(f.evidenceBytes);}
 
 export function slotCases(c,w){
-  const roots={protocol:c.protocol,manifest:c.manifest,firstPlan:w.firstPlan,runs:w.runs,consensus:w.consensus,snapshot:w.snapshot,ledger:w.emptyLedger,secondPlan:w.freshPlan};good('slot-plans',roots,true);
+  const roots={protocol:c.protocol,manifest:c.manifest,restrictedMap:c.restricted,firstPlan:w.firstPlan,runs:w.runs,consensus:w.consensus,snapshot:w.snapshot,ledger:w.emptyLedger,secondPlan:w.freshPlan};good('slot-plans',roots,true);
   good('slot-plans',{...roots,secondPlan:w.skippedPlan},true,'direct-human');
   const allQWorkflow=buildWorkflow(c,{allQ:true,planningOnly:true}),allQ=allQWorkflow.consensus,partitionPlan=allQWorkflow.freshPlan;
   assert.equal(allQWorkflow.Q.length,24);
