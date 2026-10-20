@@ -2884,3 +2884,64 @@ conditions: []
 rollback_to: none
 summary: "HEAD bd36b18との差分を限定監査した。schemaGood/schemaBadはschema objectだけを共有し、mutableなvalueはケースごとにclone、bytesはimmutable stringとして保持する。全mutationはvalueまたはbytesだけを変更し、validatorへは各case fixtureのdeep cloneが渡るためケース間汚染はない。削除されたbefore比較はvalidatorへ渡らない元fixtureの冗長検査だけで、実際に渡すfixtureのinputBefore比較は維持されている。error class/reason/field/expected、120秒timeout、ランダムshuffle、逆順repeat、fresh metamorphic、skip 0はいずれも不変。registryを独立再構築して15,980件（positive 1,037、negative 14,943）、schema fixture 9,603件、共有schema identity 22個を確認した。対象Vitestは14/14 Green、TypeScript typecheck、node --check、git diff --checkも成功した。mapping 76/243・44/2304・93/243・27/81、静的依存境界、物理的分類契約には変更がない。"
 ```
+## implementation review: pilot validator final retry
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:adb5022cb033dd5c7685930dbc4fb49b6ae261781479e1e06fb6885238e27d6b
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-core.mjs
+    hash: sha256:7d810161286431c5da9a3ac33e89a88dd612c4eb0453b9577718bbc980c20f30
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs
+    hash: sha256:b25629a98ae4272bfa48f79a22671d1ba136914670aec332a507fb084cd93d69
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-io.mjs
+    hash: sha256:17fc40a06ba37729fc1d689369b7c0310bb3aea303b61d251105f244148fe9be
+findings:
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:180
+    problem: >-
+      InvalidAttemptEvidenceV1 の validationErrors 要素へ規範schemaのenumとRFC 6901制約を適用しておらず、
+      再署名された不正な監査証跡を有効として受理する。
+    evidence: >-
+      positive invalid-attempt fixtureのvalidationErrors[0].codeをinvented-codeへ変更したケースと、
+      jsonPointerをnot/a/pointerへ変更したケースについて、invalidAttemptEvidenceId、evidence bytes、
+      filename、file hashを独立再計算したところ、validatePilot('invalid-attempt', fixture)はいずれも成功した。
+      protocol §8.1はcodeを13個のInvalidAttemptValidationErrorCodeV1 literalへ限定し、jsonPointerを
+      RFC 6901 pointerまたはnullへ限定している。現実装はcodeを非空NFC文字列、pointerを任意文字列としてしか検査しない。
+    required_change: >-
+      InvalidAttemptEvidenceV1の完全な規範schemaをinvalid-attempt検証へ適用し、validationErrors[0].codeを
+      規定enumへ、jsonPointerを有効なRFC 6901 pointerまたはnullへ限定する。ID/file hashを再計算した各不正値が
+      拒否される独立回帰ケースをtest-codeへ追加する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  前回R-001のraw/modelPayloads/records全field結合とR-003のexact 21-node DAG closureは解消した。
+  対象14テスト、型検査、4ファイルのnode --check、D-18依存・副作用境界、入力不変性、物理mapping非拡張も通過した。
+  verify-fastは2476 pass、1既存skip、既知production成果物不足5 Redのみだったが、R-002の完全schema検証が未解消である。
+```
+## test-code review: invalid-attempt validation error vocabulary
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:fc0a45a6834823a2773c2de223c406b5925d39c1c15e85b9301b3997aa99c49c
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  HEAD d0427f4からの差分はTC-PILOT-ATTEMPT-001のvalidationErrors回帰56件だけであり、
+  既存15,980件を変更せずregistryを16,036件へ増やす。規範13 codeをnull、空文字、
+  通常token、~0/~1 escapeを含む有効RFC 6901 pointerとの直積52 positiveで検査し、
+  unknown code、先頭slashなし、~2 escape、末尾dangling ~の4 negativeを独立に追加している。
+  全mutationはinvalidAttemptEvidenceId、filename、canonical evidence bytes、file SHA-256を
+  再計算・自己検証するためstale hashでは通らず、既存schema mutationも削除・緩和されていない。
+  RangeError、invalid-attempt-evidence、対象fieldという契約は既存のtyped first-error oracleと
+  前回implementation review R-002の要求に整合し、validator内部手順には依存しない。
+  node --checkとgit diff --checkは成功し、対象Vitestは13 pass、追加したdangling escape拒否だけが
+  現validatorで期待どおりRedとなった。
+```

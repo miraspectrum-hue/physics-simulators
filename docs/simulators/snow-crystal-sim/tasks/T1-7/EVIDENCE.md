@@ -266,3 +266,22 @@ ui_acceptance: not-required
   - `pilot-schema-cases.mjs`: `76e1790291f63c9bd2d63cd9406bfa373d92b934f58386f6afb7c64e563e5215`
   - `libbrecht-2023-figure2-morphology-pilot.test.ts`:
     `d574d7fc0c56446d0276a613203b24cddfe477b868728b09de7590cc0e60edad`
+
+## Invalid-attempt validation-error regression Red
+
+- Date: 2026-10-20.
+- A fresh implementation review found that re-signed invalid-attempt evidence accepted an unknown validation-error
+  code and invalid RFC 6901 pointer strings. The test registry adds 52 positive combinations covering every one of
+  the 13 normative codes with null, empty, ordinary, and escaped valid pointers, plus four independently re-signed
+  negative cases.
+- Fresh independent test-code review status: `approved`, with no findings or conditions. Approved
+  `pilot-state-cases.mjs` SHA-256:
+  `fc0a45a6834823a2773c2de223c406b5925d39c1c15e85b9301b3997aa99c49c`.
+- The registry now contains 16,036 cases: all previous 15,980 cases plus 56 additions.
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 13 tests passed, no tests skipped, and exactly one expected assertion failure.
+  - The current validator accepted `validation-error-pointer-dangling-escape` instead of throwing the required
+    `RangeError` containing `invalid-attempt-evidence` and `validationErrors.0.jsonPointer`.
+  - This is the intended behavioral Red, not a syntax, type, dependency, module-resolution, or environment failure.
+- `node --check` for the changed support module, TypeScript typecheck, and `git diff --check` passed.

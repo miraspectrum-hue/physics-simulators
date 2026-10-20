@@ -57,6 +57,24 @@ export function attemptCases(c,w,workRoot){
     const value=f.evidence[group][field];
     f.evidence[group][field]=field==='promptRole'?'adjudicator':field==='responseCaptureMethod'?'manual-visible-text-copy':field==='modelConfiguration'?{temperature:0}:value===null?'different-version':field.endsWith('Sha256')?H(`different-${group}-${field}`):`${value}-different`;
   },`${group}.${field}`);
+  // Protocol §8.1 has a closed thirteen-code vocabulary, while an RFC 6901
+  // pointer is either null (when the image ID cannot yet be parsed) or a
+  // syntactically valid pointer.  Keep every permitted code and both pointer
+  // forms independently executable; the generated complete-schema walk below
+  // already covers missing/extra/wrong-type/null/ordinal boundaries.
+  const validationCodes=['markdown-fence','non-json-prefix-or-suffix','json-syntax','duplicate-key','missing-property','unknown-property','type-or-enum','unknown-image-id','missing-image-id','duplicate-image-id','record-count-or-order','mapping-violation','response-capture-integrity'];
+  const validPointers=[null,'','/records/0/anonymousImageId','/a~0b~1c'];
+  assert.equal(validationCodes.length,13);assert.equal(new Set(validationCodes).size,13);
+  for(const code of validationCodes)for(const jsonPointer of validPointers){
+    const fixture=clone(base);fixture.evidence.validationErrors[0]={ordinal:0,code,jsonPointer,anonymousImageId:null};rehashEvidence(fixture);
+    good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:'retry-allowed'},`validation-error-positive/${code}/${jsonPointer===null?'null':jsonPointer||'empty'}`);
+  }
+  for(const [label,mutate,field]of[
+    ['code-invented',f=>{f.evidence.validationErrors[0].code='invented-code';},'validationErrors.0.code'],
+    ['pointer-no-leading-slash',f=>{f.evidence.validationErrors[0].jsonPointer='not/a/pointer';},'validationErrors.0.jsonPointer'],
+    ['pointer-bad-escape',f=>{f.evidence.validationErrors[0].jsonPointer='/records/~2';},'validationErrors.0.jsonPointer'],
+    ['pointer-dangling-escape',f=>{f.evidence.validationErrors[0].jsonPointer='/records/~';},'validationErrors.0.jsonPointer'],
+  ])semanticBad(base,`validation-error-${label}`,mutate,field);
   for(const replacement of [false,true])for(const attemptNumber of [1,2,3]){
     const fixture={protocol:c.protocol,firstPlan:w.firstPlan,plannedRun:run,...invalid(attemptNumber,replacement)};
     good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed'},`semantic-positive/${replacement?'replacement':'root'}/${attemptNumber}`);
