@@ -93,6 +93,81 @@ export function buildWorkflow(c,options={}){
   return w;
 }
 const evidenceCopy=e=>({...e});
+
+// TC-PILOT-RUN-002: the model output and the materialized record are three
+// independently captured views. structuredClone preserves aliases, so detach
+// the selected view before mutating it; otherwise an evidence edit would also
+// alter a record through the fixture builder's shared nested objects.
+const capturedPayload=record=>Object.fromEntries([
+  'anonymousImageId','observations','classification','evidence',
+  ...(record.recordType==='image-adjudication'?['selectedCandidate','disposition']:[]),
+].map(key=>[key,clone(record[key])]));
+const refreezeCapture=run=>{
+  run.header.generator.responseCapture.capturedResponseFileSha256=sha(run.rawResponseBytes);
+  for(const record of run.records)record.modelPayloadObjectSha256=hash(capturedPayload(record));
+  run.bytes=jsonl([run.header,...run.records]);run.fileSha256=sha(run.bytes);
+};
+export function captureIntegrityCases(caseName,fixture,artifactKey){
+  const original=fixture[artifactKey],recordPayloads=original.records.map(capturedPayload);
+  assert.deepEqual(JSON.parse(original.rawResponseBytes),original.modelPayloads);
+  assert.deepEqual(original.modelPayloads,recordPayloads);
+  const mutations=[
+    ['count-missing',values=>values.pop()],
+    ['count-extra',values=>values.push(clone(values[0]))],
+    ['manifest-order',values=>{[values[0],values[1]]=[values[1],values[0]];}],
+    ['ID-unknown',values=>{values[0].anonymousImageId='img-999';}],
+    ['ID-duplicate',values=>{values[1].anonymousImageId=values[0].anonymousImageId;}],
+    ['observations',values=>{values[0].observations.visibilityLimitations=['overlap'];}],
+    ['classification',values=>{const level=values[0].classification.confidence==='medium'?'high':'medium';values[0].classification.fieldConfidence={growthAxis:level,basalBranchingLevel:level,hollowing:level};values[0].classification.confidence=level;}],
+    ...Object.keys(recordPayloads[0].evidence).map(key=>[`evidence.${key}`,values=>{values[0].evidence[key]+=' 別の取得本文。';}]),
+  ];
+  if(artifactKey==='adjudication')mutations.push(
+    ['selectedCandidate',values=>{values[0].selectedCandidate=values[0].selectedCandidate==='candidate-X'?'candidate-Y':'candidate-X';}],
+    ['disposition',values=>{values[0].disposition='retain-human-review';}],
+  );
+  for(const [label,mutate]of mutations)for(const layer of ['raw','modelPayloads','records','raw+modelPayloads']){
+    bad(caseName,fixture,f=>{
+      const run=f[artifactKey];
+      // Detach ALL views before selecting one, and keep every unrelated hash
+      // internally valid. A rejection cannot be attributed to a stale file.
+      run.modelPayloads=clone(run.modelPayloads);run.records=clone(run.records);
+      const values=clone(layer==='records'?run.records.map(capturedPayload):layer==='raw'?JSON.parse(run.rawResponseBytes):run.modelPayloads);
+      mutate(values);
+      if(layer==='raw'||layer==='raw+modelPayloads')run.rawResponseBytes=fileBytes(values);
+      if(layer==='modelPayloads'||layer==='raw+modelPayloads')run.modelPayloads=values;
+      if(layer==='records')run.records=values.map((value,i)=>({...clone(run.records[Math.min(i,run.records.length-1)]),...value}));
+      refreezeCapture(run);
+      assert.equal(sha(run.bytes),run.fileSha256);
+      assert.equal(sha(run.rawResponseBytes),run.header.generator.responseCapture.capturedResponseFileSha256);
+      assert(run.records.every(record=>record.modelPayloadObjectSha256===hash(capturedPayload(record))));
+      const views=[JSON.parse(run.rawResponseBytes),run.modelPayloads,run.records.map(capturedPayload)];
+      assert(views.some(value=>jcs(value)!==jcs(recordPayloads)));
+      assert.notEqual(new Set(views.map(jcs)).size,1);
+      if(layer==='raw')assert.deepEqual(views.slice(1),[original.modelPayloads,recordPayloads]);
+      if(layer==='modelPayloads')assert.deepEqual([views[0],views[2]],[original.modelPayloads,recordPayloads]);
+      if(layer==='records')assert.deepEqual(views.slice(0,2),[original.modelPayloads,original.modelPayloads]);
+      if(layer==='raw+modelPayloads')assert.deepEqual(views[2],recordPayloads);
+    },'capture-integrity','rawResponseBytes','RangeError',`capture-integrity/${original.header.artifactId}/${layer}/${label}`);
+  }
+  // Every payload leaf is compared, including fields that might be irrelevant
+  // to the final vote. Only the captured views change, leaving the schema-valid
+  // official records untouched. This also catches partial evidence comparators.
+  const leaves=[];
+  function visit(value,path=[]){
+    if(value&&typeof value==='object'&&!Array.isArray(value))for(const key of Object.keys(value))visit(value[key],[...path,key]);
+    else leaves.push(path);
+  }
+  visit(recordPayloads[0]);
+  for(const path of leaves)bad(caseName,fixture,f=>{
+    const run=f[artifactKey];run.modelPayloads=clone(run.modelPayloads);run.records=clone(run.records);
+    let parent=run.modelPayloads[0];for(const key of path.slice(0,-1))parent=parent[key];
+    const key=path.at(-1),before=parent[key];
+    parent[key]=Array.isArray(before)?['overlap']:before===null?'取得本文の差':typeof before==='number'?before+1:`${before}-capture-diff`;
+    run.rawResponseBytes=fileBytes(run.modelPayloads);refreezeCapture(run);
+    assert.deepEqual(run.records.map(capturedPayload),recordPayloads);
+    assert.notEqual(hash(run.modelPayloads[0]),hash(recordPayloads[0]));
+  },'capture-integrity','rawResponseBytes','RangeError',`capture-integrity/${original.header.artifactId}/all-fields/${path.join('.')}`);
+}
 export function approvalUpstreamSnapshot(w,fresh,proposalArtifactIds){
   const inventory=[...w.runs,w.consensus,...(fresh?[w.adjudication]:[])],closure=new Map();
   function visit(id){
@@ -141,6 +216,7 @@ export function workflowCases(c,w){
     const fixture={...context,run};assert.equal(run.records.length,12);assert.equal(sha(run.bytes),run.fileSha256);assert.equal(hash(run.campaign),run.header.generator.campaignIdSha256);
     for(const record of run.records){assert(schemaAccepts(c.bundle.annotationPayloadSchemaFileSha256.object,{anonymousImageId:record.anonymousImageId,observations:record.observations,classification:record.classification,evidence:record.evidence}));}
     good('annotation-run',fixture,{artifactId:run.header.artifactId,fileSha256:run.fileSha256,recordObjectSha256s:run.records.map(hash)});
+    captureIntegrityCases('annotation-run',fixture,'run');
     for(const field of ['provider','displayedModelId','clientTool','attachmentMode','startedAtUtc','completedAtUtc','promptVariablesObjectSha256','schemaFileSha256','modelPayloadSchemaObjectSha256','renderedPromptEvidenceObjectSha256','renderedPromptSha256'])bad('annotation-run',fixture,f=>{delete f.run.header.generator[field];},'missing-property',field,'TypeError',`${run.header.artifactId}/${field}`);
     for(const [label,fn,field]of[
       ['actor-swap',f=>{f.run.header.generator.actorId=ACTORS[(ACTORS.indexOf(run.header.generator.actorId)+1)%3];},'actorId'],['family-swap',f=>{f.run.header.generator.modelFamily='other';},'modelFamily'],['adjudicator',f=>{f.run.header.generator.actorId='adjudicator-1';},'actorId'],['batch-sharing',f=>{f.run.header.batchId=run.header.batchId==='batch-01'?'batch-02':'batch-01';},'batchId'],

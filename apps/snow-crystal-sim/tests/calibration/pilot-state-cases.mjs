@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assert, CONTRACT, PROTOCOL, POLICY, H, utc, sha, hash, whash, wrapped, idHash, jcs, fileBytes, clone, good, bad, streamFileOracle } from './pilot-oracle.mjs';
 import { ACTORS, FAMILIES, vote } from './pilot-contract-fixtures.mjs';
-import { makeLedger, buildWorkflow, makeCoverage, approvalUpstreamSnapshot } from './pilot-workflow-fixtures.mjs';
+import { makeLedger, buildWorkflow, makeCoverage, approvalUpstreamSnapshot, captureIntegrityCases } from './pilot-workflow-fixtures.mjs';
 
 export function attemptCases(c,w,workRoot){
   const raw='not-json\n',rawHash='60498ebafa3f473a2a72c1242e8c3202bf50a6d81dfc721958be1550f46faf33';
@@ -21,6 +21,65 @@ export function attemptCases(c,w,workRoot){
   }
   const base={protocol:c.protocol,firstPlan:w.firstPlan,plannedRun:run,...invalid(1)};
   good('invalid-attempt',base,{invalidAttemptEvidenceId:base.evidence.invalidAttemptEvidenceId,evidenceFileSha256:base.evidenceFileSha256,disposition:'retry-allowed'});
+  // TC-PILOT-ATTEMPT-001 / protocol §8.1: re-sign every semantic mutation.
+  // These are not stale evidence-byte/hash failures. The frozen campaign,
+  // planned slot and run remain independent authorities for the changed claim.
+  const semanticBad=(reference,label,mutate,field)=>bad('invalid-attempt',reference,f=>{
+    mutate(f);rehashEvidence(f);
+    const{invalidAttemptEvidenceId,...body}=f.evidence;
+    assert.equal(invalidAttemptEvidenceId,whash('invalid-attempt-evidence-id',{evidenceWithoutInvalidAttemptEvidenceId:body}));
+    assert.equal(f.evidenceBytes,fileBytes(f.evidence));assert.equal(f.evidenceFileSha256,sha(f.evidenceBytes));
+    assert.equal(f.evidenceFilename,`${invalidAttemptEvidenceId}.json`);
+  },'invalid-attempt-evidence',field,'RangeError',`semantic-binding/${label}`);
+  for(const [label,mutate,field]of[
+    ['contains-PII',f=>{f.evidence.containsPii=true;},'containsPii'],
+    ['contains-raw-response',f=>{f.evidence.containsRawResponse=true;},'containsRawResponse'],
+    ...['schemaVersion','contractId','protocolId','attemptPolicyId'].map(key=>[key,f=>{f.evidence[key]+='-other';},key]),
+    ['attempt-zero',f=>{f.evidence.attemptNumber=0;},'attemptNumber'],
+    ['attempt-four',f=>{f.evidence.attemptNumber=4;},'attemptNumber'],
+    ['attempt-one-limit',f=>{f.evidence.disposition='attempt-limit-reached';},'disposition'],
+    ['campaign-kind',f=>{f.evidence.campaignKind='replacement-materialization';},'campaignKind'],
+    ['campaign-kind-invalid',f=>{f.evidence.campaignKind='other-materialization';},'campaignKind'],
+    ['actor',f=>{f.evidence.actorId='annotator-2';},'actorId'],
+    ['batch',f=>{f.evidence.batchId='batch-02';},'batchId'],
+    ['slot',f=>{f.evidence.logicalSlot='annotator-2-batch-01';},'logicalSlot'],
+    ['plan',f=>{f.evidence.slotPlanObjectSha256=H('different-plan');},'slotPlanObjectSha256'],
+    ['root',f=>{f.evidence.plannedRootArtifactId='root-annotator-2-batch-01';},'plannedRootArtifactId'],
+    ['root-active',f=>{f.evidence.activeArtifactBeforeCampaign={artifactId:run.header.artifactId,artifactFileSha256:run.fileSha256};},'activeArtifactBeforeCampaign'],
+    ['root-reason',f=>{f.evidence.replacementReasonCode='model-retry';},'replacementReasonCode'],
+    ['root-changed-input',f=>{f.evidence.changedInputSha256=run.fileSha256;},'changedInputSha256'],
+  ])semanticBad(base,label,mutate,field);
+  for(const [group,fields]of[
+    ['promptRefs',Object.keys(base.evidence.promptRefs)],
+    ['inputRefs',Object.keys(base.evidence.inputRefs)],
+    ['run',['provider','product','displayedModelId','modelFamily','modelVersion','modelConfiguration','clientTool','clientToolVersion','attachmentMode','responseCaptureMethod']],
+  ])for(const field of fields)semanticBad(base,`${group}.${field}`,f=>{
+    const value=f.evidence[group][field];
+    f.evidence[group][field]=field==='promptRole'?'adjudicator':field==='responseCaptureMethod'?'manual-visible-text-copy':field==='modelConfiguration'?{temperature:0}:value===null?'different-version':field.endsWith('Sha256')?H(`different-${group}-${field}`):`${value}-different`;
+  },`${group}.${field}`);
+  for(const replacement of [false,true])for(const attemptNumber of [1,2,3]){
+    const fixture={protocol:c.protocol,firstPlan:w.firstPlan,plannedRun:run,...invalid(attemptNumber,replacement)};
+    good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed'},`semantic-positive/${replacement?'replacement':'root'}/${attemptNumber}`);
+    semanticBad(fixture,`${replacement}/${attemptNumber}/disposition`,f=>{f.evidence.disposition=attemptNumber===3?'retry-allowed':'attempt-limit-reached';},'disposition');
+    if(replacement)for(const [label,mutate,field]of[
+      ['active-ID',f=>{f.evidence.activeArtifactBeforeCampaign.artifactId='other-active';},'activeArtifactBeforeCampaign.artifactId'],
+      ['active-file',f=>{f.evidence.activeArtifactBeforeCampaign.artifactFileSha256=H('other-active');},'activeArtifactBeforeCampaign.artifactFileSha256'],
+      ['active-null',f=>{f.evidence.activeArtifactBeforeCampaign=null;},'activeArtifactBeforeCampaign'],
+      ['reason',f=>{f.evidence.replacementReasonCode='schema-fix';},'replacementReasonCode'],
+      ['changed-input',f=>{f.evidence.changedInputSha256=H('different-replacement-input');},'changedInputSha256'],
+    ])semanticBad(fixture,`replacement/${attemptNumber}/${label}`,mutate,field);
+  }
+  semanticBad(base,'campaign-rehashed-kind',f=>{
+    f.campaign.campaignKind='replacement-materialization';f.evidence.campaignKind=f.campaign.campaignKind;
+    f.evidence.campaignIdSha256=hash(f.campaign);
+  },'campaignKind');
+  for(const field of ['slotPlanObjectSha256','logicalSlot','promptVariablesObjectSha256','batchInputTableObjectSha256','orderedInputSha256'])semanticBad(base,`campaign-rehashed-${field}`,f=>{
+    f.campaign[field]=field==='logicalSlot'?'annotator-2-batch-01':H(`campaign-${field}`);
+    if(field==='slotPlanObjectSha256'||field==='logicalSlot')f.evidence[field]=f.campaign[field];
+    else if(field==='promptVariablesObjectSha256')f.evidence.promptRefs[field]=f.campaign[field];
+    else f.evidence.inputRefs[field]=f.campaign[field];
+    f.evidence.campaignIdSha256=hash(f.campaign);
+  },field);
   for(const [attempts,replacement,expected] of [
     [['valid'],false,{state:'active-root',invalidEvidenceCount:0,validAttemptNumber:1,ledgerEntries:0}],
     [['invalid','valid'],false,{state:'active-root',invalidEvidenceCount:1,validAttemptNumber:2,ledgerEntries:0}],
@@ -94,11 +153,34 @@ export function slotCases(c,w){
   ].map(([id,dependencies])=>({id,dependencies}));
   const visiting=new Set(),visited=new Set();function visit(id){assert(!visiting.has(id));if(visited.has(id))return;visiting.add(id);for(const d of nodes.find(n=>n.id===id).dependencies)visit(d);visiting.delete(id);visited.add(id);}nodes.forEach(n=>visit(n.id));assert.equal(visited.size,nodes.length);
   good('artifact-dag',{nodes},true);for(const [from,to]of[['protocol','runs'],['approval','coverage'],['first-plan','runs'],['second-plan','adjudication'],['annotation-snapshot','coverage'],['coverage','coverage']])bad('artifact-dag',{nodes},f=>{f.nodes.find(n=>n.id===from).dependencies.push(to);},'artifact-dag-cycle','dependencies');
+  // Protocol §13 fixes both the required nodes and each dependency, not merely
+  // acyclicity. Keep the literal graph above independent of the validator.
+  const requiredEdges=nodes.flatMap(node=>node.dependencies.map(dependency=>[node.id,dependency]));
+  assert.equal(nodes.length,21);assert.equal(new Set(nodes.map(node=>node.id)).size,21);
+  assert.equal(new Set(requiredEdges.map(edge=>edge.join('/'))).size,requiredEdges.length);
+  bad('artifact-dag',{nodes},f=>{for(const node of f.nodes)node.dependencies=[];},'artifact-dag-invalid','dependencies','RangeError','closure/all-edges-deleted');
+  for(const [from,to]of requiredEdges){
+    bad('artifact-dag',{nodes},f=>{f.nodes.find(node=>node.id===from).dependencies=f.nodes.find(node=>node.id===from).dependencies.filter(id=>id!==to);},'artifact-dag-invalid','dependencies','RangeError',`closure/missing-edge/${from}/${to}`);
+    bad('artifact-dag',{nodes},f=>{f.nodes.find(node=>node.id===to).dependencies.push(from);},'artifact-dag-cycle','dependencies','RangeError',`closure/reversed-edge/${from}/${to}`);
+    bad('artifact-dag',{nodes},f=>{f.nodes.find(node=>node.id===from).dependencies.push(to);},'artifact-dag-invalid','dependencies','RangeError',`closure/duplicate-edge/${from}/${to}`);
+  }
+  for(const node of nodes){
+    bad('artifact-dag',{nodes},f=>{f.nodes=f.nodes.filter(n=>n.id!==node.id);},'artifact-dag-invalid','nodes','RangeError',`closure/missing-node/${node.id}`);
+    bad('artifact-dag',{nodes},f=>{f.nodes.push(clone(node));},'artifact-dag-invalid','nodes','RangeError',`closure/duplicate-node/${node.id}`);
+    bad('artifact-dag',{nodes},f=>{f.nodes.find(n=>n.id===node.id).dependencies.push(node.id);},'artifact-dag-cycle','dependencies','RangeError',`closure/self/${node.id}`);
+  }
+  bad('artifact-dag',{nodes},f=>{f.nodes.push({id:'invalid-attempt-evidence',dependencies:['runs']});},'artifact-dag-invalid','nodes','RangeError','closure/forbidden-invalid-evidence-node');
+  // Earlier nodes are already materialized, so these extra edges are acyclic;
+  // a DFS-only implementation cannot reject them. Enumerate every such pair.
+  for(let i=0;i<nodes.length;i++)for(let j=0;j<i;j++)if(!nodes[i].dependencies.includes(nodes[j].id))bad('artifact-dag',{nodes},f=>{
+    f.nodes[i].dependencies.push(f.nodes[j].id);
+  },'artifact-dag-invalid','dependencies','RangeError',`closure/extra-forward-edge/${nodes[i].id}/${nodes[j].id}`);
 }
 const jsonlArtifact=a=>[a.header,...a.records].map(fileBytes).join('');
 
 export function adjudicationCases(c,w){
   const base={protocol:c.protocol,manifest:c.manifest,firstPlan:w.firstPlan,consensus:w.consensus,runs:w.runs,secondPlan:w.freshPlan,aliases:w.aliases,candidateTable:w.candidateTable,adjudication:w.adjudication};good('adjudication',base,{fileSha256:w.adjudication.fileSha256,candidateInputSha256:w.candidateInput,advisory:true});
+  captureIntegrityCases('adjudication',base,'adjudication');
   assert(!FAMILIES.includes(w.freshPlan.adjudicatorEligibility.displayedModelFamily));assert.equal(w.freshPlan.adjudicatorEligibility.product,'GitHub Copilot');
   for(const name of ['claude','openai','google'])bad('adjudication',base,f=>{f.secondPlan.adjudicatorEligibility.displayedModelFamily=name;},'adjudicator-family-overlap','displayedModelFamily');
   for(const [label,fn,field]of[

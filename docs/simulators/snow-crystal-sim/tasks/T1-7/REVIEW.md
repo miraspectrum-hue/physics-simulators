@@ -43,7 +43,6 @@ conditions: []
 rollback_to: design
 summary: "一次資料v1について206観測、PDF 12,317,042 bytes、SHA-256、温度±0.2°C、過飽和度0.8–1.2倍、既知成長時間、image scale、代表例の主観選択、2D投影解釈の熟練依存を独立照合した。FOVを結晶寸法と呼ばない分離、source値とproject annotationのprovenance、206点監査、condition-group split、train CDF再利用、RFC 8785 canonical hash、time/FOV/実寸のloss除外、著作物境界、latticeCellCount(115)=40021、seed生成、次元式は妥当である。しかしD-03はloss契約を変える未解決の人間判断であり、checkpoint対応、抽出証跡、loss式、holdout一回性にも再現性を妨げる設計欠落が残るため承認できない。"
 ```
-
 ```yaml
 review_type: implementation
 status: changes-requested
@@ -2817,4 +2816,56 @@ findings: []
 conditions: []
 rollback_to: none
 summary: "前回承認後の変更を独立再検証した。slot-plans fixtureのrestrictedMapはschemaとprotocol・manifest・selection-plan hashへ結合された24件で、anonymous/source IDはいずれも24件一意、source IDのASCII昇順集合からhuman-individual全24件、consensus categoryとの結合からhuman-batch集合を再導出できる。individual-23負例はこの根拠を保持してplan内hashだけを不一致にし、top-level selectionPlan、sourceIds、固定期待hashを追加していない。rendererは元template上の一意なASCII byte rangeを出現順に一回だけ置換し、annotator 2件とadjudicator 1件の全positiveで独立single-pass実装とbyte/hash一致した。挿入protocol JSON内のplaceholder文字列は保存され、旧sequential実装とは全件hashが異なる。annotatorのorder負例2件もpositiveと異なるrendered/JCS結合hashになり、no-opではない。8ファイルからregistryを独立再構築して15056件（positive 1031、negative 14025）を確認し、schema、mapping、transport、run、DAG、approval、isolation、metricsの件数に回帰はない。D-18 self-checkは710 reject、81 allow、15 path case、native builtin capability exposure 0で成功し、7 support moduleのnode --checkと対象diffのwhitespace検査も成功した。実装中validatorはreview対象およびoracleから除外した。"
+```
+## implementation review: morphology ensemble pilot validator
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:c12c0e0a8e6fadeddf119d6f8798a418e976049130fa876aca6a082eff264e38
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-core.mjs
+    hash: sha256:192e4c208fe16afba698b367971c5f1e354378e3b67e8329b74cc61998c6a59a
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs
+    hash: sha256:b25629a98ae4272bfa48f79a22671d1ba136914670aec332a507fb084cd93d69
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-io.mjs
+    hash: sha256:17fc40a06ba37729fc1d689369b7c0310bb3aea303b61d251105f244148fe9be
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:83
+    problem: "annotation raw response/modelPayloadsが凍結artifact recordsのpayloadへ結合されておらず、captureと正式recordが異なるrunを受理する。"
+    evidence: "独立mutationでpositive annotation-runのmodelPayloads[0].evidenceだけを変更し、rawResponseBytes、capturedResponseFileSha256、artifact bytes/file hashを整合させた。recordsと各modelPayloadObjectSha256は変更していないが、validatePilot('annotation-run', fixture)は成功した。実装はparsed rawとmodelPayloadsの一致、およびrecord自身のhashを別々に検査するだけで、modelPayloads各要素とrecordsから導出したpayloadOf(record)を比較していない。これはTC-PILOT-RUN-002のcapture integrityと12件atomic batch契約を破る。"
+    required_change: "raw responseからparseした全model payloadを、manifest順の全recordsから導出したpayloadへ件数・ID・順序・全fieldを含めて完全一致させる。annotationとadjudicationの双方へ同種の独立negative mutationを追加し、raw、modelPayloads、recordsのいずれか一つだけが異なる場合を拒否する。"
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:126
+    problem: "InvalidAttemptEvidenceV1の必須意味制約を検査せず、PII混入を明示するevidenceさえ正当なinvalid attemptとして受理する。"
+    evidence: "positive invalid-attempt fixtureのcontainsPiiをtrueへ変更し、その内容からevidence ID、filename、canonical bytes、file hashを独立再計算したところ、validatePilot('invalid-attempt', fixture)は成功した。実装はproperty allowlist、UTC、raw length/hash、validationErrors件数、campaign hash、evidence ID/file hashだけを検査し、containsPii=false、containsRawResponse=false、schema/contract/protocol/policy literal、attempt/disposition対応、plan/run参照の完全結合を検査していない。"
+    required_change: "InvalidAttemptEvidenceV1の完全schemaと規範意味制約を適用し、containsPii/containsRawResponseはfalse固定、attempt 1..3とdisposition、campaign kind、actor/batch/slot/plan/prompt/input/run参照を凍結campaignへ完全結合する。内部整合するよう全hashを再計算したPII・raw-response・参照差替えmutationも拒否する回帰テストを追加する。"
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:249
+    problem: "artifact DAG検査がcycleとunknown IDだけで、規範§13の必須node・一方向dependency closureを検証しない。"
+    evidence: "positive artifact-dag fixtureの全nodeからdependenciesを削除して孤立node集合にした独立mutationでもvalidatePilot('artifact-dag', fixture)はtrueを返した。これによりrunからprompt/input/plan、consensusからruns、approvalからactive upstream、coverageからapprovalへのprovenance edgeをすべて失っても通過する。"
+    required_change: "規範§13のnode集合と各nodeの必須dependency closureを入力artifact/hashから再構成し、欠落、余分、逆向き、自己参照、後続参照を拒否する。少なくとも全edge削除、単一必須edge削除、合法だが余分な前方edgeを独立mutationへ追加する。"
+conditions: []
+rollback_to: test-code
+summary: "D-18のliteral static import allowlist、relative closure、filesystem/network guardには回帰を認めず、2D project annotationを物理ground truthへ拡張する処理もなかった。対象Vitestは14/14、typecheck、4ファイルのnode --checkが成功した。verify-fastは2476 Green・1 skipで、既知のproduction成果物未作成による5 Redだけだった。しかし登録外の独立mutationでraw capture分離、PII付きinvalid-attempt、依存edge欠落DAGの3経路が受理された。承認済みTESTCASESが要求するcapture integrity、privacy、完全DAGを保証できず、現行テストもこれらを検出しないためtest-codeへ戻す必要がある。"
+```
+## test-code review: implementation-review gap regressions
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-workflow-fixtures.mjs
+    hash: sha256:77a8e0769928e0e268493d13d1da6a6b928591f87073ef688cd1b82338daef14
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:870a32dd3fcbd089826713bbdf632f2f67d820dfe25419666a4f87b31d61107b
+findings: []
+conditions: []
+rollback_to: none
+summary: "前回implementation reviewのR-001〜R-003を独立再検証した。annotation 6 runとadjudicationのraw response、modelPayloads、正式recordsについて、件数・順序・ID・観察・分類・全根拠field・adjudication固有fieldを各層単独およびraw+modelPayloadsで変異し、capture/file/record hashを再計算したnegativeが追加されている。InvalidAttemptEvidenceV1はPII/raw-response flag、固定literal、attempt/disposition、root/replacement条件、actor/batch/slot/plan、全prompt/input参照、主要run metadata、campaign再hash変異を含み、root/replacement各attempt 1..3のpositiveも保持する。DAGは独立literal 21 node closureから、全edge削除、各必須edge欠落・逆転・重複、各node欠落・重複・自己参照、invalid-attempt node混入、およびacyclicな余分edgeを決定論的に列挙する。既存contract、物理分類mapping、test oracleを弱める変更やvalidatorへの依存はない。両moduleのnode --checkとgit diff --checkは成功し、対象Vitestは13件Green、現validatorが余分なDAG edgeを受理する新規期待Red 1件だけで失敗した。"
 ```

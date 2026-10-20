@@ -215,3 +215,28 @@ ui_acceptance: not-required
   - Vitest reported 2,475 tests passed, one existing permitted skip, and exactly six expected failures.
   - Five are the existing missing production artifacts and the sixth is the missing pilot validator.
   - No syntax, type, dependency, module-resolution, environment, or unrelated regression was present.
+
+## Implementation-review gap regressions and refreshed expected Red
+
+- Date: 2026-10-20.
+- The first implementation review found three untested rejection paths: divergence between captured model output and
+  formal records, incomplete semantic validation of invalid-attempt evidence, and incomplete artifact-DAG closure.
+- Two support modules add 924 independently derived cases without changing the approved classification mapping or
+  production artifacts. The registry now contains 15,980 cases; all 15,056 prior cases retain their prior outcome.
+- Fresh independent test-code review status: `approved`, with no findings or conditions. Approved hashes:
+  - `pilot-workflow-fixtures.mjs`:
+    `77a8e0769928e0e268493d13d1da6a6b928591f87073ef688cd1b82338daef14`
+  - `pilot-state-cases.mjs`:
+    `870a32dd3fcbd089826713bbdf632f2f67d820dfe25419666a4f87b31d61107b`
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 13 tests passed, no tests skipped, and exactly one expected assertion failure.
+  - The failure is `TC-PILOT-RED-001`: the current validator accepted the independently rehashed
+    `annotation-run/capture-integrity/root-annotator-3-batch-01/all-fields/classification.fieldConfidence.growthAxis`
+    mutation instead of throwing the required `RangeError`.
+  - This is the intended behavioral Red for the review finding, not a syntax, type, dependency, module-resolution,
+    or environment failure.
+- Independent full-registry comparison found 852 expected negative-case failures among the 924 additions: 624
+  invalid fixtures were accepted and 228 were rejected with an incomplete error contract. The other 72 additions
+  already pass. This detailed comparison is diagnostic; the single Vitest conformance assertion remains the gate Red.
+- `node --check` for both changed support modules, TypeScript typecheck, and `git diff --check` passed.
