@@ -2869,3 +2869,18 @@ conditions: []
 rollback_to: none
 summary: "前回implementation reviewのR-001〜R-003を独立再検証した。annotation 6 runとadjudicationのraw response、modelPayloads、正式recordsについて、件数・順序・ID・観察・分類・全根拠field・adjudication固有fieldを各層単独およびraw+modelPayloadsで変異し、capture/file/record hashを再計算したnegativeが追加されている。InvalidAttemptEvidenceV1はPII/raw-response flag、固定literal、attempt/disposition、root/replacement条件、actor/batch/slot/plan、全prompt/input参照、主要run metadata、campaign再hash変異を含み、root/replacement各attempt 1..3のpositiveも保持する。DAGは独立literal 21 node closureから、全edge削除、各必須edge欠落・逆転・重複、各node欠落・重複・自己参照、invalid-attempt node混入、およびacyclicな余分edgeを決定論的に列挙する。既存contract、物理分類mapping、test oracleを弱める変更やvalidatorへの依存はない。両moduleのnode --checkとgit diff --checkは成功し、対象Vitestは13件Green、現validatorが余分なDAG edgeを受理する新規期待Red 1件だけで失敗した。"
 ```
+## test-code review: pilot conformance performance correction
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-schema-cases.mjs
+    hash: sha256:76e1790291f63c9bd2d63cd9406bfa373d92b934f58386f6afb7c64e563e5215
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:d574d7fc0c56446d0276a613203b24cddfe477b868728b09de7590cc0e60edad
+findings: []
+conditions: []
+rollback_to: none
+summary: "HEAD bd36b18との差分を限定監査した。schemaGood/schemaBadはschema objectだけを共有し、mutableなvalueはケースごとにclone、bytesはimmutable stringとして保持する。全mutationはvalueまたはbytesだけを変更し、validatorへは各case fixtureのdeep cloneが渡るためケース間汚染はない。削除されたbefore比較はvalidatorへ渡らない元fixtureの冗長検査だけで、実際に渡すfixtureのinputBefore比較は維持されている。error class/reason/field/expected、120秒timeout、ランダムshuffle、逆順repeat、fresh metamorphic、skip 0はいずれも不変。registryを独立再構築して15,980件（positive 1,037、negative 14,943）、schema fixture 9,603件、共有schema identity 22個を確認した。対象Vitestは14/14 Green、TypeScript typecheck、node --check、git diff --checkも成功した。mapping 76/243・44/2304・93/243・27/81、静的依存境界、物理的分類契約には変更がない。"
+```

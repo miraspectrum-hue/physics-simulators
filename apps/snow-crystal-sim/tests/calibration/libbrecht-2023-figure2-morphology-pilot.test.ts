@@ -157,7 +157,6 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
       const loaded = await import(/* @vite-ignore */ pathToFileURL(path).href) as Validator;
       expect(typeof loaded.validatePilot, 'missing validatePilot(caseName, fixture) API').toBe('function');
       const runOne = async (c: FixtureCase) => {
-        const before = clone(c.fixture);
         const fixture = c.caseName.startsWith('isolation') ? clone(c.fixture) : { ...clone(c.fixture) as object, PILOT_WORK_ROOT: workRoot };
         guard.beginCall(c, fixture);
         const inputBefore = clone(fixture);
@@ -172,7 +171,6 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
             expect((error as Error).message).toContain(c.field);
           }
         } finally { guard.endCall(); }
-        expect(c.fixture).toEqual(before);
         expect(fixture, `${c.caseName}/${c.label}: input mutation`).toEqual(inputBefore);
         if (c.caseName === 'isolation' && !c.errorClass) {
           const output = (fixture as any).requestedOutputs[0].destination;

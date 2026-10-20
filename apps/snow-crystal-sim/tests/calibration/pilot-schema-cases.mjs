@@ -1,4 +1,28 @@
-import { assert, clone, good, bad, schemaAccepts, parseUnique, fileBytes, hash } from './pilot-oracle.mjs';
+import { assert, clone, cases, schemaAccepts, parseUnique, fileBytes, hash } from './pilot-oracle.mjs';
+
+// Schema fixtures carry a shared, read-only schema definition.  The generic
+// registry helpers deep-clone the whole fixture, including that definition,
+// for every boundary mutation.  These helpers instead clone only the mutable
+// value/bytes portion.  Each registered fixture is still self-contained by
+// value and is cloned again by the test harness before validation.
+function schemaGood(caseName, base, expected = true, label = 'positive') {
+  cases.push({
+    caseName,
+    fixture: base.value === undefined
+      ? { ...base, schemaObject: base.schemaObject }
+      : { ...base, schemaObject: base.schemaObject, value: clone(base.value) },
+    expected: clone(expected),
+    label,
+  });
+}
+
+function schemaBad(caseName, base, mutate, reason, field, errorClass = 'RangeError', label = field) {
+  const fixture = base.value === undefined
+    ? { ...base, schemaObject: base.schemaObject }
+    : { ...base, schemaObject: base.schemaObject, value: clone(base.value) };
+  mutate(fixture);
+  cases.push({ caseName, fixture, errorClass, reason, field, label });
+}
 
 // Independent schema conformance is an input operation of validatePilot; every
 // declared property is exercised, rather than replacing schemas by a toy object.
@@ -18,7 +42,7 @@ export function schemaCases(c,w){
 export function exerciseSchema(c,key,sample){
   const schema=c.bundle[`${key}SchemaFileSha256`].object;
   assert(schemaAccepts(schema,sample),`${key} does not match the normative type declaration`);
-  const base={schemaObject:schema,value:sample,schemaProperty:`${key}SchemaFileSha256`};good('schema-object',base,true,key);
+  const base={schemaObject:schema,value:sample,schemaProperty:`${key}SchemaFileSha256`};schemaGood('schema-object',base,true,key);
   let visited=0;
   const at=(root,path)=>path.reduce((v,k)=>v[k],root);
   const selected=(s,value)=>s.anyOf?s.anyOf.find(member=>schemaAccepts(member,value)):s;
@@ -28,11 +52,11 @@ export function exerciseSchema(c,key,sample){
     const changed=clone(sample);at(changed,path.slice(0,-1))[path.at(-1)]=replacement;
     if(schemaAccepts(schema,changed))return;
     const field=path.join('.');
-    bad('schema-object',base,f=>{at(f.value,path.slice(0,-1))[path.at(-1)]=clone(replacement);},reason,field,errorClass,`${key}/${field}/${label}`);
+    schemaBad('schema-object',base,f=>{at(f.value,path.slice(0,-1))[path.at(-1)]=clone(replacement);},reason,field,errorClass,`${key}/${field}/${label}`);
   }
   function boundaryPositive(path,replacement,label){
     if(!path.length)return;const changed=clone(sample);at(changed,path.slice(0,-1))[path.at(-1)]=replacement;
-    if(schemaAccepts(schema,changed))good('schema-object',{...base,value:changed},true,`${key}/${path.join('.')}/${label}`);
+    if(schemaAccepts(schema,changed))schemaGood('schema-object',{...base,value:changed},true,`${key}/${path.join('.')}/${label}`);
   }
   function walk(value,path,node){
     node=selected(node,value);assert(node,`${key}/${path.join('.')}`);
@@ -44,10 +68,10 @@ export function exerciseSchema(c,key,sample){
     }
     if(value!==null&&typeof value==='object'){
       const locate=f=>at(f.value,path),extra=mutated(sample,path,'__unknown',true);
-      if(!schemaAccepts(schema,extra))bad('schema-object',base,f=>{locate(f).__unknown=true;},'unknown-property',[...path,'__unknown'].join('.'),'TypeError',`${key}/${path.join('.')}/unknown`);
+      if(!schemaAccepts(schema,extra))schemaBad('schema-object',base,f=>{locate(f).__unknown=true;},'unknown-property',[...path,'__unknown'].join('.'),'TypeError',`${key}/${path.join('.')}/unknown`);
       for(const property of Object.keys(value)){
         const child=node.properties[property]??node.additionalProperties,childPath=[...path,property],field=childPath.join('.');
-        if(node.required.includes(property))bad('schema-object',base,f=>{delete locate(f)[property];},'missing-property',field,'TypeError',`${key}/${field}/missing`);
+        if(node.required.includes(property))schemaBad('schema-object',base,f=>{delete locate(f)[property];},'missing-property',field,'TypeError',`${key}/${field}/missing`);
         const wrong=typeof value[property]==='boolean'?'wrong-type':false;
         mutation(childPath,wrong,'wrong-type','type-or-enum','TypeError');
         if(value[property]!==null)mutation(childPath,null,'null','type-or-enum','TypeError');
@@ -78,9 +102,9 @@ export function exerciseSchema(c,key,sample){
     }
   }
   walk(sample,[],schema);assert(visited>0);
-  const bytes=fileBytes(sample);good('canonical-json',{bytes,schemaObject:schema},hash(sample),key);
-  bad('canonical-json',{bytes,schemaObject:schema},f=>{f.bytes='{"duplicate":1,"dupli\\u0063ate":2}\n';},'duplicate-key','duplicate','SyntaxError',`${key}/escaped-duplicate`);
-  for(const [label,transform]of[['BOM',s=>'\ufeff'+s],['CRLF',s=>s.replaceAll('\n','\r\n')],['extra-LF',s=>s+'\n'],['pretty',()=>JSON.stringify(sample,null,2)+'\n'],['multiple',s=>s+s]])bad('canonical-json',{bytes,schemaObject:schema},f=>{f.bytes=transform(bytes);},'canonical-json-bytes','bytes','RangeError',`${key}/${label}`);
+  const bytes=fileBytes(sample);schemaGood('canonical-json',{bytes,schemaObject:schema},hash(sample),key);
+  schemaBad('canonical-json',{bytes,schemaObject:schema},f=>{f.bytes='{"duplicate":1,"dupli\\u0063ate":2}\n';},'duplicate-key','duplicate','SyntaxError',`${key}/escaped-duplicate`);
+  for(const [label,transform]of[['BOM',s=>'\ufeff'+s],['CRLF',s=>s.replaceAll('\n','\r\n')],['extra-LF',s=>s+'\n'],['pretty',()=>JSON.stringify(sample,null,2)+'\n'],['multiple',s=>s+s]])schemaBad('canonical-json',{bytes,schemaObject:schema},f=>{f.bytes=transform(bytes);},'canonical-json-bytes','bytes','RangeError',`${key}/${label}`);
 }
 function mutated(base,path,key,replacement){const f=clone(base);path.reduce((v,k)=>v[k],f)[key]=replacement;return f;}
 function shapeKey(v){if(Array.isArray(v))return'array';if(v&&typeof v==='object')return Object.keys(v).sort().join(',')+'/'+(v.recordType??'');return typeof v;}

@@ -240,3 +240,29 @@ ui_acceptance: not-required
   invalid fixtures were accepted and 228 were rejected with an incomplete error contract. The other 72 additions
   already pass. This detailed comparison is diagnostic; the single Vitest conformance assertion remains the gate Red.
 - `node --check` for both changed support modules, TypeScript typecheck, and `git diff --check` passed.
+
+## Pilot conformance performance correction and refreshed expected Red
+
+- Date: 2026-10-20.
+- The review-gap registry increased deterministic workload enough to expose two redundant test-harness costs:
+  cloning the same immutable schema definition for every schema mutation, and cloning/comparing the original
+  registry fixture even though only a separate deep clone is passed to the validator.
+- The limited correction shares read-only schema definitions while retaining a separate mutable value per case,
+  and removes only the unreachable original-fixture comparison. The actual validator input is still cloned before
+  every call and compared byte-for-byte after every call. No timeout, skip, shuffle, repeat, mutation, expected
+  result, or error contract changed.
+- Fresh independent test-code review status: `approved`, with no findings or conditions. The reviewer independently
+  reconstructed 15,980 cases: 1,037 positive and 14,943 negative, including 9,603 schema fixtures.
+- Green diagnostic with the validator present:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 0; 14 tests passed, no tests skipped, in 103.03 seconds under the unchanged 120-second limit.
+- Refreshed expected Red moved the four uncommitted validator modules to a validated workspace-local temporary
+  directory, ran the same command, and restored all four modules in a `finally` block.
+  - Result: exited 1; 13 tests passed, no tests skipped, and exactly one expected failure in 5.40 seconds.
+  - The sole failure was `TC-PILOT-RED-001`, the assertion that
+    `libbrecht-2023-figure2-morphology-pilot-validator.mjs` is missing.
+  - There were no syntax, type, dependency, module-resolution, environment, schema, or unrelated failures.
+- Approved file hashes:
+  - `pilot-schema-cases.mjs`: `76e1790291f63c9bd2d63cd9406bfa373d92b934f58386f6afb7c64e563e5215`
+  - `libbrecht-2023-figure2-morphology-pilot.test.ts`:
+    `d574d7fc0c56446d0276a613203b24cddfe477b868728b09de7590cc0e60edad`
