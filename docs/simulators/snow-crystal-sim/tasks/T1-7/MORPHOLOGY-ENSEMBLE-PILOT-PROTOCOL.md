@@ -144,7 +144,7 @@ type PilotHashPreimageV1 =
         readonly replacementArtifactId: ArtifactId;
         readonly replacementArtifactFileSha256: Sha256Hex;
         readonly reasonCode:
-          | 'schema-fix' | 'prompt-change' | 'model-retry' | 'input-change' | 'human-correction';
+          | 'model-retry' | 'input-change' | 'human-correction';
         readonly changedInputSha256: Sha256Hex;
       }[];
     }
@@ -199,8 +199,7 @@ type PilotHashPreimageV1 =
       readonly campaignKind: 'root-materialization' | 'replacement-materialization';
       readonly activeArtifactIdBeforeCampaign: ArtifactId | null;
       readonly activeArtifactFileSha256BeforeCampaign: Sha256Hex | null;
-      readonly replacementReasonCode:
-        | 'schema-fix' | 'prompt-change' | 'model-retry' | 'input-change' | null;
+      readonly replacementReasonCode: 'model-retry' | 'input-change' | null;
       readonly changedInputSha256: Sha256Hex | null;
       readonly promptVariablesObjectSha256: Sha256Hex;
       readonly batchInputTableObjectSha256: Sha256Hex;
@@ -211,6 +210,12 @@ type PilotHashPreimageV1 =
       readonly purpose: 'invalid-attempt-evidence-id';
       readonly evidenceWithoutInvalidAttemptEvidenceId:
         Omit<InvalidAttemptEvidenceV1, 'invalidAttemptEvidenceId'>;
+    }
+  | {
+      readonly hashSchema: 'snow-crystal-morphology-pilot-hash/1';
+      readonly purpose: 'plan-closure-id';
+      readonly closureWithoutPlanClosureId:
+        Omit<PlanClosureV1, 'planClosureId'>;
     }
   | {
       readonly hashSchema: 'snow-crystal-morphology-pilot-hash/1';
@@ -234,6 +239,13 @@ expected setはID ASCII昇順かつordinal 0始まり連続、ordered image inpu
 consensus inputはanonymous ID昇順・各ID内actor ID順、candidate inputはanonymous ID昇順・alias X/Y/Z順、
 ledgerはsequence昇順、snapshotはartifact kind enum順・logical slot昇順、final valuesはsource ID昇順、
 coverage snapshotはlogical slot昇順とする。object/file hashを相互に代用しない。
+
+`supersession-ledger-input`のreasonはartifact kindごとに閉じる。`annotation-run|adjudication-run`は
+`model-retry|input-change`、`consensus`は`input-change`、`human-approval`は`human-correction`だけを許す。
+`model-attempt-campaign`のreplacement reasonは`model-retry|input-change`だけである。
+`schema-fix`または`prompt-change`を表すhash preimage member、ledger reason、campaign reasonは存在しない。
+schema/template/prompt semantics変更は§8.1と§14のprotocol再発行境界で扱い、旧planと新planを結ぶhash wrapperを
+追加してはならない。
 
 ## 4. protocol object、schema、input table
 
@@ -271,6 +283,7 @@ interface MorphologyPilotProtocolV1 {
     readonly activeAnnotationConsensusSnapshotSchemaFileSha256: Sha256Hex;
     readonly supersessionLedgerSchemaFileSha256: Sha256Hex;
     readonly invalidAttemptEvidenceSchemaFileSha256: Sha256Hex;
+    readonly planClosureSchemaFileSha256: Sha256Hex;
     readonly renderedPromptEvidenceSchemaFileSha256: Sha256Hex;
     readonly postConsensusRouteSlotPlanSchemaFileSha256: Sha256Hex;
     readonly activeUpstreamSnapshotSchemaFileSha256: Sha256Hex;
@@ -384,6 +397,8 @@ interface PilotSelectionPlanV1 {
   readonly schemaVersion: 'snow-crystal-morphology-pilot-selection/1';
   readonly contractId: 't1-7-morphology-ensemble-pilot-contract/1';
   readonly protocolObjectSha256: Sha256Hex;
+  readonly sourcePdfSha256:
+    '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
   readonly candidateSetObjectSha256: Sha256Hex;
   readonly proxyInputObjectSha256: Sha256Hex;
   readonly algorithmId: 'page-proxy-round-robin-hash-v1';
@@ -458,6 +473,8 @@ interface RestrictedSourceMapV1 {
 
 candidate/proxy/plan/manifest/restricted mapはそれぞれtop-level objectのLFなしJCS hashを使う。candidate/proxyは
 206 ID完全被覆、planは各page6件/全24件、manifest/mapは同じ24匿名ID/filename/pathを一対一で持つ。
+planの`sourcePdfSha256`はprotocol objectとcandidate setの`sourcePdfSha256`、および本契約の固定PDF hashに
+直接一致させる。candidate set経由だけの間接結合では不十分であり、3箇所のどれか1つでも異なればplan全体を拒否する。
 proxy signatureはA/B完全一致なら値、不一致ならdisagreementで、human finalを読まない。選定key、page内
 round-robin、batch orderは`DESIGN.md` §5.1A.1のliteral preimageで再計算する。
 
@@ -860,8 +877,7 @@ interface SupersessionLedgerRecordV1 {
   readonly supersededArtifactFileSha256: Sha256Hex;
   readonly replacementArtifactId: ArtifactId;
   readonly replacementArtifactFileSha256: Sha256Hex;
-  readonly reasonCode:
-    | 'schema-fix' | 'prompt-change' | 'model-retry' | 'input-change' | 'human-correction';
+  readonly reasonCode: 'model-retry' | 'input-change' | 'human-correction';
   readonly changedInputSha256: Sha256Hex;
 }
 ```
@@ -875,6 +891,17 @@ ledger JSONLはheader、metadata、sequence昇順recordの順とし、header exp
 同kind/slot内でrootからterminalまで入次数/出次数0または1、root/terminal各1の一本鎖で、replacementの
 old/new artifact ID/file hashが実在しschema-validな場合だけterminalを返す。cycle、branch、sequence欠番、
 別kind/slot replacement、unknown hash、複数terminal、plan外artifact、unused slot artifactを拒否する。
+
+reasonとartifact kindの許可matrixは次だけである。
+
+| artifact kind | 許可reason | authority |
+|---|---|---|
+| `annotation-run` / `adjudication-run` | `model-retry` | campaign開始時active artifact file hash |
+| `annotation-run` / `adjudication-run` | `input-change` | 同一plan内で許可された新batch input table object hash |
+| `consensus` | `input-change` | 新しいactive annotation集合から再計算したconsensus input hash |
+| `human-approval` | `human-correction` | 新しいhuman final values hash |
+
+別kindのreason、`schema-fix`、`prompt-change`、旧protocol/planのartifactをold/newのどちらかに置くedgeを拒否する。
 
 ### 8.1 schema-invalid model responseとretry
 
@@ -922,8 +949,7 @@ interface InvalidAttemptEvidenceV1 {
     readonly artifactId: ArtifactId;
     readonly artifactFileSha256: Sha256Hex;
   } | null;
-  readonly replacementReasonCode:
-    | 'schema-fix' | 'prompt-change' | 'model-retry' | 'input-change' | null;
+  readonly replacementReasonCode: 'model-retry' | 'input-change' | null;
   readonly changedInputSha256: Sha256Hex | null;
   readonly promptRefs: {
     readonly promptRole: 'annotator' | 'adjudicator';
@@ -966,11 +992,26 @@ interface InvalidAttemptEvidenceV1 {
 
 `campaignIdSha256`は§3 `model-attempt-campaign` preimageから再計算する。root campaignでは
 `campaignKind=root-materialization`、active artifact 2 field、replacement reason、changed inputを全てnullにする。
-replacement campaignでは4 fieldを全てnon-nullにし、開始時のactive terminalと、将来ledgerへ使うreason/input hashを
-固定する。slot planはannotationなら第一plan、adjudicationなら第二planを参照し、actor/batch/kind/logical slot/rootは
-planと完全一致させる。`changedInputSha256`は`schema-fix`なら新schema file、`prompt-change`なら新prompt variables object、
-`input-change`なら新batch input table、入力不変の`model-retry`ならcampaign開始時active artifact fileのhashとする。
-campaign中にprompt/input/current activeを変えてはならない。
+replacement campaignではactive artifact ID/file hash、replacement reason、changed inputを全てnon-nullにし、開始時の
+active terminalと将来ledgerへ使うauthorityを固定する。slot planはannotationなら第一plan、adjudicationなら第二planを
+参照し、actor/batch/kind/logical slot/rootはplanと完全一致させる。許可matrixは次の2行だけである。
+`slotPlanObjectSha256`が参照するplanの`protocolObjectSha256`は`inputRefs.protocolObjectSha256`と一致させ、
+別protocol objectのplan、promptまたはinputを同じcampaignへ混ぜない。
+
+| replacement reason | 同一plan内で不変 | 同一plan内で変更 | `changedInputSha256` authority |
+|---|---|---|---|
+| `model-retry` | protocol、schema、template、prompt variables、rendered evidence/prompt、batch/ordered input、current active | model submissionだけ | campaign開始時active artifact file hash |
+| `input-change` | protocol、schema、template、manifest、expected ID、画像file/RGBA hash、件数、順序、current active | batch input tableの`attachmentSlot`、そこから決定的に派生するprompt variables、rendered evidence/prompt | 新batch input table object hash |
+
+`input-change`では、旧/new tableのprotocol、manifest、batch ID、ordinal、anonymous ID、derivative file/RGBA hashを
+完全一致させ、少なくとも1つの`attachmentSlot`だけが変わらなければならない。新prompt variablesは新tableのobject hashと
+canonical JSON以外を旧objectと一致させ、rendered evidence/promptを§14どおり再計算する。この派生変更は
+`prompt-change`ではない。campaignのfreeze順は、(1)開始時active確定、(2)許可された新table、(3)prompt variables、
+(4)rendered prompt evidence/prompt、(5)campaign preimage/ID、(6)submissionである。campaign freeze後に
+prompt/input/current activeを変えてはならない。
+
+schema bytes/objectまたは参照、template bytes、placeholder、renderer、指示文の意味、判断規則、mapping、protocol objectの
+意味propertyを変える`schema-fix`/`prompt-change`は、このenumにもcampaignにもledgerにも入れない。§14の再発行を行う。
 
 `invalidAttemptEvidenceId`は§3 `invalid-attempt-evidence-id` wrapperのLFなしJCS bytesのSHA-256である。
 evidence fileはIDを含むobjectのJCS bytes+LFで、そのfile hashはfile全bytesから外側で計算する。ID preimageにID自身を
@@ -984,16 +1025,33 @@ actor/family/attachment modeは同campaignの凍結object、protocol、slot plan
 
 各campaignは最大3 submission、attempt number 1,2,3を欠番・重複なく使い、invalid attempt後の再送はfresh contextだけを
 許す。attempt 1または2がinvalidなら`disposition=retry-allowed`、attempt 3なら
-`attempt-limit-reached`である。状態遷移は次だけを許す。
+`attempt-limit-reached`である。retryable stateへ入るには、同じcampaign IDについて、それより前のattemptを全て
+invalidとして記録したimmutable `InvalidAttemptEvidenceV1`が必要である。valid attemptには同番号のinvalid evidenceが
+存在してはならない。状態遷移は次だけを許す。
 
 | campaign state + event | evidence / slot / ledger | next state |
 |---|---|---|
-| root planned + valid attempt 1..3 | invalid evidenceなし。schema-valid wrapperへ凍結`rootArtifactId`を初めて割当。ledger entryなし | active-root |
-| root planned + invalid attempt 1..2 | evidenceを1個保存。root IDをartifactへ割り当てず、ledger entryなし | root-retryable |
-| root planned/retryable + invalid attempt 3 | evidenceを1個保存。root ID未割当、ledger entryなし | failed-closed |
-| active terminal + replacement valid attempt 1..3 | 新artifact ID/fileを作り、campaign開始時active→newのledger entryを1個追加 | active-replacement |
-| active terminal + replacement invalid attempt 1..2 | evidenceを1個保存。現activeは不変、ledger entryなし | replacement-retryable |
-| active terminal + replacement invalid attempt 3 | evidenceを1個保存。現activeは不変、ledger entryなし | failed-closed |
+| `root-planned` + valid attempt 1 | prior evidenceなし。schema-valid wrapperへ凍結`rootArtifactId`を初めて割当。ledger entryなし | active-root |
+| `root-planned` + invalid attempt 1 | evidence 1を保存。root IDをartifactへ割り当てず、ledger entryなし | `root-retryable-2` |
+| `root-retryable-2` + valid attempt 2 | immutable evidence 1が同campaignでexactly 1件。root IDを初めて割当 | active-root |
+| `root-retryable-2` + invalid attempt 2 | immutable evidence 1に加えてevidence 2を保存 | `root-retryable-3` |
+| `root-retryable-3` + valid attempt 3 | immutable evidence 1,2が同campaignで各exactly 1件。root IDを初めて割当 | active-root |
+| `root-retryable-3` + invalid attempt 3 | immutable evidence 1,2に加えてevidence 3を保存。root ID未割当 | failed-closed |
+| `model-retry-planned` + valid attempt 1 | prior evidenceなし。新artifactと開始時active→new ledger entryをatomicに確定 | active-replacement |
+| `model-retry-planned` + invalid attempt 1 | evidence 1を保存。現activeは不変、ledger entryなし | `model-retry-retryable-2` |
+| `model-retry-retryable-2` + valid attempt 2 | immutable evidence 1が同campaignでexactly 1件。新artifact/edgeをatomicに確定 | active-replacement |
+| `model-retry-retryable-2` + invalid attempt 2 | immutable evidence 1に加えてevidence 2を保存。現activeは不変 | `model-retry-retryable-3` |
+| `model-retry-retryable-3` + valid attempt 3 | immutable evidence 1,2が同campaignで各exactly 1件。新artifact/edgeをatomicに確定 | active-replacement |
+| `model-retry-retryable-3` + invalid attempt 3 | immutable evidence 1,2に加えてevidence 3を保存。現activeは不変 | failed-closed |
+| `input-change-planned` + valid attempt 1 | prior evidenceなし。新artifact/edgeをatomicに確定するまで後続materialization禁止 | active-replacement |
+| `input-change-planned` + invalid attempt 1 | evidence 1を保存。ledger entryなし、後続materialization禁止 | `input-change-retryable-2` |
+| `input-change-retryable-2` + valid attempt 2 | immutable evidence 1が同campaignでexactly 1件。新artifact/edgeをatomicに確定 | active-replacement |
+| `input-change-retryable-2` + invalid attempt 2 | immutable evidence 1に加えてevidence 2を保存。後続materialization禁止 | `input-change-retryable-3` |
+| `input-change-retryable-3` + valid attempt 3 | immutable evidence 1,2が同campaignで各exactly 1件。新artifact/edgeをatomicに確定 | active-replacement |
+| `input-change-retryable-3` + invalid attempt 3 | immutable evidence 1,2に加えてevidence 3を保存。旧activeへ戻さず現plan停止 | failed-closed |
+
+`*-planned`からattempt 2/3を直接受理してはならない。`*-retryable-2`はattempt 1だけ、`*-retryable-3`はattempt 1,2だけの
+連続したimmutable evidenceを要求し、別campaign、欠番、重複、後続attempt evidence、同番号のvalid/invalid二重化を拒否する。
 
 invalid responseへplanned root IDまたはreplacement IDを付けること、slot artifact/headerを作ること、ledger old/newへ入れること、
 snapshot/consensus/candidate/coverageのordered itemへ入れることを禁止する。root campaignの最初のschema-valid wrapperだけが
@@ -1002,14 +1060,64 @@ replacement campaignはvalid wrapperとledger edgeをatomicに確定するまで
 
 attempt 3 invalid後は同campaignを再開せず、attempt 4を作成せず、invalid responseを人間修復してはならない。annotationのrequired
 rootが未materializeならpilot全体を停止する。adjudication campaignなら現第二planをfailedとして停止し、§9の既存規則どおり
-新しい第二plan/versionを`skipped-direct-human`でfreezeした場合だけ再開できる。replacement campaignの入力変更が現activeを
-invalidatedしている場合、旧activeを後続へ使わない。変更が採用されていない単なる再試行でも、failed campaignを成功扱いせず
-停止理由へ記録する。
+新しい第二plan/versionを`skipped-direct-human`でfreezeした場合だけ再開できる。`input-change` campaign開始後は旧activeを
+後続へ使わない。入力不変の`model-retry`でもfailed campaignを成功扱いせず停止理由へ記録する。
+
+schema/template/prompt semantics変更を検出した場合はcampaign stateを遷移させない。現protocol objectとそこから派生した
+第一/第二planを§8.2の`PlanClosureV1`でterminalに閉じ、§14の順で新protocol objectと未実行planを作る。
+
+### 8.2 schema/prompt変更時のplan closure
+
+```ts
+interface PlanClosureV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-plan-closure/1';
+  readonly contractId: 't1-7-morphology-ensemble-pilot-contract/1';
+  readonly protocolId: 'morphology-ensemble-pilot/1';
+  readonly planClosureId: Sha256Hex;
+  readonly oldProtocolObjectSha256: Sha256Hex;
+  readonly oldSelectionPlanObjectSha256: Sha256Hex;
+  readonly oldAnnotationConsensusSlotPlanObjectSha256: Sha256Hex;
+  readonly oldPostConsensusRouteSlotPlanObjectSha256: Sha256Hex | null;
+  readonly oldSupersessionLedgerFileSha256: Sha256Hex;
+  readonly oldCutoffSequence: number;
+  readonly reasonCode: 'schema-change' | 'prompt-change';
+  readonly closedAtUtc: UtcSeconds;
+  readonly terminalState: 'invalidated-reissue-required';
+  readonly furtherModelSubmissionsAllowed: false;
+  readonly furtherRootMaterializationAllowed: false;
+}
+```
+
+closureは旧protocol、selection plan、第一slot plan、存在する場合だけ第二slot plan、旧ledgerのcutoffを直接識別する。
+`oldPostConsensusRouteSlotPlanObjectSha256`は旧第二planが未作成ならnull、作成済みなら実object hashである。
+`oldCutoffSequence`は旧ledgerのterminal sequenceと一致し、以後のentryは0件でなければならない。closure schemaは
+追加propertyを禁止するため、新protocol、新plan、新root、新approval、新ledgerへの参照fieldを持てない。
+
+`planClosureId`は§3 `plan-closure-id` wrapperのLFなしJCS bytesのSHA-256である。closure fileはIDを含むobjectの
+JCS bytes+LF、filenameは`<planClosureId>.json`とし、file全bytesのhashを外側のcoordinator auditへ記録する。
+ID preimageにID自身またはfile hashを入れない。`closedAtUtc`は厳密UTC secondsで、監査時刻であって受付順の代用ではない。
+
+freeze順は、(1)旧planへの新submission/root materialization受付を停止、(2)旧ledgerとcutoffをfreeze、
+(3)closureをfreezeしてclosure registryへ登録、(4)新schema/template、(5)新protocol object、
+(6)selection、manifest/restricted map、batch input、prompt variables/evidence、(7)新第一slot planである。
+validatorは受付ごとにclosure registryを先に検査し、対象protocol/第一planを参照するclosureが1件でもあれば、artifact内の
+時刻にかかわらず旧planへのmodel submission、root/replacement materialization、ledger追加を拒否する。これによりclosure後に
+受理されるsubmission/rootは厳密に0件となる。closureは旧DAGのterminal監査sidecarであり、ledger entryでも
+supersession edgeでもなく、出edgeを持たない。
+
+新第一planは7個のroot IDを事前freezeするだけで、materialized root artifact、run、campaign/evidence、ledger entry、
+snapshot、第二plan、approval、coverageを0件とする。旧root/active artifact、invalid-attempt evidence、ledger、snapshot、
+approval、coverageを新planへcopy、join、supersede、移行またはhash参照してはならない。closure自身も新DAGから参照せず、
+旧planと新planのcross-plan migration/ledger/root lineageは存在しない。旧planのfileは監査用immutable evidenceとして保持できるが、
+新planのactive candidateまたは入力にはならない。
 
 validator/testは少なくとも、(a) first-valid、(b) invalid→valid、(c) invalid→invalid→valid、
-(d) 3 invalid、(e) replacement invalid→valid、(f) replacement 3 invalid、(g) attempt欠番/重複、
+(d) 3 invalid、(e) 2 reasonそれぞれのreplacement invalid→valid、(f) 2 reasonそれぞれのreplacement 3 invalid、
+(g) reason/authority交換、schema/prompt reason拒否、attempt欠番/重複、
 (h) evidence ID/file hash不一致、(i) raw本文/自由文error/PII property混入、(j) invalid evidenceのplan/ledger/snapshot混入、
-(k) valid wrapperとinvalid evidenceの同一attempt二重化を固定fixtureで検査する。
+(k) valid wrapperとinvalid evidenceの同一attempt二重化、(l) `PlanClosureV1`のID/file hash、旧参照、terminal受付拒否、
+(m) protocol再発行後の未実行状態とcross-plan参照拒否を
+固定fixtureで検査する。
 
 ## 9. 第二slot planとadjudicator eligibility
 
@@ -1331,6 +1439,13 @@ source approvalを参照する。これによりDAGは非循環である。
 一方向に参照する監査sidecarであり、slot root、supersession ledger、active snapshot、coverageから参照しない。
 invalid attemptからvalid wrapperへのedgeも作らない。
 
+schema/template/prompt semantics変更によるprotocol再発行は、旧DAGの後続nodeではない。旧DAGを
+`PlanClosureV1`で`invalidated-reissue-required`として閉じ、新protocol objectをrootとする別の未実行DAGを作る。
+closureは旧protocol/plan/ledger cutoffだけを参照するterminal sidecarで、旧DAGにも新DAGにも出edgeを持たず、
+新DAGからも参照しない。新DAGは旧DAGの
+slot plan、root/active artifact、campaign、invalid-attempt evidence、ledger、snapshot、approval、coverageのID/hashを
+持たない。両DAGにまたがるmigration、supersession、root lineage、approval/coverage再利用を禁止する。
+
 主要null/order制約を次へ固定する。
 
 | 対象 | non-null | null固定 | order/count |
@@ -1420,6 +1535,28 @@ rendered prompt hash、protocol/schema/input/candidate hashの一つでも不一
 template全file bytes hashはprotocol objectのrole別template hashと一致し、renderer IDとplaceholder tupleも
 protocol objectの固定値と一致しなければならない。protocol object確定後のtemplate変更はprotocol objectを
 再発行し、未実行のslot planから作り直す。既存runへhashだけ差し替えることを禁止する。
+
+同一plan内で`PromptVariablesV1`を変えられるのは、§8.1の`input-change`で新batch input tableを凍結し、
+`batchInputTableObjectSha256`と`batchInputTableCanonicalJson`だけがそのtableに合わせて変わる場合である。
+その場合もprotocol/schema/template/renderer/placeholder、manifest、expected ID、画像hash、件数、順序は不変で、
+`RenderedPromptEvidenceV1`とrendered promptを新variablesから再計算する。variablesを直接編集すること、
+`protocolCanonicalJson`、`modelPayloadSchemaCanonicalJson`、candidate fieldsまたはそれらのhashをreplacement理由なしに
+変えることを禁止する。
+
+schema bytes/objectまたはschema参照、template bytes、placeholder、renderer、instruction wording/semantics、判断規則、
+mapping、protocol objectの意味propertyの変更が必要なら、次の順で再発行する。
+
+1. 現protocol/planへのmodel submission/root materializationを停止し、旧ledger/cutoffをfreezeして、§8.2の
+   `PlanClosureV1`を`invalidated-reissue-required`として登録する。以後、旧planへの受付は時刻にかかわらず0件とする。
+2. DESIGN/本protocol/TESTCASESの必要な正式修正、fresh review、test gateを完了する。
+3. 新schema/templateを先にfreezeし、それらを参照する新protocol objectをfreezeする。
+4. 新protocol objectからselection、manifest/restricted map、batch input、prompt variables/evidence、第一slot planを再生成する。
+5. 第一planの7 `rootArtifactId`は事前freezeするが、それを受けたmaterialized artifactが0件の未実行状態を
+   検証してから、attempt 1を開始する。
+
+旧planのartifact、ledger、snapshot、approval、coverageを新planへ移行・supersede・参照してはならない。同じ24画像や
+同じsource PDFを再選定結果として得ても、旧planの実行済み成果物を新planのrootまたはactiveとして扱わない。
+closureは旧DAGのterminal sidecarであり、新protocol/planを参照せず、新DAGもclosureを参照しない。
 
 以下のcode fence**内だけ**（開閉fenceを除き、先頭文字から最後のLFまで）がexact template file contentである。
 
@@ -1541,6 +1678,7 @@ validator/testは少なくとも次のcountをliteralで検査する。
 | annotation batches | 3 actors × 2 = 6 |
 | annotation records | 6 × 12 = 72 |
 | model attempts per campaign | maximum 3 |
+| protocol schema files | 23 |
 | first slot plan | 6 annotation + 1 consensus = 7 |
 | consensus records | 24 |
 | route slots | 2 adjudication + 2 human approval = 4 |
@@ -1553,6 +1691,8 @@ validator/testは少なくとも次のcountをliteralで検査する。
 | final human coverage | exactly 24 |
 
 実行前にschema、role別schema file/object hash binding、prompt exact bytes/rendering、invalid-attempt状態遷移、
+`model-retry|input-change`のreason/authority全行、`PlanClosureV1` terminal受付拒否、
+schema/prompt変更時の新protocol・未実行plan再発行、
 DAG、slot/ledger/snapshot、transport全列挙、mapping全列挙、
 source approvalからのcoverage導出testを独立reviewし、期待Red、validator Greenを得る。Green前にcrop/derivative生成、
 外部AI送信、pilot runを行わない。既存LocalStorage、source audit、production corpus、人間入力はread/write対象外である。

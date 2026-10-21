@@ -1254,9 +1254,13 @@ coverageは`RangeError`とし、修復、clamp、drop、implicit sort、partial 
 4. pageごとにsignature group内rankを付け、`(rank,key,id)`順の先頭6件を選ぶ。結果は各page6件、全24件、
    source ID重複なしである。
 5. 選定24件を`(batchOrderKey,id)`で再排序してordinal`0..23`を付け、batch-01=`0..11`、batch-02=`12..23`。
+6. `selectionPlan.sourcePdfSha256`は固定PDF hash
+   `20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af`であり、protocol objectおよび
+   candidate setの`sourcePdfSha256`と直接一致する。
 
 mutationは candidate/proxy 205または207件、A/B片側欠落、field欠落、proxyをhuman finalから変更、未知/重複ID、
-page候補5件、page quota `7/5/6/6`、pageSlot/ordinal/key/orderの1 byte相当変更、選定後の画像/slot差替えを含む。
+page候補5件、page quota `7/5/6/6`、pageSlot/ordinal/key/orderの1 byte相当変更、選定後の画像/slot差替え、
+planの`sourcePdfSha256`欠落/1 hex変更、planだけ候補集合またはprotocolと異なるPDF hashを含む。
 いずれも`selection-invalid`または対応する最初のstable reasonで停止し、別候補で補完しない。
 
 ### TC-PILOT-SELECTION-002: blinded manifestとrestricted mapの非漏洩
@@ -1376,10 +1380,14 @@ serialization/consensus/approval literalを完全schemaで検査する。role別
 protocol、`PromptVariablesV1`、`RenderedPromptEvidenceV1`、vision headerのrole/file/object hashが完全一致する
 positive fixtureを置く。CRLF、BOM、indent/space、追加LF、複数object、self hash property、annotator/adjudicator
 schema交換、object/file hash代用、1 byte schema mutationを各々拒否する。
+schema bytes/object/hash/referenceの変更は同一slot planのreplacementとして受理せず、
+`protocol-reissue-required`として§8.2の`PlanClosureV1`で旧protocol/planを閉じることを検査する。
+新protocol fixtureはclosure後に新schemaを先にfreezeし、
+新protocol objectから未実行の第一planを再生成する。旧planのroot/active/campaign/ledger/snapshot/approval/coverage参照は0件とする。
 
-### TC-PILOT-SCHEMA-001: protocolの全22 schema file bundle
+### TC-PILOT-SCHEMA-001: protocolの全23 schema file bundle
 
-`MorphologyPilotProtocolV1.schemaFiles` の次の22 propertyをliteral expected setとして固定し、欠落、追加、重複、
+`MorphologyPilotProtocolV1.schemaFiles` の次の23 propertyをliteral expected setとして固定し、欠落、追加、重複、
 property名のaliasを許さない。
 
 ```text
@@ -1400,6 +1408,7 @@ annotationConsensusSlotPlanSchemaFileSha256
 activeAnnotationConsensusSnapshotSchemaFileSha256
 supersessionLedgerSchemaFileSha256
 invalidAttemptEvidenceSchemaFileSha256
+planClosureSchemaFileSha256
 renderedPromptEvidenceSchemaFileSha256
 postConsensusRouteSlotPlanSchemaFileSha256
 activeUpstreamSnapshotSchemaFileSha256
@@ -1407,15 +1416,15 @@ humanApprovalSchemaFileSha256
 pilotCoverageSchemaFileSha256
 ```
 
-positive schema bundleは22個の互いに異なるschema object/fileを持つ。test-local duplicate-aware parserで各fileを
+positive schema bundleは23個の互いに異なるschema object/fileを持つ。test-local duplicate-aware parserで各fileを
 1 objectとしてparseし、追加property禁止を含む当該schemaの正例を確認した後、NFC、RFC 8785 JCS、UTF-8、BOMなし、
 末尾LF厳密1個のbytesへ再構成する。各fileについて
 `objectHash=SHA-256(UTF-8(JCS(object)))` と
 `fileHash=SHA-256(UTF-8(JCS(object))||0x0A)` をvalidatorと共有しないoracleで再計算する。
-protocolの22 referenceは対応する`fileHash`へ一対一で一致させ、annotation/adjudication roleではさらに
+protocolの23 referenceは対応する`fileHash`へ一対一で一致させ、annotation/adjudication roleではさらに
 `PromptVariablesV1`、rendered evidence、vision headerのfile/object hash bindingまで辿る。
 
-mutation loopは22 property **それぞれ**について、(a) property欠落、(b) file欠落、(c)別propertyとのreference交換、
+mutation loopは23 property **それぞれ**について、(a) property欠落、(b) file欠落、(c)別propertyとのreference交換、
 (d)object hashをfile hash欄へ代入、(e)file hashをobject hash欄へ代入できるrole/schemaでの代入、
 (f)schema fileの先頭・中央・末尾LF直前の1 byte変更、(g)referenceだけの1 hex変更を独立適用し、全て拒否する。
 同一bytes/hashのschemaを別propertyへ使い回すpositiveは置かず、swapが偶然見逃されないfixtureにする。
@@ -1435,6 +1444,11 @@ ASCII byte rangeをtemplate出現順にcanonical JSON bytesへ無加工置換し
 独立oracleで計算する。placeholder重複/欠落/未知、置換順交換、quote/escape/trim/indent/fence/改行変換、
 templateまたは変数の1 byte mutationを拒否する。
 
+template bytes、placeholder、renderer、instruction wording/semanticsの変更は`prompt-change` replacementとして
+受理せず、旧planを`PlanClosureV1`でterminalにして`protocol-reissue-required`にする。
+closure→新template→新protocol object→selection/manifest/input/variables/evidence→
+未実行第一planのfreeze順を検査し、既存runへのhash差替え、旧planからのroot/active移行、cross-plan ledgerを拒否する。
+
 ### TC-PILOT-PROMPT-003: batch input tableとprompt/runの同一入力
 
 annotation tableはmanifest該当12件をbatch順、adjudication tableはroute partition 1..20件をmanifest順に持ち、
@@ -1442,6 +1456,12 @@ ordinal 0始まり連続、anonymous ID/attachment slot重複なしとする。t
 `batchInputTableCanonicalJson` UTF-8 hash、prompt variables、vision header、run records、実添付順を完全一致させる。
 annotation `orderedInputSha256` はordered-image-input、adjudicationはcandidate-inputである一方、画像列はtable bindingで
 別途固定されることを検査する。1 item swap、hash/slot/ID/batch変更、部分table、余分itemをrun全体rejectとする。
+
+同一planの`input-change` positiveでは、protocol/schema/template/manifest、ordinal、anonymous ID、derivative file/RGBA hash、
+件数、順序を不変にし、少なくとも1つの`attachmentSlot`だけを変えた新tableを作る。新table object hashとcanonical JSONから
+`PromptVariablesV1`、`RenderedPromptEvidenceV1`、rendered promptを独立再計算し、変更されたprompt variablesがtable差替えだけに
+由来することをassertする。variablesだけの直接変更、画像hash/order変更、schema/template/判断規則変更を
+`input-change`へ偽装したfixtureは拒否する。
 
 ### TC-PILOT-RUN-001: 3 actor×2 batch、family binding、独立入力
 
@@ -1468,8 +1488,29 @@ Markdown fence、前後説明、不正JSONを人間修復しない。account/cha
 
 規範protocol §8.1の次のpositive sequenceをすべて固定fixtureで検査する。
 
-1. valid attempt 1、2. invalid→valid、3. invalid→invalid→valid、4. invalid×3でfailed-closed、
-5. replacement invalid→valid、6. replacement invalid×3でfailed-closed。
+root、`model-retry`、`input-change`の各campaign種別について、次の4系列をそれぞれ独立fixtureで検査する。
+
+1. planned + valid attempt 1、
+2. planned + invalid attempt 1 → retryable-2 + valid attempt 2、
+3. planned + invalid attempt 1 → retryable-2 + invalid attempt 2 → retryable-3 + valid attempt 3、
+4. planned + invalid attempt 1 → retryable-2 + invalid attempt 2 → retryable-3 + invalid attempt 3 → failed-closed。
+
+attempt 2のvalidには同campaignのimmutable evidence 1がexactly 1件、attempt 3のvalid/invalidにはevidence 1,2が
+各exactly 1件必要である。planned stateからvalid attempt 2/3を直接受理するpositive fixtureは置かない。
+
+replacement authorityの独立oracleは次の2行だけを持ち、validator実装の表をimportしない。
+
+| reason | 不変条件 | 変更条件 | `changedInputSha256` |
+|---|---|---|---|
+| `model-retry` | protocol/schema/template/prompt variables/rendered prompt/batch・ordered input/current activeが全て同一 | submissionだけ | campaign開始時active artifact file hash |
+| `input-change` | protocol/schema/template/manifest、ID、画像hash、count/order/current activeが全て同一 | `attachmentSlot`が1つ以上、新tableからvariables/evidence/rendered promptを再導出 | 新batch input table object hash |
+
+両reasonについて上記4系列を別fixtureで作り、valid attempt 1/2/3はそれぞれplanned/retryable-2/retryable-3という
+正しい直前stateからだけ受理する。campaign/evidenceのreason、authority、prompt/input refs、campaign ID、evidence ID、
+file hashを実object/bytesから再計算する。同じfixture hashの重複登録を許さない。
+slot planの`protocolObjectSha256`とevidence `inputRefs.protocolObjectSha256`も一致させ、旧/new protocol混在を負例化する。
+さらに両reasonについてinvalid attempt 1をplannedから、2/3を必要な先行evidence付きretryable stateから作り、
+disposition、fresh context、attempt連続性を検査する。
 
 schema-invalid raw responseのimmutable byte fixtureはASCII/UTF-8/LFの
 `6e6f742d6a736f6e0a`（表示文字列`not-json`と末尾LF）、byte length `9`、SHA-256
@@ -1487,14 +1528,59 @@ invalid responseは`InvalidAttemptEvidenceV1`だけを作り、planned root/repl
 snapshot/consensus/candidate/coverage itemを作らない。最初のschema-valid wrapperだけが凍結root IDを取得する。
 replacementはvalid wrapper+ledger edgeをatomic確定するまで旧activeを変えない。attempt 1/2はretry-allowed、3は
 attempt-limit-reached、retryはfresh contextで同じcampaignの凍結prompt/input/current activeを保つ。
+`input-change` campaign開始後はvalid replacement確定まで後続snapshot/consensus/approvalを作らず、3回失敗時は
+旧activeへ戻して続行せず現planを停止する。
 
-mutationはattempt 0/4、欠番/重複、validとinvalid evidenceの同番号二重化、campaign/preimage不一致、evidence ID/file
+mutationはattempt 0/4、plannedからのvalid attempt 2/3、retryable-2でevidence 1なし/重複/別campaign、
+retryable-3でevidence 1または2なし/重複/別campaign、欠番/重複、validとinvalid evidenceの同番号二重化、
+campaign/preimage不一致、evidence ID/file
 hash不一致、raw本文/断片/自由文error/path/PII混入、validation error複数、UTC逆転、invalid evidenceのslot/ledger/
 snapshot混入、root invalid3回後の継続、activeを先に置換する実装を含む。required annotation rootが3回失敗すれば
 pilot全体停止、adjudication3回失敗は旧planを書換えず、新しいskipped planへのdirect-human fallbackだけを許す。
 raw response mutationは、hashだけ不一致、lengthだけ不一致、双方不一致、length `0`、負数、小数、
 `Number.MAX_SAFE_INTEGER+1`、実fileより1小さい/大きい値を個別に含める。UTCはfractional second、offset、lowercase
 `t/z`、不存在日時に加え、上記5 strict inversionをすべて拒否する。
+
+replacement固有matrixでは次を独立に負例化し、campaign/evidence双方を更新してID/file hashを再計算する。
+
+1. 2 reason×誤authority（active file、新table、stale/future artifact、schema file、template file、prompt variables）の交換。
+2. active ID、active file hash、reason、changed inputの4 fieldを1つずつnullにする。root用null規則との混同を許さない。
+3. campaignとevidenceで異なるが各々enum-validなreason、または異なるauthorityを持たせる。
+4. `schema-fix`、`prompt-change`、unknown reasonをreplacement reasonへ入れる。
+5. `model-retry`でprompt/inputを1 byte変える、`input-change`でschema/template/画像hash/orderを変える、
+   またはprompt variablesを新tableから導出せず直接変える。
+
+1〜3は再署名済みでも意味違反として`RangeError`、4のenum外reasonは`TypeError`、5は
+`protocol-reissue-required`または対応する最初のstable fieldで拒否する。stale/future/wrong-authority hashは必ずfixture内の
+実object/file bytesから導出し、ラベル文字列だけをhashした不透明digestで代用しない。
+
+### TC-PILOT-REISSUE-001: schema/prompt変更は新protocol・未実行planから再開
+
+schema bytes/object/reference、template bytes、placeholder、renderer、instruction wording/semantics、判断規則またはmappingを
+各1箇所だけ変更したfixtureを作る。いずれも旧plan内の`schema-fix|prompt-change` campaign、supersession ledger、
+root replacementとして表現できず、旧protocol/planを`PlanClosureV1`で`invalidated-reissue-required`として閉じる。
+
+positive reissueは、(1)旧planへのsubmission/root受付停止、(2)旧ledger/cutoff、(3)`PlanClosureV1`、
+(4)新schema/template、(5)新protocol object、(6)selection、manifest/restricted map、batch input、
+prompt variables/evidence、(7)第一slot planの順でfreezeする。closureは旧protocol、selection plan、第一slot plan、
+存在する場合だけ第二slot plan、旧ledger file/cutoffを実hashで直接識別し、reasonは`schema-change|prompt-change`、
+UTCはstrict seconds、terminal stateと2個のallow flagは規範literalとする。§3 preimageから`planClosureId`、
+JCS+LF bytesからfile hashをvalidatorと独立に再計算する。closure schemaは追加propertyを禁止し、新protocol/plan/root/
+approval/ledger参照を0件とする。新DAGはclosureを参照しない。
+
+closure registryへ登録後、旧protocol/第一planを参照するmodel submission、root/replacement materialization、ledger追加を、
+埋込みUTCがclosure前後のどちらでも全て拒否する。closureは旧DAGのterminal sidecarで、ledger/supersession/root lineageへ
+入らず出edgeを0本とする。新第一planは7個の一意な`rootArtifactId`を事前freezeするが、
+それを受けたmaterialized root artifact、run artifact、campaign evidence、ledger entry、snapshot、第二plan、approval、
+coverageが全て0件の未実行状態である。source PDFと
+規範選定結果が同じでも、旧root/active artifact ID/file hash、campaign ID/evidence、ledger、snapshot、approval、coverageを
+copy、join、supersede、参照せず、新protocol/planのID/hash集合と旧集合のintersectionを0件とする。
+
+負例は旧protocol hashだけを新hashへ置換、旧selection/manifest/planの再利用、旧activeを新rootに採用、cross-plan ledger、
+cross-plan root lineage、旧approval/coverage再利用、freeze順逆転、新plan開始時attempt 2/3、closureの旧参照/hash/cutoff/
+reason/UTC/literal flagの1箇所変更、closure ID/file hash不一致、第二plan null/non-null不整合、unknownな新plan参照property、
+closure後の旧plan受付、closureを新DAGから参照するedgeを含む。全てfail closedで拒否し、
+新protocolの最初のmodel submissionは必ず新campaignのattempt 1とする。
 
 ### TC-PILOT-CONSENSUS-001: 64 predicate全列挙とrecord導出
 
@@ -1524,12 +1610,20 @@ previous file hash、byte/object同一prefix、連続sequenceを要求する。`
 唯一terminalを返す。cycle、branch、multiple root/terminal、sequence欠番/交換、別kind/slot edge、unknown artifact/file hash、
 plan外/unused artifact、ledger自身のsupersede、in-place overwriteを拒否する。
 
+reason/kind matrixは、annotation/adjudicationの`model-retry|input-change`、consensusの`input-change`、human approvalの
+`human-correction`だけをpositiveにする。全kind×`model-retry|input-change|human-correction|schema-fix|prompt-change`を
+全列挙し、規範4行以外を拒否する。schema/prompt変更をledgerへ置くこと、旧plan artifactをold/newのいずれかへ置くこと、
+別protocol object hashを持つartifact間のedgeを拒否する。
+
 ### TC-PILOT-SLOTS-003: active snapshotsと非循環DAG
 
 annotation/consensus snapshotは7 required active terminalをkind/slot順、upstream snapshotは対象approvalのconsensus/
 adjudicationと推移的annotation closureを過不足なく持つ。指定ledger/cutoff後artifact、human approval、coverage、ledger自身、
 自己hash、後続artifactを含めない。規範§13のDAGをDFSしcycle 0とする。active artifact置換後に旧snapshotを再利用、
 snapshot item欠落/余分/順序交換、cutoff mismatch、逆参照、object/file hash代用を拒否する。
+protocol再発行時は旧DAGを閉じ、新protocol objectをrootとする別DAGが未実行状態で始まることを確認する。
+旧DAGから新DAGへのartifact/ledger/snapshot/approval/coverage edge、旧active snapshotの再利用、同じsource PDFまたは
+同じ24 IDを理由にしたroot lineageを拒否する。
 
 ### TC-PILOT-ADJUDICATION-001: fresh非重複familyまたはdirect-human
 
@@ -1552,6 +1646,8 @@ final non-nullかつproposal nullまたは不一致、rejectedはfinal null、�
 source ID順、mode/target kind、active upstream hash、proposal object/hash、final values hash、approval IDとcompleted record
 object hashを独立再計算する。batch修正、individual空rationale、inactive/superseded proposal、架空adjudication、proposalを
 そのままhuman final扱い、氏名/email/account/device/chat URLを含むschema外propertyを拒否する。
+schema/template/prompt semantics変更でprotocolを再発行した場合、旧approvalと旧coverageは新planでactiveにならず、
+新planのactive upstreamから24件すべてを人間が改めてfinal化するまでcoverageを生成できないことを確認する。
 
 ### TC-PILOT-APPROVAL-002: active source approvalからだけexact 24 coverage
 
@@ -1589,14 +1685,34 @@ reportはhuman finalをoperational referenceとだけ呼び、著者正解/物�
 出力しない。残り182画像、Option B、production migration、selection/prompt/schema/mapping変更後の採用性能を許可する
 flag/APIを持たない。24件を`206`へ外挿、182件を実行済み扱い、pilot finalをcorpusへcopyするmutationを拒否する。
 
-### TC-PILOT-RED-001: validator artifactだけの期待Red
+### TC-PILOT-RED-001: D-20差分の決定論的な期待Red
 
-新規test fileはcomputed pathへ`existsSync`を使い、test-only validator
-`apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs`の存在を
-**1個の独立test**でassertする。静的importを使わず、存在確認がtrueになった後だけdynamic importしてvalidator conformance
-testを有効化する。従ってtest-code commit直後の新規Redは、この1 pathのmissing-artifact assertion failureであり、
-module resolution、型、構文、依存、ネットワークerrorではない。test-local oracle、literal hash/count、protocol文書hash/
-template抽出testはGreenである。
+validator pathが存在しない初回実装では、従来どおりcomputed pathへの`existsSync`を使う独立した
+missing-artifact assertionだけをRedにする。validatorが既に存在するD-20改訂では、registry shuffleより前に
+named probe `d20-duplicate-invalid-evidence-attempt-number`を既存schema fixtureだけで1件、隔離して先に実行する。
+submission自体は同じcampaignのinvalid attempt 1、invalid attempt 2、valid attempt 3として欠番なく並べる。
+対応するimmutable invalid evidenceを2個作るが、2個目だけ`attemptNumber`を本来の`2`から`1`へ変え、evidence 1と
+attempt番号を重複させる。それ以外のcampaign/prompt/input/raw response/run参照は当該submission fixtureと整合させ、
+変更後objectから2個目の`invalidAttemptEvidenceId`、JCS+LF file bytes、filename、file hashを全て再計算する。
+従ってschema/hash不整合ではなく、「retryable-3に必要なevidence 1,2が各exactly 1件でない」ことだけが違反である。
+
+現validatorはsubmissionのattempt 1,2,3とinvalid evidenceの件数/campaign一致だけを検査し、evidence内attempt番号の
+`[1,2]`連続性を検査しないため、このfixtureを受理する。probeは受理を期待せず、
+`RangeError`、reason `attempt-campaign-invalid`、field `invalidEvidence`で拒否されることをassertし、そのassertion failureを
+最初の決定論的Redとする。registryの登録順、shuffle seed、他fixtureに依存させない。構文、型、module、fixture hashの
+errorをRedとして認めない。
+
+修正後のGreen回帰には、(a)evidence 2欠落、(b)evidence 2を別campaign IDのfully re-signed objectへ置換、の2 variantも
+追加し、いずれも同じstable error class/reason/fieldで拒否する。ただしこの2 variantは最初の期待Redへ含めず、
+named probe通過後のGreen-after-fix matrixとしてだけ実行する。
+
+この隔離Redを記録後、全23 schema fixture、selection planのdirect `sourcePdfSha256`、`PlanClosureV1` fixtureを追加する。
+full D-20 Redの許可failureは、(a)上記named probeのduplicate evidence attempt rejection、
+(b)selection PDF direct binding未実装、
+(c)plan closure schema/hash/terminal受付拒否未実装に対応するassertion failureだけである。test writerは全fixtureの
+JCS/file hashとprotocolの23 schema referenceを先に再計算一致させ、単なるfixture旧式化、schema/prompt reason拒否、
+module resolution、型、構文、依存、ネットワーク、fixture hash不整合をRedへ混ぜない。test-local oracle、
+literal hash/count、protocol文書hash/template抽出testはGreenでなければならない。
 
 validator実装後はpilot fileのskipが0、全`TC-PILOT-*`がGreenでなければならない。既存の5件の
 `TC-RED-001`はproduction corpus未完成による既知Redであり、本pilot validator実装のGreen判定と別に報告する。
@@ -1611,13 +1727,14 @@ test-code review後は本書のmutation、count、toleranceを削除、skip、�
 | crop/mask/PNG/RGBA/upload evidence | TC-PILOT-DERIVATIVE-001..002 | morphology-pilot |
 | transport 972/5、policy binding | TC-PILOT-TRANSPORT-001 | morphology-pilot |
 | growth 76/243、branch 44/2304、hollowing 93/243、confidence 27/81 | TC-PILOT-MAPPING-001..004 | morphology-pilot |
-| protocol/schema file-object hash、全22 schema bundle、exact prompt/rendering/input binding | TC-PILOT-PROMPT-001..003, TC-PILOT-SCHEMA-001 | morphology-pilot |
+| protocol/schema file-object hash、全23 schema bundle、exact prompt/rendering/input binding | TC-PILOT-PROMPT-001..003, TC-PILOT-SCHEMA-001 | morphology-pilot |
 | 3 actor×2 batch、family、72 records、atomic capture | TC-PILOT-RUN-001..002 | morphology-pilot |
-| invalid evidence、max3、first-valid root、fail closed | TC-PILOT-ATTEMPT-001 | morphology-pilot |
+| invalid evidence、max3、2 reason authority matrix、first-valid root、fail closed | TC-PILOT-ATTEMPT-001 | morphology-pilot |
+| schema/prompt変更時のPlanClosure terminal、新protocol・未実行plan、cross-plan禁止 | TC-PILOT-REISSUE-001 | morphology-pilot |
 | D/U/L/O/H 64 route rows | TC-PILOT-CONSENSUS-001 | morphology-pilot |
 | 二段plan、ledger、active snapshot、DAG | TC-PILOT-SLOTS-001..003 | morphology-pilot |
 | nonoverlap adjudicator / direct-human fallback、candidate alias | TC-PILOT-ADJUDICATION-001 | morphology-pilot |
 | exact24 human final、source approval由来coverage | TC-PILOT-APPROVAL-001..002 | morphology-pilot |
 | copyright/privacy/production/LocalStorage隔離 | TC-PILOT-ISOLATION-001 | morphology-pilot |
 | Wilson/kappa/assurance別metrics、182非昇格 | TC-PILOT-METRICS-001 | morphology-pilot |
-| 1 validator pathの期待Red | TC-PILOT-RED-001 | morphology-pilot |
+| missing validatorまたはduplicate invalid-evidence attemptの決定論的期待Red | TC-PILOT-RED-001 | morphology-pilot |

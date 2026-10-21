@@ -281,7 +281,7 @@ review/evidenceが外側から各file hashを記録するため、文書hashの�
   子孫であってはならない。`EVIDENCE.md`へ後で収録できるのは、著作物、自由記述の画像説明、source
   mapping、PII、credentialを含まないartifact hash、件数、集計指標、制約および停止理由だけである。
 
-画像作成前に `PilotSelectionPlanV1` をJCSでfreezeする。planはsource PDF hash、本節のprotocol ID、
+画像作成前に `PilotSelectionPlanV1` をJCSでfreezeする。planはsource PDF hash、本節のcontract IDとprotocol object hash、
 候補集合hash、proxy入力hash、literal seed
 `snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/selection`、次の選定algorithm ID、24のslot、
 各slotのsource ID/page/page-local slot/proxy signatureを持つ。
@@ -289,7 +289,8 @@ review/evidenceが外側から各file hashを記録するため、文書hashの�
 ```ts
 interface PilotSelectionPlanV1 {
   readonly schemaVersion: 'snow-crystal-morphology-pilot-selection/1';
-  readonly protocolId: 'morphology-ensemble-pilot/1';
+  readonly contractId: 't1-7-morphology-ensemble-pilot-contract/1';
+  readonly protocolObjectSha256: Sha256Hex;
   readonly sourcePdfSha256:
     '20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af';
   readonly algorithmId: 'page-proxy-round-robin-hash-v1';
@@ -312,6 +313,9 @@ interface PilotSelectionPlanV1 {
   }[];
 }
 ```
+
+`PilotSelectionPlanV1.sourcePdfSha256`は候補集合とprotocol objectの`sourcePdfSha256`、および§2.1の固定PDF hashへ
+直接一致させる。候補集合経由だけの間接結合は許さず、3箇所のどれかが異なればplan全体を拒否する。
 
 ```text
 selection algorithm ID = page-proxy-round-robin-hash-v1
@@ -458,6 +462,12 @@ rendered prompt evidence、run headerのrole/file hash/object hashは完全一�
 exact templateからrendered prompt hashを再計算できなければrunを開始しない。serializable propertyとpreimageの
 完全な契約は規範protocol §14を正とする。このbindingはprompt本文または判断規則を変更しない。
 
+同一slot plan内で許すprompt variablesの変更は、後述する`input-change`で凍結batch input tableを差し替えた結果として
+決定的に生じる変更だけである。model payload schema、schema file/object hash、template bytes、placeholder、renderer、
+指示文の意味、判断規則、mappingまたはprotocol objectの別propertyを変えることは、同一plan内のreplacementではない。
+その場合は現protocol objectとそこから派生したplanを無効化し、fresh review/test gateを通した新protocol objectと
+未実行planから開始する。
+
 各画像はupload直前にlocal file hash、decoded RGBA hash、width/height、MIMEをmanifestと再照合し、
 `clientSideTransform='none'` を要求する。operatorはattachment previewでfull frame、匿名IDとの対応、
 向き、mask、外周/先端を確認する。明白なcrop、破損、向き変更、過度な縮小、mask欠落、ID対応欠落が
@@ -517,11 +527,36 @@ evidence/repositoryへはhash、byte length、列挙error、prompt/run/input参�
 model submissionはrootまたはreplacement materialization campaignごとに最大3回、invalid後はfresh contextとする。
 attempt 1/2 invalidは同じ凍結入力で再送できるが、attempt 3 invalidはfail closedである。最初のschema-valid
 wrapperだけが事前planのroot artifact IDを取得し、その前のinvalid attemptとのsupersession edgeは作らない。
-activeなschema-valid wrapperを後に置換するときだけ、新artifact IDと通常の一本鎖supersessionを使う。
-replacement作成中のinvalid responseは現activeを置換せず、ledger entryも作らない。required annotation rootが
-3回で作れなければpilotを停止する。adjudicationは3回失敗後、既存のsafe fallback規則に従って新しい第二planを
-`skipped-direct-human`でfreezeした場合だけ再開できる。attempt evidenceの型、非循環ID/file hash、状態遷移、
-禁止edge、完全test matrixは規範protocol §8.1を正とする。
+初期stateから受理できるvalid responseはattempt 1だけである。valid attempt 2は同campaignのimmutable invalid evidence 1、
+valid attempt 3はevidence 1,2が欠番・重複なく存在するretryable stateでだけ受理する。この規則はroot、`model-retry`、
+`input-change`の3種類すべてに同じく適用する。
+
+同一slot plan内のmodel replacement reasonは`model-retry`と`input-change`の2種類だけである。
+
+- `model-retry`: protocol、schema、template、prompt variables、batch input、ordered inputを全て不変にして再実行する。
+  `changedInputSha256`は変更入力ではなく、campaign開始時active artifact file hashへ結合する再試行authorityである。
+- `input-change`: protocol、schema、template、manifest、expected ID、画像file/RGBA hash、件数、順序を不変にし、
+  `BatchInputTableV1`の許可された入力参照だけを差し替える。現契約で変更できるのは既存画像を指す
+  `attachmentSlot`だけである。新batch input tableからprompt variables、rendered prompt evidence、rendered promptを
+  決定的に再生成し、`changedInputSha256`は新batch input table object hashへ結合する。この派生的なprompt variables
+  変更を`prompt-change`とは呼ばない。
+
+schema bytes/object、schema参照、template bytes、placeholder/renderer、指示文の意味または判断規則を変える
+`schema-fix`/`prompt-change`はreplacement reasonとして禁止する。必要になった時点で現protocol/planを停止・無効化し、
+旧protocol、selection/slot plan、ledger cutoff、理由`schema-change|prompt-change`、UTCを持つimmutable
+`PlanClosureV1`をfreezeしてterminal登録する。closure登録後は、埋込み時刻にかかわらず旧planへのmodel submission、
+root/replacement materialization、ledger追加を0件に強制する。closureは新protocol/planを参照せず、出edgeを持たない。
+新protocol object、selection、manifest/restricted map、batch input、prompt variables/evidence、第一slot planを
+未実行状態から作り直す。第二planは新第一planの7 active terminalとconsensus確定後にだけ通常順で作る。
+旧planのroot/active artifact、campaign、invalid-attempt evidence、ledger、snapshot、approval、
+coverageを新planへ移行・supersede・参照してはならず、cross-plan migration/ledger/root lineageを作らない。
+
+activeなschema-valid wrapperを同一plan内で後に置換するときだけ、新artifact IDと通常の一本鎖supersessionを使う。
+replacement作成中のinvalid responseは現activeを置換せず、ledger entryも作らない。`input-change` campaignを開始した後は
+新replacementがatomicに確定するまで後続snapshot/consensus/approvalを作らず、3回失敗時は旧activeへ戻して続行せず
+現planをfail closedで停止する。required annotation rootが3回で作れなければpilotを停止する。adjudicationは3回失敗後、
+既存のsafe fallback規則に従って新しい第二planを`skipped-direct-human`でfreezeした場合だけ再開できる。
+attempt evidenceの型、非循環ID/file hash、状態遷移、禁止edge、完全test matrixは規範protocol §8.1を正とする。
 
 #### 5.1A.4 構造化観察と決定的mapping
 
@@ -642,10 +677,12 @@ pilot protocol IDは `morphology-ensemble-pilot/1`、schema rootは
 LFのみ、空行なし、最終LF1個とする。全stringはJCS前にNFC、numberは有限で`-0`禁止、SHA-256は
 lowercase 64 hexとする。object hashはLFなしJCS bytes、file hashは最終LF込みfile bytesであり、相互に
 代用しない。artifactはimmutableで、再実行は新ID/fileと、旧→新の同一logical slot・一本鎖の
-supersession recordを作る。ただしschema-invalid raw responseはslot artifactではなく§5.1A.3の
+supersession recordを作る。同一plan内でmodel artifactに使えるreasonは`model-retry|input-change`、
+consensusの再導出は`input-change`、human approvalの人間修正は`human-correction`だけとし、artifact kindと
+reasonの不一致を拒否する。ただしschema-invalid raw responseはslot artifactではなく§5.1A.3の
 `InvalidAttemptEvidenceV1`であり、新ID/supersessionを作らない。最初のschema-valid root作成後に
 schema-valid wrapperを置換する場合だけsupersessionを適用する。上書き、branch、cycle、未知hash、
-plan外artifactを拒否する。
+plan外artifact、旧protocol/planから新protocol/planへのedgeを拒否する。
 
 二段階planを用いる。
 
@@ -664,15 +701,18 @@ trusted validatorはtempへ書き、再parse・再hash後にatomic renameする�
 
 実行前に少なくとも次のvalidatorと独立testがGreenでなければ、crop生成またはmodel送信へ進まない。
 
-1. selection planのpage quota、algorithm再計算、候補/proxy/slot hash
+1. selection planの固定PDF直接結合、page quota、algorithm再計算、候補/proxy/slot hash
 2. source crop、mask外pixel不変、PNG decode、file/RGBA hash、manifest/restricted map分離
 3. protocol/role別schema file/object hash/prompt evidence/input table、同一batch bytes、workspace漏洩禁止
 4. annotation/adjudication payload、12件coverage、全enum直積mapping、transport state
-5. invalid-attempt最大3回の状態遷移、active slot/supersession DAG、consensus/route plan、candidate匿名化
+5. state-sensitiveで連続するinvalid-attempt最大3回、`model-retry|input-change` authority matrix、
+   schema/prompt変更時の`PlanClosureV1` terminalと全plan再発行、
+   active slot/supersession DAG、consensus/route plan、candidate匿名化
 6. human final、24匿名ID↔24 source IDの一対一join、pilot coverage
 
-hash不一致、unknown/duplicate/missing ID、schema違反、partial batch、prompt/schema変更、blinding漏洩、
+hash不一致、unknown/duplicate/missing ID、schema違反、partial batch、同一plan内のprompt/schema変更、blinding漏洩、
 別actor出力の露出、raw response編集、PII/credential、既存人間入力へのwriteを検出した時点でfail closedとする。
+schema/template/指示意味の変更が必要な場合はfail closed後に新protocol/planとしてだけ再開し、旧成果物を再利用しない。
 既存LocalStorage、source-audit UIおよび過去approvalはread/write対象外である。
 duplicate keyまたはJSON/JSONL構文違反は`SyntaxError`、型・required/unknown property・enum違反は`TypeError`、
 件数・順序・値域・hash・相互参照・mapping・coverage違反は`RangeError`とし、最初のerrorで停止する。errorは
@@ -772,6 +812,8 @@ kappaは`0..3`の両方non-nullだけを使い、除外数を併記する。huma
 
 pilotには採用pass/fail閾値を置かない。全metricsは24件に対する記述的・探索的結果であり、206件への
 性能保証ではない。結果閲覧後のthreshold、selection rule、prompt、schema、mapping変更は探索的と明記する。
+prompt/schema/mapping変更を続行する場合は§5.1A.3のprotocol再発行境界を適用し、現planのartifactやhuman finalを
+変更後planへ移行しない。
 残り182画像への展開、pilot finalのproduction corpus移行、案Bへの変更には、pilot report後の人間決定と、
 新しい正式DESIGN/DECISIONS/TESTCASES/reviewを必須とする。同じ24件で変更後の採用性能を再主張しない。
 

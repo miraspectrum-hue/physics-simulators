@@ -2945,3 +2945,316 @@ summary: >-
   node --checkとgit diff --checkは成功し、対象Vitestは13 pass、追加したdangling escape拒否だけが
   現validatorで期待どおりRedとなった。
 ```
+## implementation review: pilot validator semantic completeness
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:9c13086e94d19d55219e64df2739741959582fd9cdcf8395f65f11200d37b4c7
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-core.mjs
+    hash: sha256:7d810161286431c5da9a3ac33e89a88dd612c4eb0453b9577718bbc980c20f30
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs
+    hash: sha256:b25629a98ae4272bfa48f79a22671d1ba136914670aec332a507fb084cd93d69
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-io.mjs
+    hash: sha256:17fc40a06ba37729fc1d689369b7c0310bb3aea303b61d251105f244148fe9be
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:153
+    problem: >-
+      replacement-materialization の InvalidAttemptEvidenceV1 を
+      replacementReasonCode=model-retry に固定しており、規範protocol §8.1が許可する
+      schema-fix、prompt-change、input-change の正当なreplacement campaignを拒否する。
+    evidence: >-
+      expectedCampaign の replacementReasonCode はreplacement時に常にmodel-retry、
+      changedInputSha256は常に現在のrun.fileSha256として構築される。規範protocol
+      MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:925-927および967-973は4種類のreasonを許可し、
+      schema-fixでは新schema file、prompt-changeでは新prompt variables object、
+      input-changeでは新batch input table、model-retryではcampaign開始時active artifact fileの
+      hashへchangedInputSha256を結合するよう要求している。現登録16,036ケースには
+      model-retry以外の正例がなく、対象14テストがGreenでもこの拒否回帰を検出できない。
+    required_change: >-
+      4種類すべてのreplacement reasonについて、campaign開始時active artifactと変更後の
+      schema/prompt/inputを独立した権威入力へ結合してexpected campaignを導出する。
+      各reasonの正例と、reasonとchangedInputSha256の組合せ交換を再署名して拒否させる
+      独立回帰ケースをtest-codeへ追加する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  raw/modelPayloads/recordsの全field結合、13 validation error codeとRFC 6901 pointer、
+  exact 21-node DAG closure、D-18静的依存境界、入力不変性、承認済み物理mappingの非拡張は
+  独立確認できた。対象Vitestは14/14、typecheckとnode --checkは成功し、verify-fastは
+  2476 pass、既知のproduction artifact不足5 Red、既存skip 1だった。ただし規範上有効な
+  3種類のreplacement campaignを拒否する未検査の高重大度回帰が残るため承認できない。
+```
+## test-code review: replacement authority matrix
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:567d5beb7b157495e16f7baa5811b6f81e422b7166f7ae26e811dc1d2335c070
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:20
+    problem: >-
+      schema-fix、prompt-change、input-change の正例が、実在する新しい凍結artifactから
+      導出されたcampaignではなく、H('replacement/...')で作った孤立hashと一部fieldの
+      差替えだけになっているため、規範上整合するreplacement campaignを表していない。
+    evidence: >-
+      protocol §3のcampaign preimageと§8.1だけでなく、§14はschema file bytes、
+      modelPayloadSchemaObjectSha256、PromptVariablesV1、RenderedPromptEvidenceV1、
+      renderedPromptSha256、batch input tableを相互導出して完全一致させる。現在の
+      schema-fixはschemaFileSha256だけを変え、schema object、prompt variables、
+      rendered evidence/prompt、protocol参照を旧値のまま残す。input-changeも新table hashだけを
+      置き、tableを含む新PromptVariablesV1とrendered artifactを作らない。
+      prompt-changeも新prompt variables objectの実体とrendered artifactを持たない。
+      したがって自己整合したhash文字列ではあっても、再計算可能な凍結campaignではない。
+    required_change: >-
+      3種類それぞれについて新schema bytes/object、新PromptVariablesV1、
+      RenderedPromptEvidenceV1/rendered prompt、新BatchInputTableV1など必要な実体を
+      test側で独立構築し、各hashを実bytes/objectから計算する。campaign、promptRefs、
+      inputRefs、protocol/plan参照まで規範どおり連鎖させ、全cross-referenceをassertした
+      正例から負例を作る。単なるラベル由来hashを権威入力として扱わない。
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:114
+    problem: >-
+      reason/hash交換、stale、current、wrong-authorityのmutationは
+      changedInputSha256だけを壊しているのに、非model-retryの54ケースで
+      exact first-error fieldをreplacementReasonCodeと要求している。
+    evidence: >-
+      lines 115および122が変更するのはcampaign/evidenceのchangedInputSha256であり、
+      replacementReasonCodeは元の正当な値のままである。それにもかかわらずlines 116、123は
+      schema-fix、prompt-change、input-changeでreplacementReasonCodeを期待するため、
+      正しいvalidatorがchangedInputSha256を報告するとテストが失敗する。またmodel-retryの
+      current値は実際の開始時active artifact file hashであるrun.fileSha256ではなく、
+      H('replacement/current-active-before-campaign')という架空値であり、current境界を検査していない。
+    required_change: >-
+      hash authority不一致のexact fieldを全reasonでchangedInputSha256にする。
+      stale/current/wrong-authorityは実際の凍結artifactから導出し、model-retryでは
+      開始時current active file hashを正例として扱う。異なる旧・将来artifactを検査するなら、
+      それらの実体とfile hashをfixtureに含める。
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:95
+    problem: >-
+      replacement campaignの4 field全non-null制約について、campaignとevidenceの双方を
+      整合してnullへ変更し再署名する意味境界テストがない。
+    evidence: >-
+      active-nullはevidence.activeArtifactBeforeCampaignだけをnullにしてcampaign側を残すため、
+      単純な参照不一致しか検出しない。replacementReasonCodeとchangedInputSha256にも
+      campaign/evidence双方をnullにするケースがない。InvalidAttemptEvidence schemaでは
+      これらのnullがroot campaign用に許可され、complete schema walkもroot sampleだけを使うため、
+      replacement固有の全non-null意味制約を代替検査できない。
+    required_change: >-
+      replacement campaignについて、開始時active 2 field、replacementReasonCode、
+      changedInputSha256を各々nullにしたcampaignを作り、対応するevidenceも整合更新して
+      campaign ID・evidence ID・file hashを再計算した独立負例を追加する。
+  - id: R-004
+    severity: medium
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:95
+    problem: >-
+      既存16,036ケースを意味的に保持できておらず、model-retry正例3件を完全重複登録する一方、
+      valid-enumのcampaign/evidence reason不一致テストをinvalid enumテストへ弱めている。
+    evidence: >-
+      独立registry生成結果は16,120件（positive 1,101、negative 15,019）で、追加数は84件だった。
+      しかしsemantic-positive/model-retry/{1,2,3}と
+      replacement-positive/model-retry/{1,2,3}はattemptごとにfixture hashが完全一致した。
+      また従来のmodel-retry campaignに対してevidence reasonだけをschema-fixへ変える
+      valid-enum不一致が、not-a-reasonへ変更され、既存のcross-document binding検査を
+      enum検査へ置換している。新matrixはhashだけを交換するため、この失われた検査を補わない。
+    required_change: >-
+      root正例と4 reason×3 attempt正例を重複なく登録する。従来のvalid-enum
+      replacementReasonCode不一致を保持し、unknown enum拒否は別ケースとして追加する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  対象hashは指定値と一致し、node --checkは成功した。独立registryは16,120件で、
+  4 reason×3 attemptのラベル、36 reason/hash交換負例、36 stale/current/wrong-authority負例を
+  生成する。対象Vitestは13 pass・1 expected Redで、最初のschema-fix正例を現validatorが
+  replacementReasonCodeで拒否した。ただし追加正例が再計算可能な凍結artifact chainではなく、
+  exact error field、replacement null境界、既存検査保持にも欠陥があるためtest-code gateは承認できない。
+  test表はvalidatorと共有されておらず、静的依存境界自体は維持されている。
+```
+## test-code review: replacement authority matrix re-review
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:50fe82ab7072c50cdef6bfdd2ff152f24b50d2d731f4c441b7a46dbd16731e25
+findings:
+  - id: R-001
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:24
+    problem: >-
+      schema-fix、prompt-change、input-change の9正例が、protocol §14を満たす
+      reason別の凍結artifact chainになっていない。
+    evidence: >-
+      materializeReplacementは3 reasonすべてでschema.$idとbatch input tableを同時に変更し、
+      prompt variablesとrendered promptを再計算する一方、protocol objectとprompt templateは
+      元のまま保持する。独立計算では9正例すべてでreplacement schema file hashが
+      protocol.schemaFiles.annotationPayloadSchemaFileSha256と不一致だった。また全reasonで
+      schema、table、prompt variablesが同時に変わり、prompt-changeでもtemplate hashは変化しない。
+      §14はschema file hashとprotocol、PromptVariablesV1、RenderedPromptEvidenceV1、
+      generator参照の完全一致を要求し、template変更時はprotocol再発行とplan再作成を要求する。
+      現fixtureは自己整合する一部hashを持つだけで、規範上有効な正例ではない。
+    required_change: >-
+      reasonごとに影響しない入力を維持した独立materializerを作り、schema bytes/object、
+      batch table、prompt variables、rendered evidence/prompt、protocolおよびplan参照を
+      規範どおり再発行・連鎖させる。prompt-changeを既存protocolの下で正当に具体化できない場合は、
+      架空の正例を作らず上位設計へ差し戻す。
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:155
+    problem: >-
+      staleおよび一部wrong-authority mutationのhash preimageが登録fixtureに保存されず、
+      登録後は実体から再計算できない不透明なdigestになっている。
+    evidence: >-
+      replacementSources.staleは関数内でだけ構築され、semanticBadへ渡すfixtureの
+      replacementInputsには正例側sourceしか残らない。したがってstale hashのschema bytes、
+      prompt variables、tableは登録caseから復元・検証できない。前回R-002が要求した
+      「異なる旧・将来artifactの実体とfile hashをfixtureに含める」を満たしていない。
+    required_change: >-
+      stale/wrong authorityに使用する凍結artifact実体を各fixtureへ含め、digestをその実体から
+      再計算していることをassertする。既存workflow artifactを使える境界では、その実在artifactと
+      file hashを直接参照する。
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:136
+    problem: >-
+      replacement固有4 fieldのcampaign・evidence共同null境界がmodel-retryについて未検査である。
+    evidence: >-
+      共同再署名nullケースはschema-fix、prompt-change、input-changeだけに生成される。
+      model-retryの既存active-null、reason、changed-inputケースはevidence側だけを変更し、
+      campaignを非nullのまま残すため、単純なcross-reference不一致しか証明しない。
+    required_change: >-
+      model-retryについても開始時active ID、active file hash、replacementReasonCode、
+      changedInputSha256を個別にnullへ変更し、campaignとevidenceを共同更新してcampaign ID、
+      evidence ID、filename、file hashを再計算した負例を追加する。
+  - id: R-004
+    severity: medium
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:144
+    problem: >-
+      既存のvalid-enum campaign/evidence reason不一致テストが保持されず、
+      unknown-enumテストへ置き換えられている。
+    evidence: >-
+      旧16,036ケースではmodel-retry campaignに対してevidenceだけをschema-fixへ変え、
+      有効enum同士のcross-document不一致を検査した。現コードは同じcaseをnot-a-reasonへ変更し、
+      別のvalid-enum不一致caseを追加していない。
+    required_change: >-
+      evidenceだけをschema-fixへ変える既存valid-enum不一致を復元し、
+      not-a-reasonによるunknown-enum拒否は別caseとして保持する。
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:155
+    problem: >-
+      期待Redがランダムなcase順に依存し、未実装機能を直接示す決定論的な失敗になっていない。
+    evidence: >-
+      対象Vitestは13 pass・1 Redになったが、shuffleで非model-retry負例が正例より先に実行され、
+      テストはchangedInputSha256を期待したのに現validatorがreplacementReasonCodeで先に拒否して
+      失敗した。現validatorではこの負例の期待fieldへ到達不能であり、実行順によって
+      どのassertionがRedになるか変わる。一方、3種類の正例を個別実行すると、いずれも
+      replacementReasonCodeで拒否され、必要な機能差を直接示した。
+    required_change: >-
+      shuffle corpusより前に少なくとも1件の規範上有効な非model-retry正例を決定論的に実行し、
+      現validatorがその正例を拒否することを唯一の期待Redとして記録する。負例のexact-field検査は
+      修正後validatorに対するGreen検証として維持する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  対象hashと指定値は一致し、node --checkは成功した。独立registryは期待総数16,137件
+  （positive 1,098、negative 15,039）で、追加101件は正例9・負例92、追加case内の
+  ID/fixture重複はなく、model-retry正例3件も重複登録されていない。reasonと
+  changedInputSha256の4行対応およびmodel-retryのcurrent active file hash自体は正しい。
+  ただし非model-retry正例のprotocol/schema/prompt/input chainが規範不適合で、
+  model-retry null境界と既存valid-enum不一致も未保持であり、期待Redもshuffle依存のため
+  test-code gateは承認できない。物理分類表、単位、数値oracleには変更がない。
+```
+## design review: D-20 plan-boundary correction
+
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:6ae0f822d18d4f3861aa21b71fad90c3c7e5ce84bb8a3faf012cddd0db03581a
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:c61012f49aec0ec3b3d93def2d3f9d699f1fcce7057044a5af892013194721ab
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:09b4a06ab87e81abc3ebfbbbef3dcd6595dc03f7587893c4e4ef6041010cca95
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:6ce47bac71b330da0f9356ed9d970e533aeb57f73bda5affb96d44c2de19fa23
+findings:
+  - id: D20-R001
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:1019
+    problem: Campaign state transition table cannot represent a valid retry after an invalid attempt and simultaneously permits a valid attempt 2 or 3 directly from the initial state.
+    evidence: Invalid attempts 1 or 2 move root campaigns to root-retryable and replacement campaigns to replacement-retryable, but no valid-attempt row accepts either retryable state. Conversely, valid rows accept attempts 1..3 from root planned or active terminal even though §8.1 requires attempt numbers without gaps. This contradicts TC-PILOT-ATTEMPT-001 sequences invalid→valid and invalid→invalid→valid for root, model-retry, and input-change campaigns.
+    required_change: Enumerate valid transitions with state-sensitive attempt numbers: initial state may accept only valid attempt 1, while retryable state may accept the next contiguous valid attempt 2 or 3 backed by preceding invalid evidence. Apply the same rule to root, model-retry, and input-change campaigns, and align testcase wording with the corrected table.
+  - id: D20-R002
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md:284
+    problem: PilotSelectionPlanV1 has conflicting serializable contracts between DESIGN and the normative protocol.
+    evidence: DESIGN states that the plan contains sourcePdfSha256 and includes that property in its TypeScript projection, while the normative schema at MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:389-406 omits sourcePdfSha256. DESIGN §5.1A declares the protocol the sole authority for serializable properties and requires stopping on semantic conflict.
+    required_change: Make the two contracts identical. Either add the direct sourcePdfSha256 binding to the normative selection-plan schema and corresponding tests, or remove it from the DESIGN projection and explicitly document the intended indirect binding through the candidate-set object.
+  - id: D20-R003
+    severity: medium
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md:1041
+    problem: The required invalidated-reissue-required closure is not represented by a normative state or evidence contract, so the validator cannot prove that the old plan was closed before the new plan started.
+    evidence: Sections 8.1, 13, and 14 require closing the old protocol/plan and TC-PILOT-REISSUE-001 requires testing that closure, but no schema, hash preimage, lifecycle record, or explicitly defined validator state carries invalidated-reissue-required. The defined immutable artifacts can verify prohibited cross-plan references, but not the asserted old-plan closure or prohibition on subsequent submissions under that plan.
+    required_change: Define a machine-verifiable, immutable old-plan closure/state contract that does not reference or migrate into the new plan, or narrow the testcase and normative wording to a precisely defined fail-closed validator result plus independently enforceable no-cross-plan checks.
+conditions: []
+rollback_to: design
+summary: D-20 correctly narrows in-plan model replacement to model-retry and attachmentSlot-only input-change, preserves derived prompt regeneration and changedInput authorities, rejects schema-fix and prompt-change as campaign or ledger reasons, and keeps the 24-image, three-model, human-final, privacy, provenance, and physical-interpretation boundaries unchanged. Approval is blocked by the incomplete retry state machine, the selection-plan schema conflict, and the lack of a machine-verifiable old-plan closure contract.
+```
+## design review: D-20 plan-boundary correction re-review
+
+```yaml
+review_type: design
+status: changes-requested
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:5b4574b97bd684bdd4cc3bd03e2a4669fa5b9559e3035102d8c19dbf8ab33522
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:248fa06cd9b488458cf519869a900db27588e519fa27e6d8d8965f75efc0b5f0
+findings:
+  - id: D20-R004
+    severity: high
+    location: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md:1692
+    problem: "D-20の隔離期待Redとして指定されたplanned stateからのvalid attempt 2は、現validatorが既にattempt番号の連続性検査で拒否するため、記載どおりのassertion failureを発生させられない。"
+    evidence: "現validatorのattemptCampaignはsubmissionsを先頭からattemptNumber=i+1に固定しており、planned stateを表す単独valid attempt 2 fixtureはattemptNumber不一致として拒否する。したがってTESTCASESが予告する「現validatorがこの不正attempt 2を受理する」状態は成立せず、test-code工程の決定論的Red要件を満たせない。未知の中間stateをattempt 1として挿入すれば通せる可能性はあるが、それはplanned stateからの直接遷移という規範fixtureではなく、別の型・enum欠陥を利用するものになる。"
+    required_change: "隔離Redを、現validatorが実際に受理する未実装のstate-sensitive違反へ置き換える。例えば、連続submission 1,2,3を保ったままretryable-3のimmutable evidence 1,2を同じattempt番号へ重複させる、欠番にする、または別campaign evidenceへ置換し、現validatorが受理することを事前確認した1件を指定する。Redの原因、期待error field、fixture前提をTESTCASESへ明記する。"
+conditions: []
+rollback_to: design
+summary: "前回D20-R001〜R003の設計欠陥は解消された。規範protocolはroot/model-retry/input-change各6行、計18行のstate-sensitive遷移を持ち、初期stateはvalid attempt 1だけ、attempt 2/3は連続するimmutable evidenceを要求する。PilotSelectionPlanV1は固定PDF hashを直接保持し、protocol object・candidate setとの3-way bindingが設計・テストで一致する。PlanClosureV1には完全schema、domain-separated ID preimage、file hash規則、UTC/cutoff、freeze順、terminal registry拒否、出edgeなし、新plan参照禁止、未実行新plan境界が定義された。schema bundleとtest literal listはいずれも23件で、D-20は24画像・3モデル・人間最終判断・privacy・provenance・物理分類境界を変更していない。ただし指定された最初の期待Redが現validatorの既存検査で既にGreenになるため、test-code工程へ進む前にRed fixtureの限定修正が必要である。"
+```
+## design review: D-20 final approval
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:248fa06cd9b488458cf519869a900db27588e519fa27e6d8d8965f75efc0b5f0
+findings: []
+conditions: []
+rollback_to: none
+summary: "D20-R001〜R004が全て解消された。root・model-retry・input-changeは各6行、計18行のstate-sensitive遷移を持ち、初期stateではattempt 1だけ、retryable-2/3では同一campaignの連続したimmutable evidenceを各exactly 1件要求する。期待Redはsubmission 1,2,3を維持したまま2件目のevidenceだけをattempt 1へ変更してID・JCS+LF bytes・filename・file hashを再計算するためschema/hash不整合ではなく、現validatorが未検査のevidence attempt重複だけを決定論的に検出する。現validatorはsubmission連続性とevidence件数/campaign一致だけを検査するため当該fixtureを受理し、修正後のmissing evidenceおよび別campaign evidenceはGreen回帰として分離されている。PilotSelectionPlanV1は固定PDF hashを直接保持しprotocol object・candidate setとの3-way bindingを要求する。PlanClosureV1はdomain-separated ID、JCS+LF file hash、旧protocol/selection/両slot plan/ledger cutoff、terminal registry、closure後受付拒否、出edgeなし、新plan非参照および未実行新plan境界を機械検査可能に定義する。protocolとtestのschema一覧はともに23件で一致する。D-20は24画像、3モデル、全24件の人間最終確認、production・LocalStorage隔離、残り182件禁止、2D project annotation、非ground-truth、不確実性をindeterminate/nullへ送る物理境界、単位・数式・較正範囲を変更しておらず、上位SPEC/DESIGN-OUTLINEとの矛盾もない。"
+```

@@ -1,5 +1,65 @@
 # T1-7 判断記録
 
+## D-20: schema/prompt変更時のplan境界
+
+- 状態: 人間承認済み（2026-10-21）
+- 発見: D-19の完全な成果物チェーンを設計した結果、現行protocolにはcross-plan replacementを表現する契約がない。
+  `schema-fix`とtemplateを伴う`prompt-change`はprotocol hashを変え、selection、manifest、restricted map、batch table、
+  prompt variables、rendered evidence、slot planを再発行させる。一方replacement campaignは旧planのactive terminalを
+  始点にする必要があるが、`InvalidAttemptEvidenceV1`はslot plan参照を1個しか持たず、旧planと新planを同時に証明できない。
+- 現行設計で正当に表現できるもの:
+  - `model-retry`: 入力不変、開始時active artifact file hashへ結合。
+  - `input-change`: 同じprotocol/planのままbatch input table、prompt variables、rendered prompt/evidenceを再生成可能。
+- 選択肢:
+  1. **推奨・限定修正**: plan内replacementを`model-retry`と`input-change`だけにする。
+     `schema-fix`とtemplate変更を伴う`prompt-change`は旧planを無効化し、新protocol・新planを未実行状態から開始する。
+     supersessionではなく再計画として記録する。DESIGN、protocol、TESTCASES、D-19をこの意味へ限定修正する。
+  2. 4種類すべてをreplacementとして維持する。campaign/evidence/ledgerへ旧planと新planの双方、cross-plan migration、
+     root lineageを追加する大規模なschema・protocol再設計が必要になる。
+- 推奨理由: 選択肢1は架空のcross-plan関係を作らず、既存のactive lineageを壊さない。変更範囲が小さく、
+  現在利用するpilotの再試行・入力差替えを安全に表現できる。選択肢2は将来必要になった時点で独立タスクとして設計できる。
+- 人間判断: 2026-10-21、選択肢1（推奨・限定修正）を採用。plan内replacementは`model-retry`と
+  `input-change`だけに限定し、`schema-fix`とtemplate変更を伴う`prompt-change`は旧planを無効化して、
+  新protocol・新planを未実行状態から開始する。cross-plan supersessionは導入しない。
+- 境界の具体化:
+  - `input-change`で同一plan内に変更できるのは、protocol/schema/template/manifest/画像hash/ID/orderを保った
+    `BatchInputTableV1.attachmentSlot`と、そこから決定的に再生成されるprompt variables/evidence/rendered promptだけである。
+  - schema bytes/object/reference、template bytes、placeholder/renderer、instruction wording/semantics、判断規則、mappingの
+    変更は全て再発行対象であり、`schema-fix|prompt-change`をcampaign/ledger enumへ残さない。
+  - 再発行後はselection以降を新protocol objectから作り直し、第一planはroot IDだけを事前freezeし、
+    materialized root artifactが0件の未実行状態で開始する。
+    旧root/active/campaign/evidence/ledger/snapshot/approval/coverageのmigration、supersession、hash参照を禁止する。
+  - campaignの初期stateはvalid attempt 1だけを受理する。attempt 2/3のvalidは、同campaignで先行attempt 1、または1,2の
+    immutable invalid evidenceが欠番・重複なく存在するretryable stateでだけ受理する。この規則をroot、
+    `model-retry`、`input-change`の全系列へ明示適用する。
+  - `PilotSelectionPlanV1`は固定`sourcePdfSha256`を直接持ち、protocol objectおよびcandidate setのPDF hashと一致させる。
+  - schema/prompt変更時は、旧protocol、selection/slot plan、ledger cutoff、理由、UTCを直接結合するimmutable
+    `PlanClosureV1`をterminal登録する。closure後の旧plan submission/root materialization/ledger追加は0件とし、
+    closureは新plan参照も出edgeも持たない。新第一planはmaterialized root 0件で、旧ID/hashを一切再利用しない。
+
+## D-19: InvalidAttemptEvidence 意味検証の3回連続未達
+
+- 状態: 人間承認済み（2026-10-20）、replacement reasonの範囲はD-20で限定修正
+- 根本原因: `InvalidAttemptEvidenceV1` の規範を個別fieldの手書き検証として追加してきたため、レビューごとに
+  未網羅の意味制約が見つかった。テストやハッシュの問題ではなく、規範全体を一度に実装・検査する戦略が不足している。
+- 連続試行:
+  1. raw/model/record結合、privacy、campaign参照、DAGを追加したが、validation error codeとRFC 6901制約が未網羅だった。
+  2. 13 codeとRFC 6901の正負例・実装を追加したが、replacement reason 4種類のうち`model-retry`以外の正例が未網羅だった。
+  3. 16,036ケース、対象14/14 Green、型・構文・依存境界を通した後の独立レビューでも、規範上有効な
+     `schema-fix`、`prompt-change`、`input-change`を実装が拒否することが判明した。
+- 選択肢:
+  1. **推奨**: 個別修正を止め、§8.1の規範表から4 replacement reasonと対応hash authorityを表駆動で実装する。
+     4正例、reason/hash交換負例、完全schema mutationを追加し、別のfresh reviewerが規範表との全行照合を行う。
+  2. pilotでは`model-retry`だけに制限する。承認済みprotocolを狭める設計変更となるため、DESIGN/protocol/testcaseの
+     再設計・人間承認が必要で、将来のschema/prompt/input変更証跡を扱えなくなる。
+  3. pilot validatorをここで停止し、T1-7本体へ進まない。
+- 推奨理由: 選択肢1は既承認protocolを変更せず、今回の反復原因である手書きの部分検証を解消できる。
+- 人間判断: 2026-10-20、選択肢1（推奨案）を採用。実装とテストは同じ対応表を共有せず、別々の権威表から
+  4種類すべての正例、reason/hash交換負例、完全schema mutationを導出し、fresh reviewerが規範表と全行照合する。
+- D-20による後続修正: 完全なartifact chainを設計した結果、`schema-fix|prompt-change`は同一planのreplacementとして
+  正当に表現できないことが判明した。このためD-19の「4種類すべて」は現行契約では`model-retry|input-change`の2行へ
+  置き換える。表駆動、実装/テストの独立authority、reason/hash交換負例、全行照合という根本対策は維持する。
+
 ## D-01: 出典内IDの扱い
 
 - 状態: 設計決定
