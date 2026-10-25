@@ -21,6 +21,10 @@ import { buildWorkflow, workflowCases } from './pilot-workflow-fixtures.mjs';
 import { attemptCases, d20DuplicateInvalidEvidenceProbe, reissueCases, slotCases, adjudicationCases, approvalCases } from './pilot-state-cases.mjs';
 // @ts-expect-error Test-only ESM support.
 import { schemaCases, exerciseSchema, parserOracleCases } from './pilot-schema-cases.mjs';
+// @ts-expect-error Test-only independent implementation-review regressions.
+import { buildReviewGapRows, registerReviewGapRows } from './pilot-d20-review-gap-cases.mjs';
+// @ts-expect-error Test-only signature and mutation audit.
+import { assertReviewGapRows } from './pilot-d20-review-gap-selfcheck.mjs';
 // @ts-expect-error Test-only ESM support.
 import { createIsolatedRoot, repositorySnapshot, isolatedSnapshot, isolationCases, guardEffects, effectGuardOracle, metricsCases, inside, wilson, kappa } from './pilot-metrics-isolation.mjs';
 
@@ -98,6 +102,11 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
   it('TC-PILOT-REISSUE-001 closes the old plan and creates an unexecuted, unlinked new plan', () => {
     reissueCases(contract, workflow);
   }, 30000); // Full independent schema/byte/graph checks for all 12 reissues.
+  it('TC-PILOT D-20 implementation-review gaps have independent signed fixtures and exact registration', () => {
+    const rows = buildReviewGapRows(contract, workflow, resolve(workRoot, 'inputs/attempts/original.txt'));
+    registerReviewGapRows(rows);
+    expect(assertReviewGapRows(contract, workflow, rows, cases)).toMatchObject({ status: 'green', totalRows: 14, registeredRows: 14 });
+  });
   it('TC-PILOT-SLOTS-001..003 both plans, Q20+4, ledgers, active snapshots and normative DAG mutations', () => {
     slotCases(contract, workflow);
     expect(workflow.firstPlan.slots).toHaveLength(7);
@@ -150,13 +159,14 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
     const negativeMatrix = cases.filter((c: FixtureCase) => c.label.startsWith('d22/'));
     expect(negativeMatrix).toHaveLength(253);
     expect(new Set(negativeMatrix.map((c: FixtureCase) => c.label)).size).toBe(253);
+    expect(cases.filter((c: FixtureCase) => c.label.startsWith('d23/'))).toHaveLength(14);
     for (const c of cases as FixtureCase[]) {
       expect(c.caseName).not.toBe(''); expect(c.fixture).not.toBeNull();
       if (c.errorClass) { expect(c.field).toBeTruthy(); expect(c.reason).toBeTruthy(); }
       else expect(Object.hasOwn(c, 'expected')).toBe(true);
     }
   });
-  it('TC-PILOT-RED-001 sole expected Red: duplicate invalid-evidence attempt must be rejected', async () => {
+  it('TC-PILOT-RED-001 sole expected Red: jointly spoofed selection PDF authority must be rejected', async () => {
     const path = resolve(ROOT, VALIDATOR_REL);
     expect(existsSync(path), `missing pilot validator artifact: ${VALIDATOR_REL}`).toBe(true);
     const dependencyGraph = assertValidatorDependencies(path);
@@ -192,9 +202,13 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
           expect(existsSync(resolve((fixture as any).outputRoot, (fixture as any).atomicWrite.temporaryBasename))).toBe(false);
         }
       };
-      // This named probe is deliberately before shuffle.  The current validator
-      // accepts two fully re-signed invalid-evidence records numbered 1; D-20
-      // must make this exact assertion the only expected Red.
+      // Deterministic first assertion for the new review gaps. Once fixed,
+      // all fourteen rows still run through the guarded randomized registry.
+      const pdfProbe = (cases as FixtureCase[]).find(c => c.label === 'd23/selection/joint-pdf-spoof');
+      expect(pdfProbe).toBeDefined();
+      await runOne(pdfProbe!);
+      // Retain the earlier D-20 duplicate-evidence regression before shuffle.
+      // Both evidence records are fully signed but claim attempt number 1.
       const duplicateProbe = d20DuplicateInvalidEvidenceProbe();
       let duplicateError: unknown;
       try { await loaded.validatePilot('attempt-campaign', { ...clone(duplicateProbe), PILOT_WORK_ROOT: workRoot }); } catch (caught) { duplicateError = caught; }

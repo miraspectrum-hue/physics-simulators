@@ -306,3 +306,22 @@ ui_acceptance: not-required
     containing `attempt-campaign-invalid` and `invalidEvidence`.
   - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.
 - Approved positive support files remained byte-identical throughout the negative substage.
+
+## D-23 implementation-review gap regressions and expected Red
+
+- Date: 2026-10-25.
+- The first D-20/D-22 implementation review found five normative acceptance gaps not exercised by the committed
+  test registry. Fourteen independently rebuilt and fully re-signed negative fixtures now cover all five findings.
+- Independent self-check: Green with exactly 14 unique and registered D-23 rows.
+- Existing self-checks remain Green: 253 D-22 negative rows, 12 positive reissue chains, and 9 valid wrappers.
+- Fresh independent test-code review returned `approved` with no findings or conditions.
+- Typecheck and syntax checks passed.
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 15 tests passed, no tests skipped, and exactly one expected assertion failure.
+  - The sole failure is `d23/selection/joint-pdf-spoof` at line 188: the current validator accepts a jointly
+    re-signed selection plan and candidate set whose source PDF hash conflicts with the protocol authority,
+    leaving the captured error undefined instead of throwing the required `RangeError`.
+  - Guarded direct diagnostics showed that 13 of the 14 new negatives were accepted; the ordinal mutation was
+    already rejected with the required error contract.
+  - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.

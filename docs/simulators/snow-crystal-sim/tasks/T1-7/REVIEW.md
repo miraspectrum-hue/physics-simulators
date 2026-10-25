@@ -3627,6 +3627,89 @@ rollback_to: none
 summary: "DESIGN、規範protocol、TESTCASESは承認済みD-20入力とbyte-identicalで、DECISIONSの差分はD-21/D-22の34行追加・削除0行だけである。追加内容はtest-only builderの再構築、正常例と負例行列の直列化、担当分解および進捗を記録し、TESTCASES縮小を明示的に退けているため、D-20の要件、24画像pilot、schema、18状態遷移、PlanClosureV1、物理解釈、単位、適用範囲、loss、独立oracle、許容境界を変更しない。一次資料の206観測契約も公式arXiv v1と整合し、独立再計算でlatticeCellCount(115)=40021、境界半距離49.79708826829135 cells、checkpoint 40の適用範囲内を再確認した。"
 ```
 
+## implementation review: D-20/D-22 first review
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:039319a2944339caa14808806aea3d6d08e629031c833661929bcaf41fc3805c
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-core.mjs
+    hash: sha256:7d810161286431c5da9a3ac33e89a88dd612c4eb0453b9577718bbc980c20f30
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-io.mjs
+    hash: sha256:17fc40a06ba37729fc1d689369b7c0310bb3aea303b61d251105f244148fe9be
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs
+    hash: sha256:99b2a9b6850e1e9b2c93a9b33f1d1d7741230b191b0c3d944d34eb7c63d14d0b
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs:141
+    problem: Selection validation does not bind the selection plan and candidate set to the protocol's fixed source PDF.
+    evidence: A fixture with both candidateSet.sourcePdfSha256 and selectionPlan.sourcePdfSha256 changed to a different 64-hex digest, and candidateSetObjectSha256 recomputed, was accepted. The code compares only plan to candidate set and never compares either value to protocol.sourcePdfSha256 or the normative fixed digest.
+    required_change: Enforce the direct three-way equality among selection plan, candidate set, and protocol sourcePdfSha256, including the fixed normative PDF digest, and add a jointly re-signed wrong-PDF negative.
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:166
+    problem: Input-change replacement validation omits required unchanged fields and does not require an attachmentSlot change.
+    evidence: Independently rebuilt and re-signed input-change evidence was accepted when the replacement table changed protocolObjectSha256 to a foreign digest. A separately rebuilt input-change campaign using the unchanged original table was also accepted. The implementation checks IDs, image hashes, order, count, schema, template, and prompt derivation, but not protocol, manifest, batch, ordinal, or the required nonempty attachmentSlot delta.
+    required_change: Compare every table field except attachmentSlot against the frozen original, require at least one attachmentSlot difference, and reject changes to protocol, manifest, batch, ordinal, IDs, image hashes, count, or order with deterministic diagnostics.
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:225
+    problem: Attempt-state validation trusts caller-supplied campaign and evidence wrappers instead of validating their authority and immutability.
+    evidence: A valid-attempt-1 fixture whose campaign was changed to replacement-materialization with model-retry but retained a null active tuple was accepted as active-root. A valid-attempt-2 fixture with corrupted invalidAttemptEvidenceId and evidenceFileSha256 was also accepted. The function counts attempt numbers and compares campaign objects but does not validate campaign-kind/active-state semantics or evidence IDs, bytes, filenames, and file hashes.
+    required_change: Validate the complete campaign contract and every prior immutable evidence document before authorizing retryable-2, retryable-3, or a valid attempt; derive root versus replacement state from validated campaign semantics and require atomic replacement authority.
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:282
+    problem: Plan reissue no-reuse enforcement trusts supplied oldIds and newIds instead of deriving cross-plan references from the concrete inventories.
+    evidence: Adding an old-plan identity to newInventory[0].embeddedRefs while leaving the self-reported newIds unchanged was accepted by plan-reissue validation. The implementation never inspects newInventory embedded references and therefore permits hidden old-artifact or closure references in the new DAG.
+    required_change: Recompute old and new identity sets and embedded references from concrete artifacts and inventories, then reject every old execution identity, closure identity, cross-plan edge, or unaccounted inventory/reference mismatch.
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs:60
+    problem: The 23-schema bundle validator verifies hashes but not distinct role authority.
+    evidence: Replacing selectionCandidateSetSchemaFileSha256's schema object/file with the selectionProxyInput schema and updating the corresponding protocol reference was accepted. The validator neither requires 23 pairwise-distinct object/file authorities nor establishes that each schema property contains the schema for its named role.
+    required_change: Enforce all 23 literal authorities, pairwise-distinct object/file hashes, and semantic role binding, including planClosureSchemaFileSha256; add coordinated substitution and duplicate-schema negatives.
+conditions: []
+rollback_to: implementation
+summary: The exact Vitest target passed 15/15, positive and negative self-checks passed, and syntax checks, typecheck, and whitespace checks were clean. Independent adversarial executions nevertheless demonstrated five acceptance gaps in normative D-20/D-22 boundaries. Return only the four untracked validator implementation files to the implementation stage; retain the committed tests and higher-level artifacts unchanged.
+```
+
+## test-code review: D-23 implementation-gap regressions
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-review-gap-cases.mjs
+    hash: sha256:be74cde2cd59550bc380d470573b04e30671a82b7f08c42160b9e02fd5fc7acd
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-review-gap-selfcheck.mjs
+    hash: sha256:7e6471b3592f825a79b608212ae814a964dbdbd15c375ed3e6b22f83976be41c
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:e4a780f846faa86ec79f90012b4de65693d49cdbca3605f43b2ae3513b3d7206
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The 14 unique D-23 rows independently cover all five implementation findings:
+  coordinated wrong-PDF selection authority; input-change protocol, manifest,
+  batch, ordinal, and absent attachment delta; forged valid attempt 1 and all
+  three attempt-2 prior-evidence integrity combinations; hidden old-plan and
+  closure references in concrete new inventory with unchanged reported IDs; and
+  two-way schema-role substitution plus duplicate authority. Self-checks confirm
+  coherent derived hashes, canonical bytes, filenames, wrapper signatures,
+  schema-valid carriers, isolated mutations, and exact stable reason/field
+  contracts. Existing positive checks remain Green with 12 reissue chains,
+  9 valid wrappers, and 23 schema authorities; the D-22 negative registry remains
+  exactly 253 unique rows. Syntax checks, diff whitespace checks, and typecheck
+  passed, with no skip, timeout, tolerance, physical mapping, unit, source, or
+  validity-range changes. Target Vitest produced exactly 15 passes and one
+  deterministic assertion Red because the current validator accepts
+  d23/selection/joint-pdf-spoof.
+```
+
 ## testcases review: D-20/D-22 freshness approval
 
 ```yaml
@@ -3728,4 +3811,77 @@ findings: []
 conditions: []
 rollback_to: none
 summary: "DESIGN、規範protocol、TESTCASESは承認済みD-20入力とbyte-identicalで、DECISIONSの差分はD-21/D-22の34行追加・削除0行だけである。追加内容はtest-only builderの再構築、正常例と負例行列の直列化、担当分解および進捗を記録し、TESTCASES縮小を明示的に退けているため、D-20の要件、24画像pilot、schema、18状態遷移、PlanClosureV1、物理解釈、単位、適用範囲、loss、独立oracle、許容境界を変更しない。一次資料の206観測契約も公式arXiv v1と整合し、独立再計算でlatticeCellCount(115)=40021、境界半距離49.79708826829135 cells、checkpoint 40の適用範囲内を再確認した。"
+```
+
+## testcases review: D-23 scope freshness approval
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:b473ba03e86121eca41fc82d226338a4bd04a0e57bfad7c20af6bc0f2409efeb
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  Current TESTCASES remain complete and consistent with approved D-20 boundaries.
+  The five implementation findings and the recorded D-23 regression scope map
+  directly to existing cases: fixed three-way PDF authority to
+  TC-PILOT-SELECTION-001; attachmentSlot-only input changes and required nonempty
+  delta to TC-PILOT-PROMPT-003 and TC-PILOT-ATTEMPT-001; campaign semantics and
+  prior immutable evidence integrity to TC-PILOT-ATTEMPT-001; concrete cross-plan
+  identity and closure-reference rejection to TC-PILOT-REISSUE-001 and
+  TC-PILOT-SLOTS-003; distinct schema authorities and named-role binding to
+  TC-PILOT-SCHEMA-001. The recorded 14 D-23 regression rows implement these
+  existing requirements without changing acceptance criteria, tolerances,
+  physical definitions, or pilot scope. Exact prompt lengths and hashes,
+  invalid-response bytes and hash, and the Wilson interval were independently
+  recomputed and matched. This approval covers testcase freshness and scope
+  only; implementation and test-code correctness remain separate review gates.
+```
+
+## test-code review: D-23 implementation-gap regressions (current)
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-review-gap-cases.mjs
+    hash: sha256:be74cde2cd59550bc380d470573b04e30671a82b7f08c42160b9e02fd5fc7acd
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-review-gap-selfcheck.mjs
+    hash: sha256:7e6471b3592f825a79b608212ae814a964dbdbd15c375ed3e6b22f83976be41c
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:e4a780f846faa86ec79f90012b4de65693d49cdbca3605f43b2ae3513b3d7206
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The 14 unique D-23 rows independently cover all five implementation findings:
+  coordinated wrong-PDF selection authority; input-change protocol, manifest,
+  batch, ordinal, and absent attachment delta; forged valid attempt 1 and all
+  three attempt-2 prior-evidence integrity combinations; hidden old-plan and
+  closure references in concrete new inventory with unchanged reported IDs; and
+  two-way schema-role substitution plus duplicate authority. Self-checks confirm
+  coherent derived hashes, canonical bytes, filenames, wrapper signatures,
+  schema-valid carriers, isolated mutations, and exact stable reason/field
+  contracts. Existing positive checks remain Green with 12 reissue chains,
+  9 valid wrappers, and 23 schema authorities; the D-22 negative registry remains
+  exactly 253 unique rows. Syntax checks, diff whitespace checks, and typecheck
+  passed, with no skip, timeout, tolerance, physical mapping, unit, source, or
+  validity-range changes. Target Vitest produced exactly 15 passes and one
+  deterministic assertion Red because the current validator accepts
+  d23/selection/joint-pdf-spoof.
 ```
