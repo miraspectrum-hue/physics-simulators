@@ -86,7 +86,7 @@ export function selectionFixture(protocolObjectSha256) {
     const ranked=[...groups.values()].flatMap(group=>group.sort((a,b)=>cmp(a.selectionKeySha256,b.selectionKeySha256)||cmp(a.sourceObservationId,b.sourceObservationId)).map((c,rank)=>({...c,rank})));
     return ranked.sort((a,b)=>a.rank-b.rank||cmp(a.selectionKeySha256,b.selectionKeySha256)||cmp(a.sourceObservationId,b.sourceObservationId)).slice(0,6).map(({rank,...c},i)=>({...c,pageSlot:i+1}));
   }).sort((a,b)=>cmp(a.batchOrderKeySha256,b.batchOrderKeySha256)||cmp(a.sourceObservationId,b.sourceObservationId)).map((c,ordinal)=>({ordinal,...c}));
-  const plan={schemaVersion:'snow-crystal-morphology-pilot-selection/1',contractId:CONTRACT,protocolObjectSha256,candidateSetObjectSha256:hash(candidateSet),proxyInputObjectSha256:hash(proxyInput),algorithmId:'page-proxy-round-robin-hash-v1',selectionSeed:'snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/selection',slots};
+  const plan={schemaVersion:'snow-crystal-morphology-pilot-selection/1',contractId:CONTRACT,protocolObjectSha256,sourcePdfSha256:PDF,candidateSetObjectSha256:hash(candidateSet),proxyInputObjectSha256:hash(proxyInput),algorithmId:'page-proxy-round-robin-hash-v1',selectionSeed:'snow-crystal-sim/T1-7/morphology-ensemble-pilot-v1/selection',slots};
   // Frozen independently calculated SYN-PILOT-24 snapshot, in batch order.
   assert.deepEqual(slots.map(s=>[s.sourceObservationId,s.pageSlot]),[
     ['L23-F2-P12-N048',4],['L23-F2-P14-N032',2],['L23-F2-P11-N044',3],['L23-F2-P11-N005',5],['L23-F2-P13-N002',2],['L23-F2-P13-N046',5],
@@ -132,7 +132,7 @@ export function transportCases(entry) {
 
 export function buildContract() {
   const tables=mappingCases(),bundle=schemaBundle();
-  assert.equal(Object.keys(bundle).length,22);assert.equal(new Set(Object.values(bundle).map(s=>s.fileSha256)).size,22);
+  assert.equal(Object.keys(bundle).length,23);assert.equal(new Set(Object.values(bundle).map(s=>s.fileSha256)).size,23);
   const truthRows=[];for(const D of [0,1,2,3])for(const U of [false,true])for(const L of [false,true])for(const O of [false,true])for(const Hh of [false,true]){
     const index=U||L||O||D>=2?3:D===1?2:Hh?0:1;
     truthRows.push({D,U,L,O,H:Hh,category:['label-exact-all-high','label-exact-nonhigh-or-confidence-differs','single-field-disagreement','multi-field-or-uncertain'][index],route:['human-batch','human-individual','adjudication','adjudication'][index]});
@@ -164,6 +164,7 @@ export function contractCases(c) {
     ['human-proxy',f=>{f.proxyInput.rows[0].proxySignature[0]='indeterminate';},'proxySignature'],['unknown-ID',f=>{f.candidateSet.rows[0][0]='L23-F2-P11-N999';},'sourceObservationId'],['duplicate-ID',f=>{f.candidateSet.rows[1][0]=f.candidateSet.rows[0][0];},'sourceObservationId'],
     ['five-page-candidates',f=>{f.candidateSet.rows=f.candidateSet.rows.filter(r=>r[1]!==11||r[2]<=5);},'candidateSet.rows'],['quota-7-5',f=>{f.selectionPlan.slots.find(s=>s.pdfPage===12).pdfPage=11;},'pdfPage'],
     ['pageSlot',f=>{f.selectionPlan.slots[0].pageSlot=6-f.selectionPlan.slots[0].pageSlot+1;},'pageSlot'],['ordinal',f=>{f.selectionPlan.slots[0].ordinal=1;},'ordinal'],['selection-key',f=>{f.selectionPlan.slots[0].selectionKeySha256=H('wrong-selection');},'selectionKeySha256'],['batch-key',f=>{f.selectionPlan.slots[0].batchOrderKeySha256=H('wrong-batch');},'batchOrderKeySha256'],['slot-order',f=>f.selectionPlan.slots.reverse(),'slots'],['post-freeze-source',f=>{f.selectionPlan.slots[0].sourceObservationId='L23-F2-P11-N001';},'sourceObservationId'],
+    ['plan-pdf-missing',f=>{delete f.selectionPlan.sourcePdfSha256;},'sourcePdfSha256'],['plan-pdf-byte',f=>{f.selectionPlan.sourcePdfSha256=(f.selectionPlan.sourcePdfSha256[0]==='0'?'1':'0')+f.selectionPlan.sourcePdfSha256.slice(1);},'sourcePdfSha256'],['plan-pdf-candidate-mismatch',f=>{f.selectionPlan.sourcePdfSha256=H('selection-candidate-pdf-mismatch');},'sourcePdfSha256'],['candidate-pdf-protocol-mismatch',f=>{f.candidateSet.sourcePdfSha256=H('candidate-protocol-pdf-mismatch');},'sourcePdfSha256'],
   ])bad('selection',selection,fn,['missing-A','missing-B','missing-field'].includes(label)?'missing-property':'selection-invalid',field,['missing-A','missing-B','missing-field'].includes(label)?'TypeError':'RangeError',label);
   const inventory=c.ids.slice(0,12).map(id=>({kind:'image',relativePath:`images/${id}.png`,fileSha256:c.manifest.entries.find(e=>e.anonymousImageId===id).derivativeFileSha256}));
   inventory.push({kind:'protocol-object',relativePath:'input/protocol.json',fileSha256:sha(fileBytes(c.protocol))},{kind:'role-schema',relativePath:'input/annotator.schema.json',fileSha256:c.bundle.annotationPayloadSchemaFileSha256.fileSha256},{kind:'prompt',relativePath:'input/annotator.txt',fileSha256:sha(c.prompts[0].rendered)},{kind:'batch-input',relativePath:'input/batch.json',fileSha256:sha(fileBytes(c.inputTables[0]))});
@@ -188,7 +189,7 @@ export function contractCases(c) {
   for(const key of SCHEMA_PROPERTIES){
     const schema=c.bundle[key];assert.deepEqual(parseUnique(schema.bytes),schema.object);assert.equal(schema.bytes,fileBytes(schema.object));assert.notEqual(schema.objectSha256,schema.fileSha256);
     for(const [label,fn,field] of [
-      ['missing-reference',f=>{delete f.protocol.schemaFiles[key];},`schemaFiles.${key}`],['missing-file',f=>{delete f.schemaBundle[key];},key],['swapped-reference',f=>{const other=SCHEMA_PROPERTIES[(SCHEMA_PROPERTIES.indexOf(key)+1)%22];[f.protocol.schemaFiles[key],f.protocol.schemaFiles[other]]=[f.protocol.schemaFiles[other],f.protocol.schemaFiles[key]];},key],['object-as-file',f=>{f.protocol.schemaFiles[key]=schema.objectSha256;},key],['reference-byte',f=>{f.protocol.schemaFiles[key]=(schema.fileSha256[0]==='0'?'1':'0')+schema.fileSha256.slice(1);},key],
+      ['missing-reference',f=>{delete f.protocol.schemaFiles[key];},`schemaFiles.${key}`],['missing-file',f=>{delete f.schemaBundle[key];},key],['swapped-reference',f=>{const other=SCHEMA_PROPERTIES[(SCHEMA_PROPERTIES.indexOf(key)+1)%SCHEMA_PROPERTIES.length];[f.protocol.schemaFiles[key],f.protocol.schemaFiles[other]]=[f.protocol.schemaFiles[other],f.protocol.schemaFiles[key]];},key],['object-as-file',f=>{f.protocol.schemaFiles[key]=schema.objectSha256;},key],['reference-byte',f=>{f.protocol.schemaFiles[key]=(schema.fileSha256[0]==='0'?'1':'0')+schema.fileSha256.slice(1);},key],
       ['file-as-object',f=>{f.schemaBundle[key].objectSha256=schema.fileSha256;},key],
     ])bad('schema-bundle',schemaFixture,fn,'schema-file-binding',field,'RangeError',`${key}/${label}`);
     for(const position of [0,Math.floor(schema.bytes.length/2),schema.bytes.length-2])bad('schema-bundle',schemaFixture,f=>{const b=f.schemaBundle[key].bytes;f.schemaBundle[key].bytes=b.slice(0,position)+String.fromCharCode(b.charCodeAt(position)^1)+b.slice(position+1);},'schema-file-binding',key,'RangeError',`${key}/byte-${position}`);

@@ -829,10 +829,11 @@ export const schemaNames = {
   annotationConsensusSlotPlan: 'AnnotationConsensusSlotPlanV1', activeAnnotationConsensusSnapshot: 'ActiveAnnotationConsensusSnapshotV1',
   supersessionLedger: 'TestLedgerLineV1', invalidAttemptEvidence: 'InvalidAttemptEvidenceV1', renderedPromptEvidence: 'RenderedPromptEvidenceV1',
   postConsensusRouteSlotPlan: 'PostConsensusRouteSlotPlanV1', activeUpstreamSnapshot: 'ActiveUpstreamSnapshotV1', humanApproval: 'HumanApprovalRecordV1', pilotCoverage: 'PilotApprovalCoverageRecordV1',
+  planClosure: 'PlanClosureV1',
 };
 export const SCHEMA_PROPERTIES = Object.keys(schemaNames).map(k => `${k}SchemaFileSha256`);
-export const INTEGER_PROPERTIES=new Set(['ordinal','pageSlot','pdfPage','pagePanelOrdinal','widthPx','heightPx','sourceCropWidthPx','sourceCropHeightPx','pageRasterWidthPx','pageRasterHeightPx','uploadedWidthPx','uploadedHeightPx','expectedRecordCount','entryCount','lastSequence','sequence','cutoffSequence','rawResponseByteLength','attemptNumber','imageCount','expectedCount','maximumAttemptsPerCampaign']);
-const zeroAllowed=new Set(['ordinal','cutoffSequence','entryCount','lastSequence']);
+export const INTEGER_PROPERTIES=new Set(['ordinal','pageSlot','pdfPage','pagePanelOrdinal','widthPx','heightPx','sourceCropWidthPx','sourceCropHeightPx','pageRasterWidthPx','pageRasterHeightPx','uploadedWidthPx','uploadedHeightPx','expectedRecordCount','entryCount','lastSequence','sequence','cutoffSequence','oldCutoffSequence','rawResponseByteLength','attemptNumber','imageCount','expectedCount','maximumAttemptsPerCampaign']);
+const zeroAllowed=new Set(['ordinal','cutoffSequence','oldCutoffSequence','entryCount','lastSequence']);
 const aliasSchema=name=>name==='Sha256Hex'?{type:'string',pattern:'^[0-9a-f]{64}$',minLength:64,maxLength:64,format:'sha256-hex'}:name==='SourceObservationId'?{type:'string',pattern:'^L23-F2-P(?:11|12|13|14)-N[0-9]{3}$',format:'source-id'}:name==='UtcSeconds'?{type:'string',format:'utc-seconds'}:['AnonymousImageId','ArtifactId','LogicalSlot'].includes(name)?{type:'string',minLength:1,maxLength:128,format:'pilot-id'}:null;
 export function schemaBundle() {
   const declarations = [...protocolText.matchAll(/```ts\r?\n([\s\S]*?)```/g)].map(m => m[1]).join('\n');

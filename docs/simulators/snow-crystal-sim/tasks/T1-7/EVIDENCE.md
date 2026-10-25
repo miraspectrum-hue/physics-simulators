@@ -285,3 +285,24 @@ ui_acceptance: not-required
     `RangeError` containing `invalid-attempt-evidence` and `validationErrors.0.jsonPointer`.
   - This is the intended behavioral Red, not a syntax, type, dependency, module-resolution, or environment failure.
 - `node --check` for the changed support module, TypeScript typecheck, and `git diff --check` passed.
+
+## D-20/D-22 plan-boundary test-code gate and expected Red
+
+- Date: 2026-10-25.
+- D-22 split the high-complexity test-code correction into independently checked positive and negative substages.
+- Positive self-check: Green with 12 reissue chains, 9 valid wrappers, and 23 schema authorities.
+- Negative self-check: Green with exactly 253 unique rows:
+  - 48 replacement rows (14 wrong-authority negatives, 2 positive controls, and 6 fully signed enum `TypeError` probes);
+  - 72 state-sensitive attempt rows across root, model-retry, and input-change campaigns;
+  - 133 plan-reissue rows across old second-plan absent/present states.
+- Fresh independent intermediate and final test-code reviews both returned `approved` with no findings or conditions.
+- Typecheck command: `npm.cmd run typecheck --workspace apps/snow-crystal-sim`.
+  - Result: exited 0.
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 14 tests passed, no tests skipped, and exactly one expected assertion failure.
+  - The sole failure is `TC-PILOT-RED-001` at line 201: the current validator accepts a fully re-signed duplicate
+    invalid-evidence attempt, leaving `duplicateError` undefined instead of throwing the required `RangeError`
+    containing `attempt-campaign-invalid` and `invalidEvidence`.
+  - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.
+- Approved positive support files remained byte-identical throughout the negative substage.

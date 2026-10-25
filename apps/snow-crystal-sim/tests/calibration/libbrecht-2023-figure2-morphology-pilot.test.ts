@@ -18,7 +18,7 @@ import { buildContract, contractCases } from './pilot-contract-fixtures.mjs';
 // @ts-expect-error Test-only ESM support.
 import { buildWorkflow, workflowCases } from './pilot-workflow-fixtures.mjs';
 // @ts-expect-error Test-only ESM support.
-import { attemptCases, slotCases, adjudicationCases, approvalCases } from './pilot-state-cases.mjs';
+import { attemptCases, d20DuplicateInvalidEvidenceProbe, reissueCases, slotCases, adjudicationCases, approvalCases } from './pilot-state-cases.mjs';
 // @ts-expect-error Test-only ESM support.
 import { schemaCases, exerciseSchema, parserOracleCases } from './pilot-schema-cases.mjs';
 // @ts-expect-error Test-only ESM support.
@@ -54,9 +54,9 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
   });
   it('TC-PILOT authority hashes and duplicate-aware parser oracle remain frozen', () => {
     for (const [name, expected] of [
-      ['DESIGN.md', 'b6f5c3ea62884de3dd7242df8d3706679f5362880afe48e2bc9adeff5328c56b'],
-      ['MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md', '32492287e1267ddbbcbd352f769d7428cc70373c2afafd8e70f4ce436daa900e'],
-      ['TESTCASES.md', '404400dcd37f9d2769b3a3a042fdd92fd530706d99e927bdfc82bb527c48ff5b'],
+      ['DESIGN.md', '88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781'],
+      ['MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md', 'bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40'],
+      ['TESTCASES.md', 'fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52'],
     ]) expect(sha(readFileSync(resolve(DOC, name)))).toBe(expected);
     parserOracleCases();
     dependencyGateOracle();
@@ -89,10 +89,15 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
     expect(workflow.consensus.records).toHaveLength(24);
     expect(hash(contract.truthTable)).toBe('7794c28359dc2fa7d918a49b2ba4f0cad335d6b54c5d589ca8da95940b7686d7');
   });
-  it('TC-PILOT-ATTEMPT-001 all six campaigns, immutable raw files, UTC order and provenance mutations', () => {
+  it('TC-PILOT-ATTEMPT-001 all state-sensitive root/model-retry/input-change campaigns, immutable raw files, UTC order and provenance mutations', () => {
     attemptCases(contract, workflow, workRoot);
-    expect(cases.filter((c: FixtureCase) => c.caseName === 'attempt-campaign' && c.label === 'positive')).toHaveLength(6);
+    const normative = cases.filter((c: FixtureCase) => c.caseName === 'attempt-state-transition');
+    expect(normative).toHaveLength(18);
+    expect(new Set(normative.map((c: FixtureCase) => hash(c.fixture))).size).toBe(18);
   });
+  it('TC-PILOT-REISSUE-001 closes the old plan and creates an unexecuted, unlinked new plan', () => {
+    reissueCases(contract, workflow);
+  }, 30000); // Full independent schema/byte/graph checks for all 12 reissues.
   it('TC-PILOT-SLOTS-001..003 both plans, Q20+4, ledgers, active snapshots and normative DAG mutations', () => {
     slotCases(contract, workflow);
     expect(workflow.firstPlan.slots).toHaveLength(7);
@@ -110,7 +115,8 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
   it('TC-PILOT-SCHEMA-001 every normative schema accepts its complete fixture and rejects property mutations', () => {
     const samples = schemaCases(contract, workflow);
     samples.invalidAttemptEvidence = cases.find((c: any) => c.caseName === 'invalid-attempt' && c.label === 'positive').fixture.evidence;
-    expect(Object.keys(samples)).toHaveLength(22);
+    samples.planClosure = cases.find((c: any) => c.caseName === 'plan-closure' && !c.errorClass).fixture.closure;
+    expect(Object.keys(samples)).toHaveLength(23);
     for (const [key, sample] of Object.entries(samples)) exerciseSchema(contract, key, sample);
     const ledgerRecord = cases.find((c: any) => c.caseName === 'active-ledger' && !c.errorClass && c.fixture.ledger.records.length > 1).fixture.ledger.records[1];
     const artifactMembers = [workflow.runs[0].header, workflow.runs[0].records[0], workflow.consensus.records[0], workflow.adjudication.records[0], workflow.emptyLedger.records[0], ledgerRecord, workflow.approvals[0].records[0], workflow.coverage.records[0]];
@@ -141,13 +147,16 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
   });
   it('every case has an exact result or typed first-error oracle; no empty fixture', () => {
     expect(cases.length).toBeGreaterThan(7553);
+    const negativeMatrix = cases.filter((c: FixtureCase) => c.label.startsWith('d22/'));
+    expect(negativeMatrix).toHaveLength(253);
+    expect(new Set(negativeMatrix.map((c: FixtureCase) => c.label)).size).toBe(253);
     for (const c of cases as FixtureCase[]) {
       expect(c.caseName).not.toBe(''); expect(c.fixture).not.toBeNull();
       if (c.errorClass) { expect(c.field).toBeTruthy(); expect(c.reason).toBeTruthy(); }
       else expect(Object.hasOwn(c, 'expected')).toBe(true);
     }
   });
-  it('TC-PILOT-RED-001 sole expected Red: missing test-only validator artifact', async () => {
+  it('TC-PILOT-RED-001 sole expected Red: duplicate invalid-evidence attempt must be rejected', async () => {
     const path = resolve(ROOT, VALIDATOR_REL);
     expect(existsSync(path), `missing pilot validator artifact: ${VALIDATOR_REL}`).toBe(true);
     const dependencyGraph = assertValidatorDependencies(path);
@@ -183,6 +192,15 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
           expect(existsSync(resolve((fixture as any).outputRoot, (fixture as any).atomicWrite.temporaryBasename))).toBe(false);
         }
       };
+      // This named probe is deliberately before shuffle.  The current validator
+      // accepts two fully re-signed invalid-evidence records numbered 1; D-20
+      // must make this exact assertion the only expected Red.
+      const duplicateProbe = d20DuplicateInvalidEvidenceProbe();
+      let duplicateError: unknown;
+      try { await loaded.validatePilot('attempt-campaign', { ...clone(duplicateProbe), PILOT_WORK_ROOT: workRoot }); } catch (caught) { duplicateError = caught; }
+      expect(duplicateError).toBeInstanceOf(RangeError);
+      expect((duplicateError as Error).message).toContain('attempt-campaign-invalid');
+      expect((duplicateError as Error).message).toContain('invalidEvidence');
       // A per-run unpredictable order prevents a fixed registry-order replay.
       // Repeating representatives in reverse order also rejects call-count state.
       const nonce = randomBytes(32).toString('hex');

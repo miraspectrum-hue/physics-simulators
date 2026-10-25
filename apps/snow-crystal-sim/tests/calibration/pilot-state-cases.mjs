@@ -1,8 +1,22 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { assert, CONTRACT, PROTOCOL, POLICY, H, utc, sha, hash, whash, wrapped, idHash, jcs, fileBytes, clone, good, bad, streamFileOracle } from './pilot-oracle.mjs';
+import { assert, CONTRACT, PROTOCOL, POLICY, H, utc, sha, hash, whash, wrapped, idHash, jcs, fileBytes, clone, good, bad, streamFileOracle, render } from './pilot-oracle.mjs';
 import { ACTORS, FAMILIES, vote } from './pilot-contract-fixtures.mjs';
 import { makeLedger, buildWorkflow, makeCoverage, approvalUpstreamSnapshot, captureIntegrityCases } from './pilot-workflow-fixtures.mjs';
+import { materializePromptChain, materializeReplacementCampaign, materializeReissuePlan, materializeValidWrapper, collectArtifactInventory, materializeOldGraph, REISSUE_CAUSES } from './pilot-d20-builders.mjs';
+import { assertReissuePositive, assertValidWrapper, assertOldGraphPositive } from './pilot-positive-selfcheck.mjs';
+import { buildReplacementNegativeRows, buildAttemptNegativeRows, buildReissueNegativeRows, registerNegativeRows } from './pilot-d20-negative-builders.mjs';
+import { assertReplacementNegatives, assertAttemptNegatives, assertReissueNegatives } from './pilot-negative-selfcheck.mjs';
+
+let duplicateInvalidEvidenceProbe=null;
+export const d20DuplicateInvalidEvidenceProbe=()=>clone(duplicateInvalidEvidenceProbe);
+const collectInventoryForReissue=value=>collectArtifactInventory([value])[0];
+function resignClosure(f){
+  const {planClosureId,...body}=f.closure;void planClosureId;
+  f.closure.planClosureId=whash('plan-closure-id',{closureWithoutPlanClosureId:body});
+  f.closureBytes=fileBytes(f.closure);f.closureFileSha256=sha(f.closureBytes);
+  f.closureFilename=`${f.closure.planClosureId}.json`;
+}
 
 export function attemptCases(c,w,workRoot){
   const raw='not-json\n',rawHash='60498ebafa3f473a2a72c1242e8c3202bf50a6d81dfc721958be1550f46faf33';
@@ -12,12 +26,60 @@ export function attemptCases(c,w,workRoot){
   const stored=readFileSync(rawPath);assert.equal(sha(stored),rawHash);assert.equal(stored.byteLength,9);
   assert.deepEqual(streamFileOracle(rawPath),{sha256:rawHash,byteLength:9});
   const run=w.runs[0],slot=w.firstPlan.slots[0];
-  function invalid(attemptNumber,replacement=false){
-    const campaign={...run.campaign,campaignKind:replacement?'replacement-materialization':'root-materialization',activeArtifactIdBeforeCampaign:replacement?run.header.artifactId:null,activeArtifactFileSha256BeforeCampaign:replacement?run.fileSha256:null,replacementReasonCode:replacement?'model-retry':null,changedInputSha256:replacement?run.fileSha256:null};
+  // TC-PILOT-ATTEMPT-001 / protocol §8.1.  This literal authority table is
+  // deliberately test-only: the validator must not import it.  A replacement
+  // binds changedInputSha256 to the newly frozen authority for its reason;
+  // model-retry is the only input-invariant case and therefore names the
+  // active artifact file at campaign start.
+  // Build real, self-consistent replacement inputs.  No H(label) value is an
+  // authority here: every value below is derived from concrete JCS bytes or a
+  // concrete frozen artifact.  This deliberately duplicates (rather than
+  // imports) the prompt builder so the validator cannot share its oracle.
+  const materializeInputChange=tag=>{
+    // An in-plan input-change may alter only attachmentSlot.  Image IDs,
+    // derivative hashes, order, protocol, schema and template remain frozen;
+    // prompt artifacts are then re-derived from that one table difference.
+    const table=clone(run.table);table.orderedItems[0].attachmentSlot=`replacement-${tag}-01`;
+    const chain=materializePromptChain({protocol:c.protocol,schemaObject:clone(c.bundle.annotationPayloadSchemaFileSha256.object),table,templateBytes:run.prompt.template,rendererId:c.protocol.prompts.rendererId});
+    return{chain,schema:{object:chain.schemaObject,bytes:chain.schemaBytes,fileSha256:chain.schemaFileSha256,objectSha256:chain.modelPayloadSchemaObjectSha256},table,tableObjectSha256:chain.batchInputTableObjectSha256,prompt:{variables:chain.variables,evidence:chain.evidence,rendered:chain.rendered,variablesObjectSha256:hash(chain.variables)}};
+  };
+  const replacementSources=Object.freeze({
+    'input-change':materializeInputChange('input-change'),
+    stale:materializeInputChange('stale'),
+  });
+  const promptRefsOf=source=>({promptRole:'annotator',promptTemplateFileSha256:source.prompt.evidence.promptTemplateFileSha256,promptVariablesObjectSha256:source.prompt.variablesObjectSha256,schemaFileSha256:source.schema.fileSha256,modelPayloadSchemaObjectSha256:source.schema.objectSha256,renderedPromptEvidenceObjectSha256:hash(source.prompt.evidence),renderedPromptSha256:sha(source.prompt.rendered)});
+  const inputRefsOf=source=>({protocolObjectSha256:hash(c.protocol),blindedManifestObjectSha256:hash(c.manifest),batchInputTableObjectSha256:source.tableObjectSha256,orderedInputSha256:run.header.orderedInputSha256});
+  const replacementAuthorities=Object.freeze([
+    {reasonCode:'input-change',source:replacementSources['input-change'],changedInputOf:source=>source.tableObjectSha256},
+    {reasonCode:'model-retry',source:null,changedInputOf:()=>run.fileSha256},
+  ].map(row=>({
+    ...row,changedInputSha256:row.changedInputOf(row.source),
+    campaign:row.source?{promptVariablesObjectSha256:row.source.prompt.variablesObjectSha256,batchInputTableObjectSha256:row.source.tableObjectSha256}:{},
+    promptRefs:row.source?promptRefsOf(row.source):{},inputRefs:row.source?inputRefsOf(row.source):{},
+  })));
+  assert.equal(replacementAuthorities.length,2);
+  assert.deepEqual(replacementAuthorities.map(row=>row.reasonCode).sort(),['input-change','model-retry']);
+  for(const authority of replacementAuthorities.filter(row=>row.source)){
+    const source=authority.source;
+    assert.equal(source.schema.fileSha256,run.header.generator.schemaFileSha256);
+    assert.notEqual(source.prompt.variablesObjectSha256,run.header.generator.promptVariablesObjectSha256);
+    assert.notEqual(source.tableObjectSha256,hash(run.table));
+    assert.equal(authority.promptRefs.schemaFileSha256,source.schema.fileSha256);
+    assert.equal(authority.promptRefs.promptVariablesObjectSha256,source.prompt.variablesObjectSha256);
+    assert.equal(authority.promptRefs.renderedPromptEvidenceObjectSha256,hash(source.prompt.evidence));
+    assert.equal(authority.inputRefs.batchInputTableObjectSha256,source.tableObjectSha256);
+  }
+  const replacementByReason=new Map(replacementAuthorities.map(row=>[row.reasonCode,row]));
+  function invalid(attemptNumber,replacement=null){
+    const authority=replacement===null?null:replacementByReason.get(replacement);
+    assert(replacement===null||authority);
+    const campaign=authority
+      ? {...materializeReplacementCampaign({run,firstPlan:w.firstPlan,promptChain:{table:authority.source?.table??run.table,batchInputTableObjectSha256:authority.source?.tableObjectSha256??hash(run.table),variables:authority.source?.prompt.variables??run.prompt.variables},reasonCode:authority.reasonCode}),...(authority.campaign??{})}
+      : {...run.campaign,campaignKind:'root-materialization',activeArtifactIdBeforeCampaign:null,activeArtifactFileSha256BeforeCampaign:null,replacementReasonCode:null,changedInputSha256:null};
     const gen=run.header.generator;
-    const body={schemaVersion:'snow-crystal-morphology-pilot-invalid-attempt/1',contractId:CONTRACT,protocolId:PROTOCOL,attemptPolicyId:POLICY,campaignIdSha256:hash(campaign),campaignKind:campaign.campaignKind,attemptNumber,actorId:gen.actorId,batchId:run.header.batchId,logicalSlot:run.header.logicalSlot,slotPlanObjectSha256:hash(w.firstPlan),plannedRootArtifactId:slot.rootArtifactId,activeArtifactBeforeCampaign:replacement?{artifactId:run.header.artifactId,artifactFileSha256:run.fileSha256}:null,replacementReasonCode:campaign.replacementReasonCode,changedInputSha256:campaign.changedInputSha256,promptRefs:{promptRole:gen.promptRole,promptTemplateFileSha256:gen.promptTemplateFileSha256,promptVariablesObjectSha256:gen.promptVariablesObjectSha256,schemaFileSha256:gen.schemaFileSha256,modelPayloadSchemaObjectSha256:gen.modelPayloadSchemaObjectSha256,renderedPromptEvidenceObjectSha256:gen.renderedPromptEvidenceObjectSha256,renderedPromptSha256:gen.renderedPromptSha256},inputRefs:{protocolObjectSha256:hash(c.protocol),blindedManifestObjectSha256:hash(c.manifest),batchInputTableObjectSha256:hash(run.table),orderedInputSha256:run.header.orderedInputSha256},run:{provider:gen.provider,product:gen.product,displayedModelId:gen.displayedModelId,modelFamily:gen.modelFamily,modelVersion:gen.modelVersion,modelConfiguration:gen.modelConfiguration,clientTool:gen.clientTool,clientToolVersion:gen.clientToolVersion,attachmentMode:gen.attachmentMode,startedAtUtc:utc(0),completedAtUtc:utc(1),responseCaptureMethod:gen.responseCapture.method,responseCapturedAtUtc:utc(2)},rawResponseSha256:rawHash,rawResponseByteLength:9,validationErrors:[{ordinal:0,code:'json-syntax',jsonPointer:null,anonymousImageId:null}],disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed',containsRawResponse:false,containsPii:false};
+    const body={schemaVersion:'snow-crystal-morphology-pilot-invalid-attempt/1',contractId:CONTRACT,protocolId:PROTOCOL,attemptPolicyId:POLICY,campaignIdSha256:hash(campaign),campaignKind:campaign.campaignKind,attemptNumber,actorId:gen.actorId,batchId:run.header.batchId,logicalSlot:run.header.logicalSlot,slotPlanObjectSha256:hash(w.firstPlan),plannedRootArtifactId:slot.rootArtifactId,activeArtifactBeforeCampaign:authority?{artifactId:run.header.artifactId,artifactFileSha256:run.fileSha256}:null,replacementReasonCode:campaign.replacementReasonCode,changedInputSha256:campaign.changedInputSha256,promptRefs:{promptRole:gen.promptRole,promptTemplateFileSha256:gen.promptTemplateFileSha256,promptVariablesObjectSha256:gen.promptVariablesObjectSha256,schemaFileSha256:gen.schemaFileSha256,modelPayloadSchemaObjectSha256:gen.modelPayloadSchemaObjectSha256,renderedPromptEvidenceObjectSha256:gen.renderedPromptEvidenceObjectSha256,renderedPromptSha256:gen.renderedPromptSha256,...(authority?.promptRefs??{})},inputRefs:{protocolObjectSha256:hash(c.protocol),blindedManifestObjectSha256:hash(c.manifest),batchInputTableObjectSha256:hash(run.table),orderedInputSha256:run.header.orderedInputSha256,...(authority?.inputRefs??{})},run:{provider:gen.provider,product:gen.product,displayedModelId:gen.displayedModelId,modelFamily:gen.modelFamily,modelVersion:gen.modelVersion,modelConfiguration:gen.modelConfiguration,clientTool:gen.clientTool,clientToolVersion:gen.clientToolVersion,attachmentMode:gen.attachmentMode,startedAtUtc:utc(0),completedAtUtc:utc(1),responseCaptureMethod:gen.responseCapture.method,responseCapturedAtUtc:utc(2)},rawResponseSha256:rawHash,rawResponseByteLength:9,validationErrors:[{ordinal:0,code:'json-syntax',jsonPointer:null,anonymousImageId:null}],disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed',containsRawResponse:false,containsPii:false};
     const evidence={...body,invalidAttemptEvidenceId:whash('invalid-attempt-evidence-id',{evidenceWithoutInvalidAttemptEvidenceId:body})};
-    return{evidence,campaign,rawResponseFile:rawPath,evidenceFilename:`${evidence.invalidAttemptEvidenceId}.json`,evidenceBytes:fileBytes(evidence),evidenceFileSha256:sha(fileBytes(evidence))};
+    return{evidence,campaign,replacementInputs:authority?.source??null,rawResponseFile:rawPath,evidenceFilename:`${evidence.invalidAttemptEvidenceId}.json`,evidenceBytes:fileBytes(evidence),evidenceFileSha256:sha(fileBytes(evidence))};
   }
   const base={protocol:c.protocol,firstPlan:w.firstPlan,plannedRun:run,...invalid(1)};
   good('invalid-attempt',base,{invalidAttemptEvidenceId:base.evidence.invalidAttemptEvidenceId,evidenceFileSha256:base.evidenceFileSha256,disposition:'retry-allowed'});
@@ -75,18 +137,32 @@ export function attemptCases(c,w,workRoot){
     ['pointer-bad-escape',f=>{f.evidence.validationErrors[0].jsonPointer='/records/~2';},'validationErrors.0.jsonPointer'],
     ['pointer-dangling-escape',f=>{f.evidence.validationErrors[0].jsonPointer='/records/~';},'validationErrors.0.jsonPointer'],
   ])semanticBad(base,`validation-error-${label}`,mutate,field);
-  for(const replacement of [false,true])for(const attemptNumber of [1,2,3]){
+  for(const replacement of [null,'model-retry'])for(const attemptNumber of [1,2,3]){
     const fixture={protocol:c.protocol,firstPlan:w.firstPlan,plannedRun:run,...invalid(attemptNumber,replacement)};
-    good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed'},`semantic-positive/${replacement?'replacement':'root'}/${attemptNumber}`);
+    good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed'},`semantic-positive/${replacement??'root'}/${attemptNumber}`);
     semanticBad(fixture,`${replacement}/${attemptNumber}/disposition`,f=>{f.evidence.disposition=attemptNumber===3?'retry-allowed':'attempt-limit-reached';},'disposition');
     if(replacement)for(const [label,mutate,field]of[
       ['active-ID',f=>{f.evidence.activeArtifactBeforeCampaign.artifactId='other-active';},'activeArtifactBeforeCampaign.artifactId'],
       ['active-file',f=>{f.evidence.activeArtifactBeforeCampaign.artifactFileSha256=H('other-active');},'activeArtifactBeforeCampaign.artifactFileSha256'],
       ['active-null',f=>{f.evidence.activeArtifactBeforeCampaign=null;},'activeArtifactBeforeCampaign'],
-      ['reason',f=>{f.evidence.replacementReasonCode='schema-fix';},'replacementReasonCode'],
+      ['reason',f=>{f.evidence.replacementReasonCode='not-a-reason';},'replacementReasonCode'],
       ['changed-input',f=>{f.evidence.changedInputSha256=H('different-replacement-input');},'changedInputSha256'],
     ])semanticBad(fixture,`replacement/${attemptNumber}/${label}`,mutate,field);
   }
+  // Every non-model-retry §8.1 replacement reason has an independently signed positive at
+  // every legal attempt number.  The negatives deliberately keep the evidence
+  // file/ID and campaign ID internally valid: they test authority binding,
+  // rather than detecting a stale outer hash.
+  for(const authority of replacementAuthorities.filter(row=>row.reasonCode!=='model-retry'))for(const attemptNumber of [1,2,3]){
+    const fixture={protocol:c.protocol,firstPlan:w.firstPlan,plannedRun:run,...invalid(attemptNumber,authority.reasonCode)};
+    good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:attemptNumber===3?'attempt-limit-reached':'retry-allowed'},`replacement-positive/${authority.reasonCode}/${attemptNumber}`);
+  }
+  const replacementNegativeMatrix=buildReplacementNegativeRows(c,w,rawPath);
+  assertReplacementNegatives(c,replacementNegativeMatrix);
+  registerNegativeRows(replacementNegativeMatrix.rows);
+  const attemptNegativeRows=buildAttemptNegativeRows(c,w,rawPath);
+  assertAttemptNegatives(c,attemptNegativeRows);
+  registerNegativeRows(attemptNegativeRows);
   semanticBad(base,'campaign-rehashed-kind',f=>{
     f.campaign.campaignKind='replacement-materialization';f.evidence.campaignKind=f.campaign.campaignKind;
     f.evidence.campaignIdSha256=hash(f.campaign);
@@ -106,17 +182,58 @@ export function attemptCases(c,w,workRoot){
     [['invalid','valid'],true,{state:'active-replacement',invalidEvidenceCount:1,validAttemptNumber:2,ledgerEntries:1}],
     [['invalid','invalid','invalid'],true,{state:'failed-closed',invalidEvidenceCount:3,validAttemptNumber:null,ledgerEntries:0}],
   ]){
-    const evidence=attempts.flatMap((v,i)=>v==='invalid'?[invalid(i+1,replacement)]:[]);
+    const evidence=attempts.flatMap((v,i)=>v==='invalid'?[invalid(i+1,replacement?'model-retry':null)]:[]);
     const validIndex=attempts.indexOf('valid'),validWrapper=validIndex<0?null:clone(run);
-    if(validWrapper){validWrapper.header.generator.attemptNumber=validIndex+1;validWrapper.campaign=invalid(1,replacement).campaign;validWrapper.header.generator.campaignIdSha256=hash(validWrapper.campaign);if(replacement)validWrapper.header.artifactId='replacement-annotation';validWrapper.bytes=jsonlArtifact(validWrapper);validWrapper.fileSha256=sha(validWrapper.bytes);}
-    const fixture={protocol:c.protocol,firstPlan:w.firstPlan,campaign:invalid(1,replacement).campaign,submissions:attempts.map((state,i)=>({attemptNumber:i+1,state,freshContext:true})),invalidEvidence:evidence,validWrapper,activeBefore:replacement?{artifactId:run.header.artifactId,fileSha256:run.fileSha256}:null,atomicReplacement:replacement,activeDuringInvalid:replacement?run.header.artifactId:null,requiredAnnotationRoot:true,failurePolicy:'stop-pilot',invalidEvidenceInLedger:[],invalidEvidenceInSnapshots:[]};
-    good('attempt-campaign',fixture,{...expected,activeArtifactId:validWrapper?.header.artifactId??(replacement?run.header.artifactId:null)});
+    if(validWrapper){validWrapper.header.generator.attemptNumber=validIndex+1;validWrapper.campaign=invalid(1,replacement?'model-retry':null).campaign;validWrapper.header.generator.campaignIdSha256=hash(validWrapper.campaign);if(replacement)validWrapper.header.artifactId='replacement-annotation';validWrapper.bytes=jsonlArtifact(validWrapper);validWrapper.fileSha256=sha(validWrapper.bytes);}
+    const fixture={protocol:c.protocol,firstPlan:w.firstPlan,campaign:invalid(1,replacement?'model-retry':null).campaign,submissions:attempts.map((state,i)=>({attemptNumber:i+1,state,freshContext:true})),invalidEvidence:evidence,validWrapper,activeBefore:replacement?{artifactId:run.header.artifactId,fileSha256:run.fileSha256}:null,atomicReplacement:replacement,activeDuringInvalid:replacement?run.header.artifactId:null,requiredAnnotationRoot:true,failurePolicy:'stop-pilot',invalidEvidenceInLedger:[],invalidEvidenceInSnapshots:[]};
+    // Historical mutation cases below retain their coverage.  The D-20
+    // positive contract is deliberately represented only by the unique 18-row
+    // matrix, so this overlapping historical positive is not registered.
+    assert.equal(fixture.invalidEvidence.length,expected.invalidEvidenceCount);
     for(const [label,fn,field]of[
       ['zero',f=>{f.submissions[0].attemptNumber=0;},'attemptNumber'],['four',f=>{f.submissions.push({attemptNumber:4,state:'valid',freshContext:true});},'attemptNumber'],['duplicate',f=>{f.submissions.push(clone(f.submissions[0]));},'attemptNumber'],['gap',f=>{f.submissions[0].attemptNumber=2;},'attemptNumber'],['stale-context',f=>{f.submissions[0].freshContext=false;},'freshContext'],['changed-input',f=>{f.campaign.orderedInputSha256=H('changed');},'orderedInputSha256'],['ledger-injection',f=>{f.invalidEvidenceInLedger=[H('invalid-attempt')];},'invalidEvidenceInLedger'],['snapshot-injection',f=>{f.invalidEvidenceInSnapshots=[H('invalid-attempt')];},'invalidEvidenceInSnapshots'],
     ])bad('attempt-campaign',fixture,fn,'attempt-campaign-invalid',field,'RangeError',`${replacement}/${attempts.join('-')}/${label}`);
     if(validWrapper&&evidence.length)bad('attempt-campaign',fixture,f=>{f.validWrapper.header.generator.attemptNumber=1;},'attempt-number-double-use','attemptNumber');
     if(replacement)bad('attempt-campaign',fixture,f=>{f.activeDuringInvalid='replacement-annotation';},'replacement-not-atomic','activeDuringInvalid');
   }
+  // This is intentionally not in the normal Green registry.  It is the one
+  // D-20 Red probe: everything is re-signed after changing only evidence #2
+  // from attempt 2 to attempt 1, so a validator must reject duplicate evidence
+  // numbering rather than a stale ID, bytes or file hash.
+  const firstInvalid=invalid(1,null),secondInvalid=invalid(2,null);secondInvalid.evidence.attemptNumber=1;rehashEvidence(secondInvalid);
+  const validWrapper=clone(run);validWrapper.header.generator.attemptNumber=3;validWrapper.campaign=firstInvalid.campaign;validWrapper.header.generator.campaignIdSha256=hash(firstInvalid.campaign);validWrapper.bytes=jsonlArtifact(validWrapper);validWrapper.fileSha256=sha(validWrapper.bytes);
+  duplicateInvalidEvidenceProbe={protocol:c.protocol,firstPlan:w.firstPlan,campaign:firstInvalid.campaign,submissions:[{attemptNumber:1,state:'invalid',freshContext:true},{attemptNumber:2,state:'invalid',freshContext:true},{attemptNumber:3,state:'valid',freshContext:true}],invalidEvidence:[firstInvalid,secondInvalid],validWrapper,activeBefore:null,atomicReplacement:false,activeDuringInvalid:null,requiredAnnotationRoot:true,failurePolicy:'stop-pilot',invalidEvidenceInLedger:[],invalidEvidenceInSnapshots:[]};
+  const transitionShapes=[
+    {name:'valid-1',attempts:['valid'],state:'active'},
+    {name:'invalid-1-retryable-2',attempts:['invalid'],state:'retryable-2'},
+    {name:'invalid-1-valid-2',attempts:['invalid','valid'],state:'active'},
+    {name:'invalid-1-invalid-2-retryable-3',attempts:['invalid','invalid'],state:'retryable-3'},
+    {name:'invalid-1-invalid-2-valid-3',attempts:['invalid','invalid','valid'],state:'active'},
+    {name:'invalid-1-invalid-2-invalid-3-failed-closed',attempts:['invalid','invalid','invalid'],state:'failed-closed'},
+  ];
+  const transitionFixtureHashes=[],transitionRows=[];
+  for(const reason of [null,'model-retry','input-change'])for(const transition of transitionShapes){
+    const {attempts}=transition;
+    const replacement=reason!==null,invalidEvidence=attempts.flatMap((state,index)=>state==='invalid'?[invalid(index+1,reason)]:[]),validIndex=attempts.indexOf('valid');
+    const campaign=invalid(1,reason).campaign;
+    const wrapper=validIndex<0?null:materializeValidWrapper({run,firstPlan:w.firstPlan,campaign,promptChain:reason==='input-change'?replacementSources['input-change'].chain:null,attemptNumber:validIndex+1,artifactId:replacement?`replacement-${reason}`:run.header.artifactId});
+    if(wrapper)assertValidWrapper({contract:c,firstPlan:w.firstPlan,run,wrapper,campaign,promptChain:reason==='input-change'?replacementSources['input-change'].chain:null,attemptNumber:validIndex+1});
+    if(reason==='input-change'&&wrapper){
+      const source=replacementSources['input-change'];
+      assert.equal(hash(wrapper.table),source.tableObjectSha256);
+      assert.equal(wrapper.header.generator.promptVariablesObjectSha256,source.prompt.variablesObjectSha256);
+      assert.equal(wrapper.header.generator.renderedPromptEvidenceObjectSha256,hash(source.prompt.evidence));
+      assert.equal(wrapper.campaign.batchInputTableObjectSha256,source.tableObjectSha256);
+    }
+    const failed=transition.state==='failed-closed',fixture={protocol:c.protocol,firstPlan:w.firstPlan,campaign,submissions:attempts.map((state,index)=>({attemptNumber:index+1,state,freshContext:true})),invalidEvidence,validWrapper:wrapper,activeBefore:replacement?{artifactId:run.header.artifactId,fileSha256:run.fileSha256}:null,atomicReplacement:replacement,activeDuringInvalid:replacement?run.header.artifactId:null,requiredAnnotationRoot:true,failurePolicy:'stop-pilot',invalidEvidenceInLedger:[],invalidEvidenceInSnapshots:[]};
+    const priorState=attempts.length===1?'planned':attempts.length===2?'retryable-2':'retryable-3',acceptedAttempt=validIndex<0?null:validIndex+1,requiredEvidenceNumbers=invalidEvidence.map(e=>e.evidence.attemptNumber);
+    transitionFixtureHashes.push(hash(fixture));transitionRows.push({reason:reason??'root',name:transition.name,priorState,acceptedAttempt,requiredEvidenceNumbers,resultingState:transition.state});
+    good('attempt-state-transition',fixture,{state:transition.state==='active'?(replacement?'active-replacement':'active-root'):transition.state,invalidEvidenceCount:invalidEvidence.length,validAttemptNumber:acceptedAttempt,ledgerEntries:replacement&&transition.state==='active'?1:0,activeArtifactId:wrapper?.header.artifactId??(replacement?run.header.artifactId:null)},`${reason??'root'}/${transition.name}/prior=${priorState}/accepted=${acceptedAttempt??'none'}/evidence=${requiredEvidenceNumbers.join(',')||'none'}`);
+  }
+  assert.equal(transitionRows.length,18);assert.equal(new Set(transitionRows.map(row=>`${row.reason}/${row.name}`)).size,18);assert.equal(new Set(transitionFixtureHashes).size,18);
+  for(const reason of ['root','model-retry','input-change'])assert.deepEqual(transitionRows.filter(row=>row.reason===reason).map(row=>[row.name,row.priorState,row.acceptedAttempt,row.requiredEvidenceNumbers,row.resultingState]),[
+    ['valid-1','planned',1,[],'active'],['invalid-1-retryable-2','planned',null,[1],'retryable-2'],['invalid-1-valid-2','retryable-2',2,[1],'active'],['invalid-1-invalid-2-retryable-3','retryable-2',null,[1,2],'retryable-3'],['invalid-1-invalid-2-valid-3','retryable-3',3,[1,2],'active'],['invalid-1-invalid-2-invalid-3-failed-closed','retryable-3',null,[1,2,3],'failed-closed'],
+  ]);
   for(const [a,b,d]of[[0,0,0],[0,0,1],[0,1,1],[0,1,2]]){
     const fixture=clone(base);fixture.evidence.run.startedAtUtc=utc(a);fixture.evidence.run.completedAtUtc=utc(b);fixture.evidence.run.responseCapturedAtUtc=utc(d);rehashEvidence(fixture);good('invalid-attempt',fixture,{invalidAttemptEvidenceId:fixture.evidence.invalidAttemptEvidenceId,evidenceFileSha256:fixture.evidenceFileSha256,disposition:'retry-allowed'},`utc-${a}${b}${d}`);
   }
@@ -143,6 +260,89 @@ export function attemptCases(c,w,workRoot){
   bad('attempt-fail-closed',adjudicationFail,f=>{f.nextPlan=f.previousPlan;},'new-skipped-plan-required','nextPlan');
 }
 function rehashEvidence(f){const{invalidAttemptEvidenceId,...body}=f.evidence;void invalidAttemptEvidenceId;f.evidence.invalidAttemptEvidenceId=whash('invalid-attempt-evidence-id',{evidenceWithoutInvalidAttemptEvidenceId:body});f.evidenceFilename=`${f.evidence.invalidAttemptEvidenceId}.json`;f.evidenceBytes=fileBytes(f.evidence);f.evidenceFileSha256=sha(f.evidenceBytes);}
+
+// A schema/template semantic change is not an in-plan replacement.  This
+// concrete terminal sidecar keeps the old and new plans deliberately separate.
+function legacyReissueCases(c,w){
+  const buildReissue=(reasonCode,cause,oldSecondPlan)=>{
+    const newSchema=clone(c.bundle.annotationPayloadSchemaFileSha256.object);
+    const newTemplate=templates.annotator+(reasonCode==='prompt-change'?`\n# reissue-${cause}\n`:'');
+    if(reasonCode==='schema-change')newSchema.$id=`${newSchema.$id}/reissue-${cause}`;
+    const newSchemaBytes=fileBytes(newSchema),newSchemaFileSha256=sha(newSchemaBytes),newSchemaObjectSha256=hash(newSchema);
+    const newProtocol=clone(c.protocol);newProtocol.schemaFiles.annotationPayloadSchemaFileSha256=newSchemaFileSha256;newProtocol.prompts.annotatorTemplateFileSha256=sha(newTemplate);
+    if(cause==='decision-rules-mapping')newProtocol.decisionContract.growthTruthTableObjectSha256=hash([...c.tables.growth].reverse());
+    const newSelection={...clone(c.plan),protocolObjectSha256:hash(newProtocol)};
+    const newManifest={...clone(c.manifest),protocolObjectSha256:hash(newProtocol),selectionPlanObjectSha256:hash(newSelection)};
+    const newRestricted={...clone(c.restricted),protocolObjectSha256:hash(newProtocol),selectionPlanObjectSha256:hash(newSelection),blindedManifestObjectSha256:hash(newManifest)};
+    const newTable={...clone(c.inputTables[0]),protocolObjectSha256:hash(newProtocol),blindedManifestObjectSha256:hash(newManifest)};
+    const newVariables={...clone(c.prompts[0].variables),protocolObjectSha256:hash(newProtocol),protocolCanonicalJson:jcs(newProtocol),schemaFileSha256:newSchemaFileSha256,modelPayloadSchemaObjectSha256:newSchemaObjectSha256,modelPayloadSchemaCanonicalJson:jcs(newSchema),batchInputTableObjectSha256:hash(newTable),batchInputTableCanonicalJson:jcs(newTable)};
+    const newRendered=renderExactTemplate(newTemplate,newVariables),newEvidence={...clone(c.prompts[0].evidence),protocolObjectSha256:hash(newProtocol),promptTemplateFileSha256:sha(newTemplate),promptVariablesObjectSha256:hash(newVariables),schemaFileSha256:newSchemaFileSha256,modelPayloadSchemaObjectSha256:newSchemaObjectSha256,renderedPromptSha256:sha(newRendered)};
+    const newFirstPlan={...clone(w.firstPlan),protocolObjectSha256:hash(newProtocol),blindedManifestObjectSha256:hash(newManifest),slots:w.firstPlan.slots.map(slot=>({...slot,rootArtifactId:`reissued-${reasonCode}-${slot.rootArtifactId}`}))};
+    const withoutId={schemaVersion:'snow-crystal-morphology-pilot-plan-closure/1',contractId:CONTRACT,protocolId:PROTOCOL,oldProtocolObjectSha256:hash(c.protocol),oldSelectionPlanObjectSha256:hash(c.plan),oldAnnotationConsensusSlotPlanObjectSha256:hash(w.firstPlan),oldPostConsensusRouteSlotPlanObjectSha256:oldSecondPlan?hash(oldSecondPlan):null,oldSupersessionLedgerFileSha256:w.emptyLedger.fileSha256,oldCutoffSequence:0,reasonCode,closedAtUtc:utc(20),terminalState:'invalidated-reissue-required',furtherModelSubmissionsAllowed:false,furtherRootMaterializationAllowed:false};
+    const closure={...withoutId,planClosureId:whash('plan-closure-id',{closureWithoutPlanClosureId:withoutId})},closureBytes=fileBytes(closure),closureFileSha256=sha(closureBytes),closureFilename=`${closure.planClosureId}.json`;
+    const freezeOrder=['old-plan-closed','old-ledger-frozen','closure-frozen','new-schema-template-frozen','new-protocol-frozen','new-selection-manifest-map-frozen','new-input-prompt-frozen','new-first-plan-unexecuted'];
+    const duplicateProbe=d20DuplicateInvalidEvidenceProbe();
+    const oldObjects=[c.protocol,c.plan,w.firstPlan,oldSecondPlan,w.emptyLedger,w.snapshot,w.upstreamFresh,w.upstreamFreshBatch,w.upstreamSkipped,...w.runs,w.consensus,w.adjudication,...w.approvals,...w.skippedApprovals,w.coverage,w.skippedCoverage,...w.runs.map(run=>run.campaign),...(duplicateProbe?.invalidEvidence??[])].filter(Boolean);
+    const newObjects=[newSchema,newProtocol,newSelection,newManifest,newRestricted,newTable,newVariables,newEvidence,newFirstPlan];
+    const inventory=objects=>objects.flatMap(object=>[{objectSha256:hash(object),fileSha256:object.fileSha256??null,artifactId:object.header?.artifactId??null,bytesSha256:object.bytes?sha(object.bytes):null}]);
+    const oldInventory=inventory(oldObjects),newInventory=inventory(newObjects);
+    const oldIds=new Set([...oldInventory.flatMap(item=>[item.objectSha256,item.fileSha256,item.bytesSha256,item.artifactId].filter(Boolean)),...w.firstPlan.slots.map(s=>s.rootArtifactId)]),newIds=new Set([...newInventory.flatMap(item=>[item.objectSha256,item.fileSha256,item.bytesSha256,item.artifactId].filter(Boolean)),newSchemaFileSha256,newSchemaObjectSha256,...newFirstPlan.slots.map(s=>s.rootArtifactId)]);
+    assert.equal(closure.planClosureId,whash('plan-closure-id',{closureWithoutPlanClosureId:withoutId}));assert.equal(closureBytes,`${jcs(closure)}\n`);assert.equal(closureFileSha256,sha(closureBytes));assert.equal([...newIds].filter(id=>oldIds.has(id)).length,0);assert.equal(sha(newTemplate),newProtocol.prompts.annotatorTemplateFileSha256);assert.equal(sha(newRendered),newEvidence.renderedPromptSha256);assert.equal(newRendered,renderExactTemplate(newTemplate,newVariables));
+    return{protocol:c.protocol,selectionPlan:c.plan,oldFirstPlan:w.firstPlan,oldSecondPlan,oldLedger:w.emptyLedger,closure,closureBytes,closureFileSha256,closureFilename,freezeOrder,newSchema:{object:newSchema,bytes:newSchemaBytes,fileSha256:newSchemaFileSha256,objectSha256:newSchemaObjectSha256},newTemplateBytes:newTemplate,newProtocol,newSelection,newManifest,newRestricted,newTable,newVariables,newEvidence,newRendered,newFirstPlan,oldInventory,newInventory,oldIds:[...oldIds].sort(),newIds:[...newIds].sort(),oldSubmissionCandidate:w.runs[0],oldRootCandidate:w.firstPlan.slots[0],oldLedgerCandidate:w.emptyLedger,oldApprovalCandidate:w.approvals[0],oldCoverageCandidate:w.coverage,newPlanMaterializedRoots:[],newPlanRuns:[],newPlanCampaigns:[],newPlanInvalidEvidence:[],newPlanLedgerEntries:[],newPlanSnapshots:[],newPlanSecondPlans:[],newPlanApprovals:[],newPlanCoverage:[],oldPlanSubmissionsAfterClosure:[],oldPlanRootsAfterClosure:[],oldPlanLedgerEntriesAfterClosure:[],crossPlanReferences:[]};
+  };
+  const causes=[['schema-change','schema-reference'],['schema-change','decision-rules-mapping'],['prompt-change','placeholder'],['prompt-change','renderer'],['prompt-change','instruction-semantics']];
+  for(const [reasonCode,cause]of causes)for(const oldSecondPlan of [null,w.freshPlan]){
+    const fixture=buildReissue(reasonCode,cause,oldSecondPlan);good('plan-reissue',fixture,true,`${cause}/${oldSecondPlan?'second-plan':'no-second-plan'}`);good('plan-closure',{closure:fixture.closure},fixture.closure.planClosureId,`${cause}/${oldSecondPlan?'second-plan':'no-second-plan'}`);
+    for(const [label,mutate,field]of[
+    ['id',f=>{f.closure.planClosureId=H('wrong-closure-id');},'planClosureId'],['bytes',f=>{f.closureBytes=f.closureBytes.replace('{','[');},'closureBytes'],['file-hash',f=>{f.closureFileSha256=H('wrong-closure-file');},'closureFileSha256'],['filename',f=>{f.closureFilename='wrong.json';},'closureFilename'],['terminal',f=>{f.closure.terminalState='open';},'terminalState'],['reason',f=>{f.closure.reasonCode='schema-fix';},'reasonCode'],['model-allowed',f=>{f.closure.furtherModelSubmissionsAllowed=true;},'furtherModelSubmissionsAllowed'],['root-allowed',f=>{f.closure.furtherRootMaterializationAllowed=true;},'furtherRootMaterializationAllowed'],['new-reference',f=>{f.closure.newProtocolObjectSha256=hash(f.newProtocol);},'newProtocolObjectSha256'],['old-submission',f=>{f.oldPlanSubmissionsAfterClosure=[f.oldSubmissionCandidate];},'oldPlanSubmissionsAfterClosure'],['old-root',f=>{f.oldPlanRootsAfterClosure=[f.oldRootCandidate];},'oldPlanRootsAfterClosure'],['old-ledger',f=>{f.oldPlanLedgerEntriesAfterClosure=[f.oldLedgerCandidate];},'oldPlanLedgerEntriesAfterClosure'],['new-root',f=>{f.newPlanMaterializedRoots=[f.oldRootCandidate];},'newPlanMaterializedRoots'],['cross-plan',f=>{f.crossPlanReferences=[{from:f.oldApprovalCandidate,to:f.newFirstPlan}];},'crossPlanReferences'],
+      ['old-artifact-reuse',f=>{f.newFirstPlan.slots[0].rootArtifactId=f.oldFirstPlan.slots[0].rootArtifactId;},'rootArtifactId'],['freeze-order',f=>{[f.freezeOrder[0],f.freezeOrder[3]]=[f.freezeOrder[3],f.freezeOrder[0]];},'freezeOrder'],
+    ])bad('plan-reissue',fixture,mutate,'protocol-reissue-required',field,'RangeError',`${cause}/${label}`);
+  }
+}
+
+// D-21 replaces the formerly monolithic reissue fixture.  Keep the legacy
+// helper unreachable until the next cleanup commit, so this patch does not
+// discard pre-existing negative coverage while every registered D-20 fixture
+// is derived by the pure builders above.
+export function reissueCases(c,w){
+  const causes=REISSUE_CAUSES;
+  const skippedGraph=materializeOldGraph(c,w,w.skippedPlan);
+  assertOldGraphPositive(skippedGraph,collectArtifactInventory({oldGraph:skippedGraph,newGraph:skippedGraph}).oldInventory);
+  for(const cause of causes)for(const oldSecondPlan of [null,w.freshPlan]){
+    // The old graph is deliberately passed as data, not read through module
+    // state.  It includes every family that could otherwise be silently
+    // carried across a plan boundary.
+    const oldGraph=materializeOldGraph(c,w,oldSecondPlan);
+    const oldInvalidEvidence=oldGraph.invalidEvidence;
+    const built=materializeReissuePlan({contract:c,workflow:w,cause,oldSecondPlan,oldGraph});
+    assertReissuePositive(built);
+    const fixture={
+      protocol:c.protocol,selectionPlan:c.plan,oldFirstPlan:w.firstPlan,oldSecondPlan,oldLedger:w.emptyLedger,
+      closure:built.closure,closureBytes:built.closureBytes,closureFileSha256:built.closureFileSha256,closureFilename:built.closureFilename,
+      freezeOrder:['old-plan-closed','old-ledger-frozen','closure-frozen','new-authority-frozen','new-protocol-frozen','new-selection-manifest-map-frozen','new-input-prompt-frozen','new-first-plan-unexecuted'],
+      newSchema:{object:built.schema,bytes:fileBytes(built.schema),fileSha256:sha(fileBytes(built.schema)),objectSha256:hash(built.schema)},newTemplateBytes:built.template,
+      newProtocol:built.protocol,newSelection:built.selection,newManifest:built.manifest,newRestricted:built.restricted,newTable:built.table,
+      newVariables:built.prompt.variables,newEvidence:built.prompt.evidence,newRendered:built.prompt.rendered,newFirstPlan:built.firstPlan,
+      oldInventory:built.oldInventory,newInventory:built.newInventory,oldIds:built.oldIds,newIds:built.newIds,
+      oldPlanSubmissionsAfterClosure:[],oldPlanRootsAfterClosure:[],oldPlanLedgerEntriesAfterClosure:[],crossPlanReferences:[],
+      newPlanMaterializedRoots:[],newPlanRuns:[],newPlanCampaigns:[],newPlanInvalidEvidence:[],newPlanLedgerEntries:[],newPlanSnapshots:[],newPlanSecondPlans:[],newPlanApprovals:[],newPlanCoverage:[],
+      oldSubmissionCandidate:w.runs[0],oldRootCandidate:w.firstPlan.slots[0],oldLedgerCandidate:w.emptyLedger,oldCampaignCandidate:w.runs[0].campaign,oldInvalidEvidenceCandidate:oldInvalidEvidence[0],oldSnapshotCandidate:w.snapshot,oldApprovalCandidate:w.approvals[0],oldCoverageCandidate:w.coverage,
+    };
+    // Source/template bytes can be immutable shared inputs; executable roots
+    // are the no-reuse boundary for the newly issued plan.
+    assert.equal(fixture.newFirstPlan.slots.filter(slot=>fixture.oldIds.includes(slot.rootArtifactId)).length,0);
+    assert.equal(fixture.newFirstPlan.slots.length,7);
+    good('plan-reissue',fixture,true,`${cause.key}/${oldSecondPlan?'second-plan':'no-second-plan'}`);
+    good('plan-closure',{closure:fixture.closure},fixture.closure.planClosureId,`${cause.key}/${oldSecondPlan?'second-plan':'no-second-plan'}`);
+    // Boundary negatives are independent of the six source-change positives.
+    // Exercise both old second-plan shapes once, avoiding duplicate matrices.
+    if(cause.key===REISSUE_CAUSES[0].key){
+      const negativeRows=buildReissueNegativeRows(c,w,built);
+      assertReissueNegatives(c,negativeRows,oldSecondPlan!==null);
+      registerNegativeRows(negativeRows);
+    }
+  }
+}
 
 export function slotCases(c,w){
   const roots={protocol:c.protocol,manifest:c.manifest,restrictedMap:c.restricted,firstPlan:w.firstPlan,runs:w.runs,consensus:w.consensus,snapshot:w.snapshot,ledger:w.emptyLedger,secondPlan:w.freshPlan};good('slot-plans',roots,true);

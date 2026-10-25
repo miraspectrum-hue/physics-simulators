@@ -43,6 +43,374 @@ conditions: []
 rollback_to: design
 summary: "一次資料v1について206観測、PDF 12,317,042 bytes、SHA-256、温度±0.2°C、過飽和度0.8–1.2倍、既知成長時間、image scale、代表例の主観選択、2D投影解釈の熟練依存を独立照合した。FOVを結晶寸法と呼ばない分離、source値とproject annotationのprovenance、206点監査、condition-group split、train CDF再利用、RFC 8785 canonical hash、time/FOV/実寸のloss除外、著作物境界、latticeCellCount(115)=40021、seed生成、次元式は妥当である。しかしD-03はloss契約を変える未解決の人間判断であり、checkpoint対応、抽出証跡、loss式、holdout一回性にも再現性を妨げる設計欠落が残るため承認できない。"
 ```
+
+## test-code review: D-22 negative-matrix intermediate approval
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-negative-builders.mjs
+    hash: sha256:fa47ea8d81e35e768162b4bfbce785aef0c54b61d3fc244cb918daf5c230ee9c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-negative-selfcheck.mjs
+    hash: sha256:67d530ceb4bfba9d352c99cd01c209f8b0e8b35bc1adfab030722f5a6b5be9f1
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:ff20e2d344ed6508c354519445b6d4bdd2b2fdf46a4c87b776485aed35e17489
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:4fc791f181f6f3f86a5e3e48a88a4a812ed23e781a66be783fa8ed63e86eaa22
+findings: []
+conditions: []
+rollback_to: none
+summary: "Approved D-22 substage B: independent self-checks prove 48 replacement rows with 14 authority negatives, 2 correct controls, and 6 fully signed TypeError enum probes; 72 state-attempt rows; 66+67 reissue rows; and exactly 253 unique registry labels. Concrete schemas, signatures, artifact bytes, runtime shapes, and the isolated fully re-signed duplicate-evidence probe were independently checked. Typecheck passed; targeted Vitest passed 14 tests and failed only at the intentional duplicate-evidence expected Red. No skips or assertion weakening were introduced; the 30-second reissue timeout is supported by the observed 15.4-second exhaustive check. Approved positive modules remain byte-identical at d077df5d64ad79c059fd3317b620e97c31d8420fe5ca5ad4ebf3da046c6fee13 and 40a4ac441da6e06b566d22f63316106db3815a08b33831587ed447378ccbfbe0."
+```
+
+## test-code review: D-20 first pass
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:0a166d2895d05fa36adcb2e87fb46b20e67f6f0af7987a9239eee8f602408db0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:d464035030b61de762d180d41709a5f4ba5307216aef837d6539014a01ce1c32
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:6d813aca2cdd86ce5c317acc4a858b01c5b62529202ea6c63939e04320064a43
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:221
+    problem: 18件とされる状態遷移fixtureのうち一意なのは12件だけで、各campaignの中間retryable状態が検査されていない。
+    evidence: transitionShapesはinvalid-validとinvalid-invalid-invalidを各2回登録する一方、plannedからinvalid attempt 1を受理してretryable-2になる系列と、先行evidence 1付きでinvalid attempt 2を受理してretryable-3になる系列を持たない。生成registryを独立集計するとattempt-state-transitionは18件だがJSONとして一意なfixtureは12件だった。TESTCASES.md 1512-1513およびprotocolの3 campaign×6状態遷移を満たさず、件数assertionだけが通る。
+    required_change: 各campaignについてvalid-1、invalid-1、invalid-1→valid-2、invalid-1→invalid-2、invalid-1/2→valid-3、invalid-1/2→invalid-3の6個を異なるfixtureと期待stateで構成し、fixture hashの重複が0であることもassertする。
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:258
+    problem: plan再発行のpositive fixtureが規範の具体的な再発行chainを表さず、浅い自己申告配列だけで未実行・非再利用を判定している。
+    evidence: 新protocolはHラベル由来のhashしか存在せず、新schema/template、selection、manifest/restricted map、batch input、prompt variables/evidenceの実objectやfreeze順がない。crossPlanReferences等の空配列も新DAGから導出されないため、新第一plan内部で旧ID/hashを再利用しても検出できない。positive reasonはschema-changeだけで、prompt-change、旧第二planがnullの経路、closure前後時刻の旧plan受付拒否、旧新ID/hash集合の完全非交差も未検査である。これはTESTCASES.md 1557-1583の主要条件を満たさない。
+    required_change: schema-changeとprompt-changeの両方について、具体的な新schema/templateから新protocol、selection、manifest/map、input、prompt evidence、第一planまでを実object/hashで構成する。freeze順と旧新ID/hash集合をartifactから導出し、第二planのnull/非null、closure後受付、旧成果物再利用、cross-plan edgeの各負例を追加する。
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:148
+    problem: model-retryとinput-changeの禁止変更matrixが不足し、authority hashの差替え以外の意味違反を検出できない。
+    evidence: input-change positiveはattachmentSlotだけを変えて派生promptを再生成しているが、負例は主にchangedInputSha256の交換・stale値・null化である。replacementInputsの画像file/RGBA hash、ID、順序、schema/template、prompt variables直接編集を、campaign/evidenceまで再署名した状態で試していない。model-retryでもprompt/inputを整合的に1 byte変更する負例がなく、schema-fixとprompt-changeをreplacement reasonとしてfully re-signedで拒否するfixtureもない。TESTCASES.md 1544-1555の必須matrixを満たさない。
+    required_change: 実object/bytes由来のauthorityを使い、model-retryのprompt/input変更、input-changeの画像hash・ID・順序・schema・template変更、variablesだけの直接変更、schema-fix・prompt-change reasonをcampaign/evidence/ID/file hashまで再計算した独立負例として追加する。
+conditions: []
+rollback_to: test-code
+summary: node --checkとtypecheckは成功し、対象Vitestは意図された14 pass・1件の決定論的named Redになった。23 schema、selectionのPDF直接field、再署名済みduplicate-evidence Red自体は追加されているが、状態遷移、plan再発行、replacement invariantの必須coverageが不足するためtest-code gateは不合格。
+```
+
+## test-code review: D-20 second pass
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:0a166d2895d05fa36adcb2e87fb46b20e67f6f0af7987a9239eee8f602408db0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:e51d3dc817b06c494fe3d547116bbf81b1a5e3e9585b905ab7bbda5fc9eb9d52
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:c523979d969c40a2cf53e119504b50e3fbc796b277ecd49d61846c54e8393f6b
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:224
+    problem: >-
+      18件のstate-sensitive fixtureは相互には一意だが、既存の6件の
+      attempt-campaign正例と重複し、TESTCASESが要求するfixture hash重複0を満たさない。
+    evidence: >-
+      独立にfixtureを生成してJSON表現をSHA-256化すると、既存6件と新18件の計24件は
+      19 hashしか持たない。root/valid-1、root/invalid-1-valid-2、
+      root/invalid-1-invalid-2-valid-3、root/3-invalid-failed-closed、
+      model-retry/3-invalid-failed-closedの5組が完全重複する。
+      line 268のassertは新18件だけを検査し、全登録fixtureの重複を検出しない。
+    required_change: >-
+      root、model-retry、input-changeの各6遷移を単一の規範matrixとして登録するか、
+      重複する旧正例を除去する。全attempt campaign/state fixtureのunionについて、
+      exact label、直前state、必要なevidence番号・件数、fixture hash一意性をassertする。
+  - id: R-002
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:299
+    problem: >-
+      prompt-changeの2つのpositive reissue chainは、新template bytesと異なる旧templateから
+      rendered promptを生成しており、規範上有効な再発行fixtureではない。
+    evidence: >-
+      line 301はannotator templateへLFを追加し、そのhashをnewProtocolとnewEvidenceへ格納するが、
+      line 310のrender('annotator', newVariables)はpilot-oracle.mjsの固定
+      templates.annotatorを使用する。したがってnewEvidence.promptTemplateFileSha256が指す
+      bytesからnewRendered/newEvidence.renderedPromptSha256を再現できない。
+    required_change: >-
+      exact newTemplate bytesを入力に取る独立rendererでrendered promptを生成し、
+      template、variables、rendered evidence、rendered prompt、protocol、planの全hashを
+      実bytes/objectから再計算して相互一致をassertする。
+  - id: R-003
+    severity: critical
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:312
+    problem: >-
+      PlanClosureのterminal受付拒否、old/new集合の分離、cross-plan再利用禁止が、
+      実artifact registryではなく不完全な手作業集合と空配列・ラベルhashで表現されている。
+    evidence: >-
+      oldSecondPlanが存在する2 fixtureでもoldIdsにそのobject hashが含まれず、旧run/active
+      artifact、campaign/evidence、snapshot、approval、coverageもoldIdsの対象外である。
+      oldPlanSubmissionsAfterClosure等は実submission/root/ledger objectではなく空配列へ
+      H(label)を加えるだけで、closure前後UTC双方の受付拒否を検査しない。
+      crossPlanReferencesも実ledger/root/approval/coverage参照ではない。
+      new-reference mutationは未定義のf.newProtocolObjectSha256を代入しており、
+      具体的な新plan hash参照を作らない。さらにschema/template変更原因は各1種類だけで、
+      TESTCASESが要求するschema reference、placeholder、renderer、instruction semantics、
+      判断規則・mappingの各単独変更を網羅しない。
+    required_change: >-
+      旧・新artifact inventoryを実object、canonical bytes、object/file hashから導出し、
+      第二planを含む全旧実行artifactと新未実行planの集合が非交差であることを検査する。
+      実submission/root/ledger/approval/coverageを使ったclosure後受付、cross-plan
+      ledger/root lineage、旧成果物再利用、新DAGからclosure参照の負例を追加する。
+      新planは7 planned root IDを持つ一方、materialized root/campaign/run/ledger/snapshot/
+      second plan/approval/coverageが0件であることを実registryから導出する。
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:152
+    problem: >-
+      replacement禁止変更matrixが完全再署名されたartifact chainになっておらず、
+      model-retry固有のnull境界とenum-valid reason不一致も欠けている。
+    evidence: >-
+      input-changeのstale authorityはreplacementSources.staleの実体をfixtureへ保存せず、
+      model-retryのstale/wrong authorityもw.runs[1]とw.consensusのfile hashだけを持つ。
+      model-retry template/input mutationはschema、PromptVariables、RenderedPromptEvidence、
+      rendered promptを再導出せず参照fieldだけを変更する。input-changeのschema/template/
+      direct-variables mutationも同様に全chainを更新していない。campaign/evidence双方を
+      更新する4個のnull mutationはinput-changeにしか生成されず、model-retryにはない。
+      campaignとevidenceがmodel-retry/input-changeで食い違うenum-valid負例もなく、
+      not-a-reasonと禁止enumだけに依存する。
+    required_change: >-
+      各mutation fixtureへstale/future/wrong authorityの実object・bytesを含め、
+      table、ordered input、schema、template、variables、rendered evidence/prompt、
+      campaign、evidence ID/fileを一貫して再計算する。model-retryとinput-changeの双方で
+      active ID、active file、reason、changed inputを1項目ずつ共同null化し、
+      enum-valid reason不一致、schema-fix、prompt-change、unknown reasonを独立検査する。
+conditions: []
+rollback_to: test-code
+summary: >-
+  23 schema bundle、PilotSelectionPlanV1のsourcePdfSha256直接結合、
+  18種類のstate形状、fully re-signed duplicate-invalid-evidence probeは追加されている。
+  node --checkとworkspace typecheckは成功し、対象Vitestは14 pass・1 failで、
+  failureは予定どおりduplicate evidence attemptを現validatorが受理したことによる
+  RangeError assertion failureだけだった。構文・型・環境failureはない。
+  ただしstate fixtureの全体重複、無効なprompt-change正例、象徴的なplan reissue境界、
+  不完全な禁止変更matrixにより、修正後validatorのGreenを正しく判定できない。
+```
+
+## test-code review: D-20 third pass
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:0a166d2895d05fa36adcb2e87fb46b20e67f6f0af7987a9239eee8f602408db0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:22f57daa09338ba6ca95f9bb40f50fbe5dbdbd4f8c05ad947a72cab8c01c1bca
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:3923a7b35dee56d33fc306c6b49d383350603fd90e9bf8213d643d19a1d555d5
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:279
+    problem: The six input-change state-transition positives use a valid wrapper cloned from the old run instead of the re-derived replacement input and prompt artifacts.
+    evidence: The fixture campaign binds promptVariablesObjectSha256 94ecb0cce92e416901b591e8cc12dddd2571bc4ac1e5992a3dac333cee7f17eb and batchInputTableObjectSha256 ba9c1d8b9f38a51dfa34d7f11c114c4f28bbcb32d158b91858db096565b14593, while its validWrapper still binds the old values a22784d3307444d08e510fe654a8b9930c44d7e0135e2f56e0a1923ab4841085 and 980b79b7ecc55f7a2dc54a21ff558691b368f43286525bda0e6603092f573f25. A validator enforcing the approved input-change contract must reject these intended positives.
+    required_change: Construct input-change valid wrappers from the changed attachment-slot table and exact-template re-rendered variables/evidence/prompt, update every corresponding header/input reference, and recompute wrapper bytes and file hash before registering all affected transitions.
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:322
+    problem: The reissue cause matrix does not contain the concrete one-change fixtures required by TC-PILOT-REISSUE-001.
+    evidence: The placeholder and renderer rows only append a comment to template bytes; their placeholder tuple and rendererId remain unchanged. The decision-rules-mapping row also changes the schema $id, so it changes two authorities. Consequently the labels do not describe the exercised changes, and template-only, placeholder, renderer, and mapping boundaries are not independently verified.
+    required_change: Build separate, concrete single-cause fixtures for schema bytes/object/reference, template bytes, placeholder tuple, renderer, instruction semantics, and decision-rule/mapping changes, then independently derive each new protocol and downstream artifact chain.
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:339
+    problem: Plan-closure binding, disjointness, post-closure rejection, and unexecuted-new-plan coverage remain incomplete.
+    evidence: The inventories omit canonical file hashes for ordinary objects and do not collect nested campaign IDs, invalid-evidence IDs/file hashes, or all old execution artifacts. Negatives do not alter old protocol/selection/first-plan/second-plan/ledger/cutoff references, do not test null versus non-null second-plan mismatch, and only populate newPlanMaterializedRoots while leaving the other eight required-zero execution collections untested. Reuse negatives cover one root ID but not old active artifacts, campaigns/evidence, snapshots, approvals, or coverage.
+    required_change: Derive audited old/new inventories from actual objects and canonical bytes, include every protected execution ID/file hash, assert a zero intersection, and add concrete one-field negatives for every closure reference/cutoff/second-plan state, every post-closure operation, all nine new-plan execution collections, and each prohibited cross-plan reuse category.
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs:835
+    problem: The generated PlanClosureV1 schema does not constrain oldCutoffSequence to a non-negative safe integer.
+    evidence: INTEGER_PROPERTIES contains cutoffSequence but not oldCutoffSequence. Independent schema checks therefore accept oldCutoffSequence values 1.5, -1, and 9007199254740992, contrary to the ledger terminal-sequence contract.
+    required_change: Add oldCutoffSequence to the integer constraint set with zero allowed, and retain explicit fractional, negative, and unsafe-integer rejection cases.
+  - id: R-005
+    severity: medium
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:222
+    problem: Out-of-enum schema-fix and prompt-change replacement reasons have the wrong expected error class.
+    evidence: semanticBad registers these cases as RangeError with invalid-attempt-evidence, while TESTCASES.md explicitly requires enum-external replacement reasons to produce TypeError.
+    required_change: Register these mutations with TypeError and the stable enum/type reason and field required by the approved test cases.
+conditions: []
+rollback_to: test-code
+summary: The targeted test run reaches the intended deterministic duplicate-evidence Red with the other 14 test blocks passing, and typecheck is Green. However, several intended positive fixtures are internally inconsistent and the reissue/closure matrices omit required semantic boundaries, so this gate cannot approve.
+```
+
+## test-code review: D-21 builder refactor first pass
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:306c69bea18acc70271cdbe6dcff38ab3e50421e4ddfb68854a2f43c2599938d
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:0ed014c1450d55bb8624343095f5bb7e6fc7bd8eecee67d349f41b2d0f7b9b43
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:9c77878d132652c035fa2feb67db1a4ff98fecf31348fff34c1acf44c17a9275
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:82e452bf516d9265ffa2d96b55d0fc6cc3cf6220a76da708b0f5273ce05c7848
+findings:
+  - id: R-D21-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:261
+    problem: The three accepting input-change transition fixtures still use a valid wrapper cloned from the unchanged original run instead of materializing the wrapper from the changed table and prompt chain.
+    evidence: Independent fixture inspection found campaign batch-input hash dcc42328d5c31926939e783143c55c6c85b4cfe16fad9ebba63d84c9b549f9bd while validWrapper.table hashes to eeef71085c8d5fd1bcf0c8ea32fb0c7068d4e626e33b3c1979b35d8423dc0cd4. Campaign prompt-variables hash is 095d74870d98bd92b68fe3abd18e96dc4422b61d7a34493523c0c3fd11262ca4 while the wrapper and its generator retain cb3a9f8c9961ea154efa43f967fa9ef509e2ef35b0bbcd6fe401dbc8f27093d9. This occurs for valid attempts 1, 2, and 3, reproducing the central synchronization defect D-21 was intended to remove.
+    required_change: Add a pure valid-wrapper materializer that consumes the replacement prompt chain and regenerates the wrapper table, prompt variables/evidence/rendered bytes, generator references, header input hashes, campaign binding, artifact bytes, and file hash. Assert every wrapper reference equals the changed campaign authority before registering all three positive histories.
+  - id: R-D21-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:79
+    problem: Replacement enum and authority negatives do not implement the approved typed, fully re-derived matrix.
+    evidence: semanticBad hard-codes RangeError for every mutation, so schema-fix, prompt-change, and unknown replacement reasons are registered as RangeError even though TESTCASES requires TypeError for enum-invalid reasons. The wrong-authority cases do not cover active file, new table, stale/future artifact, schema file, template file, and prompt-variables hash for both model-retry and input-change. The schema, template, and direct-variable mutations at lines 180-205 alter selected evidence references without rebuilding all dependent prompt, campaign, wrapper, ID, bytes, and file hashes, allowing rejection for shallow inconsistency instead of the intended semantic boundary.
+    required_change: Use separate typed negative registration for enum-invalid TypeError cases. Generate the complete 2-reason authority matrix from concrete artifacts, and for each semantic mutation rebuild and re-sign the entire affected chain so only the intended forbidden authority or reason differs.
+  - id: R-D21-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs:58
+    problem: Reissue inventories and reuse negatives are not derived from a complete concrete artifact graph, so the asserted old/new disjointness is incomplete.
+    evidence: collectArtifactInventory records fileSha256 only when the object already exposes that field and never derives SHA-256 over canonical object-plus-LF bytes; all eight new inventory entries therefore have null file hashes. The old inventory omits campaigns as independent artifacts, invalid-attempt evidence, active upstream snapshots, skipped approvals/coverage, and other protected execution materializations. The new inventory omits the changed schema and template. Several reuse negatives only append a hash to the bookkeeping newIds array, and all nine nonempty-new-plan mutations insert the old slot-plan entry regardless of the artifact kind, rather than constructing type-correct campaign, evidence, ledger, snapshot, approval, or coverage reuse.
+    required_change: Inventory every protected old and new artifact from its actual object and canonical file bytes, including object hash, file hash, artifact ID, and relevant embedded references. Include campaigns, invalid evidence, all snapshots, approvals, coverage, schema, and template authorities. Derive disjointness from those artifacts and use type-correct concrete post-closure and cross-plan reuse mutations rather than independently mutable ID lists.
+  - id: R-D21-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:369
+    problem: PlanClosure oldCutoffSequence is tested only for numeric-domain validity, not for equality with the old ledger terminal sequence.
+    evidence: The positive closure uses terminal sequence 0, while the negative cases cover only -1, 0.5, and an unsafe integer. A safe integer value of 1 remains schema-valid and is not registered as a semantic rejection, so a validator could accept a cutoff different from the ledger terminal and still pass this suite.
+    required_change: Add a fully re-signed closure negative with oldCutoffSequence set to a different safe integer, such as terminal sequence plus one, and require protocol-reissue-required at oldCutoffSequence. Retain the existing TypeError/RangeError schema-boundary cases separately.
+  - id: R-D21-005
+    severity: medium
+    location: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs:76
+    problem: The six reissue causes are not all isolated to the named authority and two prompt causes are classified as schema changes.
+    evidence: The template-bytes case appends the instruction text "Reissued instruction boundary.", so it also changes instruction semantics and overlaps the separate instruction-semantics case. The group rule assigns schema-change to placeholder-tuple and renderer even though both are prompt-rendering authorities. This prevents the six fixtures from independently proving the intended cause-to-closure-reason boundary.
+    required_change: Give each cause an explicit expected closure reason and a single authoritative source mutation. Make the template-byte mutation semantics-neutral, keep instruction wording as the separate semantic case, and classify placeholder and renderer changes under prompt-change.
+conditions: []
+rollback_to: test-code
+summary: Node syntax checks and TypeScript typecheck passed. The targeted Vitest run produced 14 passing tests and exactly the intended deterministic duplicate-evidence Red. The 23-schema bundle, direct selection PDF field, 18 distinct registered transition fixtures, and isolated probe are present. Approval is withheld because the accepting input-change wrappers remain internally inconsistent and the reissue inventories, typed authority matrix, and cutoff semantics do not yet prove the D-20 contract.
+```
+
+## test-code review: D-21 builder refactor second pass
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:1302e4cb6cac2105fd830e6b071190f49b4e7085622b15c1d89b9e180bdd2716
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:ca9abcbf190efbec1a1ca09f242e6da4c46a45e7b83351a8fa6c49b2be02f941
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:9c77878d132652c035fa2feb67db1a4ff98fecf31348fff34c1acf44c17a9275
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:82e452bf516d9265ffa2d96b55d0fc6cc3cf6220a76da708b0f5273ce05c7848
+findings:
+  - id: R-D21-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs:62
+    problem: The replacement wrapper materializer still leaves the artifact header bound to the old batch-input table for all three accepting input-change histories.
+    evidence: Independent fixture execution found attempts 1, 2, and 3 all retain header.batchInputTableObjectSha256 eeef71085c8d5fd1bcf0c8ea32fb0c7068d4e626e33b3c1979b35d8423dc0cd4, while both the materialized wrapper table and campaign bind dcc42328d5c31926939e783143c55c6c85b4cfe16fad9ebba63d84c9b549f9bd. Lines 67-85 replace the table and prompt chain but never regenerate the header batch-input reference, reproducing the synchronization defect D-21 is intended to prevent.
+    required_change: Regenerate and assert every affected wrapper header/input reference from the replacement chain, including header.batchInputTableObjectSha256, before recomputing artifact bytes and file hash; retain explicit consistency assertions for accepting attempts 1, 2, and 3.
+  - id: R-D21-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:86
+    problem: The replacement-reason and authority negatives still do not implement the approved typed, fully re-derived two-reason matrix.
+    evidence: Registered in-plan schema-fix and prompt-change cases both expect RangeError/invalid-attempt-evidence at line 213, while TESTCASES.md requires TypeError for enum-invalid reasons; no equivalent fully signed unknown-reason campaign is registered. Several authority mutations at lines 179-212 still patch evidence or campaign references without rebuilding the complete prompt, campaign, wrapper, ID, bytes, and file-hash chain, and the required concrete active-file/new-table/stale-or-future-artifact/schema-file/template-file/prompt-variables matrix is not enumerated for both model-retry and input-change.
+    required_change: Register schema-fix, prompt-change, and unknown replacement reasons as schema-level TypeError cases, then generate every two-reason authority negative from concrete artifacts while fully re-deriving and re-signing all dependent objects so only the intended semantic authority violation remains.
+  - id: R-D21-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs:146
+    problem: The reissue inventory and nonempty-new-plan mutations are still incomplete and not consistently type-correct.
+    evidence: Independent execution found the old inventory contains neither the old annotation schema nor template and contains no invalid-attempt evidence. The builder reads invalid evidence from globalThis.__snowCrystalD20InvalidEvidence, which is never assigned. Lines 155-156 add embeddedRefs arrays themselves to the ID sets instead of flattening their referenced IDs and hashes. In pilot-state-cases.mjs, newPlanMaterializedRoots receives a slot-plan row, newPlanInvalidEvidence receives the surrounding fixture envelope rather than InvalidAttemptEvidenceV1, and newPlanLedgerEntries receives an entire ledger wrapper rather than a ledger entry. Required concrete negatives for reused selection/manifest/plan, cross-plan ledger/root lineage, reversed freeze order, new-plan attempt 2 or 3, closure UTC, and unknown new-plan reference properties are also absent.
+    required_change: Build old and new inventories from the complete concrete authority/artifact graph, including schemas, templates, campaigns, InvalidAttemptEvidenceV1 objects, all snapshots, approvals, and coverage; flatten embedded references into the compared sets. Populate every nonempty-state and reuse negative with the correct artifact type and add the remaining TC-PILOT-REISSUE-001 boundary mutations.
+  - id: R-D21-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs:131
+    problem: Two of the six positive reissue causes produce artifacts invalid under their declared schemas.
+    evidence: Independent schema checks return false for the placeholder-tuple new protocol because reversing annotatorAllowedPlaceholders violates MorphologyPilotProtocolV1's fixed tuple. The renderer cause changes rendererId to ascii-placeholder-exact-replacement/2, causing both the new protocol and RenderedPromptEvidenceV1 to fail their literal /1 schemas. No corresponding reissued protocol or rendered-evidence schema is materialized, so these are not valid positive reissue chains.
+    required_change: Materialize the new schema authorities required by placeholder and renderer contract changes, bind them into the new protocol and prompt chain, and validate every artifact in all six positive reissue chains against its declared schema while preserving the isolated prompt-change closure reason.
+conditions: []
+rollback_to: test-code
+summary: TypeScript typecheck is Green, and the targeted test run has 14 passing blocks plus exactly the intended deterministic duplicate-evidence Red. The 23-schema bundle, direct PDF binding, 18 uniquely registered transitions, signed terminal-plus-one cutoff rejection, and six correctly named closure reasons are present. Approval is withheld because accepting input-change wrappers remain internally inconsistent, the enum/authority matrix and reissue graph remain incomplete, and two positive reissue chains are schema-invalid.
+```
+
+## test-code review: D-21 builder refactor third pass
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:82e452bf516d9265ffa2d96b55d0fc6cc3cf6220a76da708b0f5273ce05c7848
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:9c77878d132652c035fa2feb67db1a4ff98fecf31348fff34c1acf44c17a9275
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:e7247a086b10a3c44d6def9058d6c785c3dc12e2294fb36d8a989ea3984c3ed8
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:703296ddcbb263450c0b6f0e16ae1b8d7b6a3a1d826e23c71d9dca8c82fd05ac
+findings:
+  - id: R-D21-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:149
+    problem: The approved two-reason authority matrix and enum-invalid behavior remain incomplete.
+    evidence: The fully re-signed schema-fix and prompt-change mutations at line 213 still expect RangeError/invalid-attempt-evidence, whereas TESTCASES.md requires schema-level TypeError for those enum-invalid values and an independently signed unknown reason. The authority negatives also do not enumerate active file, new table, stale/future artifact, schema file, template file, and prompt-variables authorities for both model-retry and input-change; notably model-retry is never paired with the concrete input-change table authority.
+    required_change: Generate schema-fix, prompt-change, and unknown-reason cases as fully signed schema-level TypeError fixtures, and build the complete two-reason by wrong-authority matrix from concrete stored objects and bytes with every dependent campaign, evidence ID, filename, bytes, and file hash re-derived.
+  - id: R-D21-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs:369
+    problem: The reissue graph and required boundary mutations are still incomplete and several nonempty collections use the wrong artifact type.
+    evidence: oldInvalidEvidence contains fixture envelopes rather than direct InvalidAttemptEvidenceV1 objects, and collectArtifactInventory records each envelope without recursively inventorying the nested evidence object. newPlanMaterializedRoots receives a slot-plan declaration, newPlanInvalidEvidence receives an evidence envelope, and newPlanLedgerEntries receives a whole ledger artifact instead of a ledger entry. Embedded references are stored as path/value pairs but omitted from oldIds/newIds. Required TC-PILOT-REISSUE-001 negatives remain absent for old selection/manifest/plan reuse, cross-plan ledger and root lineage, reversed freeze order, new-plan attempts 2 and 3, invalid closure UTC, and unknown new-plan reference properties.
+    required_change: Materialize the complete old graph with direct schema, template, campaign, InvalidAttemptEvidenceV1, every snapshot including nested coverage snapshots, skipped approvals, and skipped coverage artifacts; flatten all scalar embedded references into compared sets. Populate all nine nonempty new-plan collections with their correct artifact types and add every missing reissue boundary mutation from TESTCASES.md lines 1579-1583.
+  - id: R-D21-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs:149
+    problem: Reissue positives do not isolate one changed authority, and two declared positive chains remain schema-invalid.
+    evidence: materializeReissuePlan changes schema.$id for every cause, so template, placeholder, renderer, instruction, and mapping fixtures change both their named authority and the annotation schema. Independent schema checks returned false for placeholder-tuple's new protocol and for renderer's new protocol and RenderedPromptEvidenceV1. The builder obtains protocol, selection, and table schemas but discards them with void statements, and the owning test never validates every newly issued artifact against a corresponding new schema authority.
+    required_change: Change exactly the named authority for each of the six causes, derive all downstream artifacts from that single change, materialize any updated protocol or rendered-evidence schemas required by placeholder and renderer changes, bind those schemas into the new protocol bundle, and independently schema-validate every artifact in every positive reissue chain.
+conditions: []
+rollback_to: test-code
+summary: The input-change wrapper header synchronization defect is fixed. Typecheck and syntax checks pass; the schema bundle has 23 distinct files, the 18 transition fixtures are unique, and the targeted run has 14 passing blocks plus only the intended deterministic duplicate-evidence Red. Approval remains blocked because the enum/authority matrix is incomplete, the reissue graph and mandatory negatives are incomplete or mistyped, and placeholder/renderer positive chains are schema-invalid.
+```
+
+## test-code review: D-22 positive-builder intermediate gate
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:d077df5d64ad79c059fd3317b620e97c31d8420fe5ca5ad4ebf3da046c6fee13
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-positive-selfcheck.mjs
+    hash: sha256:40a4ac441da6e06b566d22f63316106db3815a08b33831587ed447378ccbfbe0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:7f3bb0cb3738e5a59ffed09c1a91ba52462866aad89c242f7dc566abd49c99db
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:f38c12dda80c405a5759597e2452b877efa60b8d9c9be0fc4850a4a32fa7a852
+findings: []
+conditions: []
+rollback_to: none
+summary: "D-22正常例限定の中間サブ工程だけを承認する。standalone selfcheckは実際にGreenとなり、6つの独立変更原因×旧第二plan null/non-nullのexact 12 reissue、別監査されたskipped route、23 schemaと全宣言artifactのschema適合、canonical bytes・object/file hash・PlanClosure ID、freeze依存、明示的な旧新graph inventory、旧新plan identity/reference分離、新planの9 execution collection全0件を確認した。root/model-retry/input-change×attempt 1/2/3の9 accepting wrapperと、重複のない18 state-sensitive transitionも自己検査および対象テストで確認した。TypeScript型検査と3つのmjs構文検査は成功し、対象Vitestは14 pass・規範どおりduplicate invalid-evidence attemptだけの決定論的Red 1件だった。本承認はpositive builder/fixtureに限り、未レビューの負例行列を含む全体test-code gateの承認ではない。"
+```
 ```yaml
 review_type: implementation
 status: changes-requested
@@ -3239,6 +3607,89 @@ conditions: []
 rollback_to: design
 summary: "前回D20-R001〜R003の設計欠陥は解消された。規範protocolはroot/model-retry/input-change各6行、計18行のstate-sensitive遷移を持ち、初期stateはvalid attempt 1だけ、attempt 2/3は連続するimmutable evidenceを要求する。PilotSelectionPlanV1は固定PDF hashを直接保持し、protocol object・candidate setとの3-way bindingが設計・テストで一致する。PlanClosureV1には完全schema、domain-separated ID preimage、file hash規則、UTC/cutoff、freeze順、terminal registry拒否、出edgeなし、新plan参照禁止、未実行新plan境界が定義された。schema bundleとtest literal listはいずれも23件で、D-20は24画像・3モデル・人間最終判断・privacy・provenance・物理分類境界を変更していない。ただし指定された最初の期待Redが現validatorの既存検査で既にGreenになるため、test-code工程へ進む前にRed fixtureの限定修正が必要である。"
 ```
+## design review: D-22 decisions freshness approval
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:b473ba03e86121eca41fc82d226338a4bd04a0e57bfad7c20af6bc0f2409efeb
+findings: []
+conditions: []
+rollback_to: none
+summary: "DESIGN、規範protocol、TESTCASESは承認済みD-20入力とbyte-identicalで、DECISIONSの差分はD-21/D-22の34行追加・削除0行だけである。追加内容はtest-only builderの再構築、正常例と負例行列の直列化、担当分解および進捗を記録し、TESTCASES縮小を明示的に退けているため、D-20の要件、24画像pilot、schema、18状態遷移、PlanClosureV1、物理解釈、単位、適用範囲、loss、独立oracle、許容境界を変更しない。一次資料の206観測契約も公式arXiv v1と整合し、独立再計算でlatticeCellCount(115)=40021、境界半距離49.79708826829135 cells、checkpoint 40の適用範囲内を再確認した。"
+```
+
+## testcases review: D-20/D-22 freshness approval
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:b473ba03e86121eca41fc82d226338a4bd04a0e57bfad7c20af6bc0f2409efeb
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:9c13086e94d19d55219e64df2739741959582fd9cdcf8395f65f11200d37b4c7
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  TESTCASESは承認済みD-20設計・規範protocolと整合する。
+  rootおよび2 replacement reasonの状態依存attempt遷移、先行immutable evidence、
+  authority交換とenum外TypeError、第二plan有無に対応するclosure参照、
+  terminal受付拒否、全再発行と旧成果物再利用禁止、23 schema bindingを検査対象としている。
+  exact prompt bytes/hash、invalid raw bytes/hash、RGBA hash、Wilson期待値を独立再計算して一致を確認した。
+  named duplicate-evidence probeは現validatorの未検査箇所に対応し、
+  期待Redをschema/hash・構文・型・依存エラーから分離している。
+```
+
+## test-code review: D-22 final approval
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:4fc791f181f6f3f86a5e3e48a88a4a812ed23e781a66be783fa8ed63e86eaa22
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:22d6f5b9507e35f67fb8d0024d5588b5f6ba5dbcad5c53aa6a789100ff41ff0b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:9c77878d132652c035fa2feb67db1a4ff98fecf31348fff34c1acf44c17a9275
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:ff20e2d344ed6508c354519445b6d4bdd2b2fdf46a4c87b776485aed35e17489
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:d077df5d64ad79c059fd3317b620e97c31d8420fe5ca5ad4ebf3da046c6fee13
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-positive-selfcheck.mjs
+    hash: sha256:40a4ac441da6e06b566d22f63316106db3815a08b33831587ed447378ccbfbe0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-negative-builders.mjs
+    hash: sha256:fa47ea8d81e35e768162b4bfbce785aef0c54b61d3fc244cb918daf5c230ee9c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-negative-selfcheck.mjs
+    hash: sha256:67d530ceb4bfba9d352c99cd01c209f8b0e8b35bc1adfab030722f5a6b5be9f1
+findings: []
+conditions: []
+rollback_to: none
+summary: "The D-20/D-22 test-code gate is complete: independent selfchecks passed for 12 reissue chains, 9 valid wrappers, 23 schema authorities, and 253 unique negative rows (48 replacement, 72 attempt-state, 133 reissue); typecheck and syntax checks passed; no skips or weakened tolerances were found; and targeted Vitest produced exactly 14 passing tests plus the sole intentional Red because the current validator accepted the fully re-signed duplicate invalid-evidence attempt."
+```
+
 ## design review: D-20 final approval
 
 ```yaml
@@ -3257,4 +3708,24 @@ findings: []
 conditions: []
 rollback_to: none
 summary: "D20-R001〜R004が全て解消された。root・model-retry・input-changeは各6行、計18行のstate-sensitive遷移を持ち、初期stateではattempt 1だけ、retryable-2/3では同一campaignの連続したimmutable evidenceを各exactly 1件要求する。期待Redはsubmission 1,2,3を維持したまま2件目のevidenceだけをattempt 1へ変更してID・JCS+LF bytes・filename・file hashを再計算するためschema/hash不整合ではなく、現validatorが未検査のevidence attempt重複だけを決定論的に検出する。現validatorはsubmission連続性とevidence件数/campaign一致だけを検査するため当該fixtureを受理し、修正後のmissing evidenceおよび別campaign evidenceはGreen回帰として分離されている。PilotSelectionPlanV1は固定PDF hashを直接保持しprotocol object・candidate setとの3-way bindingを要求する。PlanClosureV1はdomain-separated ID、JCS+LF file hash、旧protocol/selection/両slot plan/ledger cutoff、terminal registry、closure後受付拒否、出edgeなし、新plan非参照および未実行新plan境界を機械検査可能に定義する。protocolとtestのschema一覧はともに23件で一致する。D-20は24画像、3モデル、全24件の人間最終確認、production・LocalStorage隔離、残り182件禁止、2D project annotation、非ground-truth、不確実性をindeterminate/nullへ送る物理境界、単位・数式・較正範囲を変更しておらず、上位SPEC/DESIGN-OUTLINEとの矛盾もない。"
+```
+
+## design review: D-22 decisions freshness approval (current)
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:b473ba03e86121eca41fc82d226338a4bd04a0e57bfad7c20af6bc0f2409efeb
+findings: []
+conditions: []
+rollback_to: none
+summary: "DESIGN、規範protocol、TESTCASESは承認済みD-20入力とbyte-identicalで、DECISIONSの差分はD-21/D-22の34行追加・削除0行だけである。追加内容はtest-only builderの再構築、正常例と負例行列の直列化、担当分解および進捗を記録し、TESTCASES縮小を明示的に退けているため、D-20の要件、24画像pilot、schema、18状態遷移、PlanClosureV1、物理解釈、単位、適用範囲、loss、独立oracle、許容境界を変更しない。一次資料の206観測契約も公式arXiv v1と整合し、独立再計算でlatticeCellCount(115)=40021、境界半距離49.79708826829135 cells、checkpoint 40の適用範囲内を再確認した。"
 ```

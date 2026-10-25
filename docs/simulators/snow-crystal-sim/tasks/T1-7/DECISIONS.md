@@ -1,5 +1,39 @@
 # T1-7 判断記録
 
+## D-22: D-21 builder再構築後の3回連続未達
+
+- 状態: 人間承認済み（2026-10-21、推奨案1を採用）
+- 改善済み: 23 schema、PDF直接binding、18個の一意な状態遷移、`oldCutoffSequence`数値境界、`input-change`正常wrapperの入力表・prompt・header同期、決定論的な単一Red。
+- 3回後も残った根本問題:
+  1. replacementの2 reason×wrong-authority行列と、enum外reasonの`TypeError` fixtureが未完。
+  2. plan reissueの旧成果物graph、9種類の未実行collection、cross-plan/reuse負例に欠落または型違いがある。
+  3. placeholder/renderer変更の正例が、それを許可する新schemaを完全に再発行しておらずschema-invalid。
+- 原因: builder APIは導入したが、単一writerがbuilder契約、schema再発行、巨大な負例行列を同時に実装し、各段階の自己検証を通す前に統合した。
+- 選択肢:
+  1. **推奨**: test-code工程を2つの直列サブ工程へ分割する。先に高性能実装担当がbuilderと6つの正例だけを完成させ、独立レビューで全schema Greenを確認する。その後、別の高性能実装担当が負例行列だけを追加し、再レビューする。
+  2. 現在の担当構成のまま、残る3 findingをもう一度まとめて修正する。再発リスクが高い。
+  3. TESTCASESを縮小する。承認済みの安全境界を弱めるため非推奨で、design差し戻しと人間承認が必要。
+- 推奨理由: 選択肢1は承認済みD-20/D-21を変えず、正例の自己整合性と負例の網羅性を別々のgateで確定できる。
+- 人間判断: 改善点はagent設計TODOへ記録し、今回は高性能担当による正常例builder工程と負例行列工程へ分割して先へ進む。
+- 進捗（2026-10-22）: 正常例builder工程は独立レビュー`approved`。負例行列工程へ進む。
+
+## D-21: D-20 test-code証拠チェーンの3回連続未達
+
+- 状態: 人間承認済み（2026-10-21、推奨案1を採用）
+- 対象: D-20で承認されたplan境界、再試行状態遷移、`PlanClosureV1`を検証するtest-only fixture。
+- 変えないもの: 承認済みDESIGN、protocol、TESTCASES、24画像pilot、production data、LocalStorage、人間確認結果。
+- 3回の試行:
+  1. 23 schema、PDF直接binding、18遷移、plan closure、duplicate-evidence Redを追加したが、遷移fixtureの重複、再発行chainの浅さ、禁止変更matrix不足で不合格。
+  2. 実object chainと再署名負例を増やしたが、変更templateとrendered promptの不一致、旧新artifact inventory不足、完全再署名不足で不合格。
+  3. 18遷移を一意化しreissue inventoryを拡張したが、input-change valid wrapperが旧prompt/tableを参照し、再発行原因が一項目変更になっておらず、closure境界・integer schema・TypeError期待値にも不足が残った。
+- 根本原因: 巨大な単一fixture builderの中で、table、schema、template、prompt variables、rendered evidence、campaign、wrapper、closure inventoryを手作業で同期しており、変更原因ごとの再導出境界を保証できていない。
+- 選択肢:
+  1. **推奨**: test-only builderを小さな純粋関数へ分割し、`materializePromptChain`、`materializeReplacementCampaign`、`collectArtifactInventory`、`materializeReissuePlan`を先に作る。その上でfixtureを再生成し、fresh reviewを行う。
+  2. TESTCASESを縮小して現fixtureに合わせる。承認済みの安全境界を弱めるため非推奨で、design差し戻しと人間承認が必要。
+  3. 現状を既知制約として進める。validator Greenの信頼性を失うため非推奨で、pilot実行は開始しない。
+- 推奨理由: 選択肢1だけが承認済み設計を変えず、同じ同期漏れを構造的に防止できる。
+- 人間判断: D-20に対応したテスト作成手順へ切り替え、test-only builderを小さな純粋関数へ分割して再構築する。
+
 ## D-20: schema/prompt変更時のplan境界
 
 - 状態: 人間承認済み（2026-10-21）
