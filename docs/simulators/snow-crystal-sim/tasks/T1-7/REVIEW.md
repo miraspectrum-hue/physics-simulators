@@ -4050,3 +4050,36 @@ summary: >-
   changes no physical equations, sources, units, dimensions, mappings, validity
   ranges, numerical tolerances, or timeout limits.
 ```
+
+## test-code review: D-24 transition-authority fixture correction
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:13c28d81df6afcfe4ca580e59568269b12d59f8c02f1c6c4f802adc33518453e
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-transition-authority-selfcheck.mjs
+    hash: sha256:0ca514a3fc85f0ae617608d22daa34f6e7be4095803851361c7ba1a44efd805c
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:b8064945e181703a10c444391fbeb4b1d86ad9a036af7da2d5408ac2ef042168
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The 18 transition fixtures retain their exact labels, states, outcomes, and
+  unique hashes while carrying separately cloned concrete plannedRun and empty
+  ledger authorities. The independent audit recomputes canonical bytes and file
+  hashes, checks schemas, plan/protocol bindings, root and replacement active
+  authority, and rejects source, cross-row, and response-to-authority aliasing.
+  An additional independent sweep confirmed the same properties for all 53
+  historical attempt-campaign mutations and the duplicate-evidence probe, with
+  54 unique fixtures and zero aliases. Positive, D-22, D-23, D-24, and transition
+  selfchecks were Green; syntax, typecheck, and diff checks passed. Target Vitest
+  produced exactly 16 passes and the sole intended D-24 absent-protocol Red
+  without timeout changes. A separate validator sweep matched 15 transitions
+  and exposed only the three documented invalid-only input-change semantic
+  mismatches, all as RangeError authority rejections rather than fixture, type,
+  hash, or module errors. No physical equations, sources, units, validity
+  ranges, tolerances, or numerical behavior changed.
+```

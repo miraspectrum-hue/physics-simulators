@@ -320,6 +320,19 @@ ui_acceptance: not-required
   intentional D-24 absent-protocol Red; the earlier fixture-generation timeout was eliminated without increasing
   the timeout or weakening coverage.
 
+## D-24 transition-authority fixture correction
+
+- Date: 2026-10-26.
+- All 18 state transitions, 53 historical attempt-campaign mutations, and the duplicate-evidence probe now carry
+  separately cloned concrete plannedRun and signed empty-ledger authorities.
+- An independent audit recomputes canonical bytes and file hashes, checks protocol/plan and active-artifact
+  bindings, and rejects source, cross-row, and response-to-authority aliases across 54 unique fixtures.
+- Fresh independent test-code review returned `approved` with no findings or conditions.
+- All five self-check suites and typecheck passed. Target Vitest retained exactly 16 passes and the sole D-24
+  absent-protocol expected Red, with no timeout or fixture failures.
+- A separate transition sweep accepted 15 of 18 transitions and isolated three input-change validator defects:
+  the validator compares regenerated prompt hashes against the old plannedRun instead of the replacement chain.
+
 ## D-24 authority-depth regressions and expected Red
 
 - Date: 2026-10-26.

@@ -29,6 +29,8 @@ import { assertReviewGapRows } from './pilot-d20-review-gap-selfcheck.mjs';
 import { buildDepthRows, registerDepthRows } from './pilot-d24-depth-cases.mjs';
 // @ts-expect-error Independent signature and target-isolation audit.
 import { assertDepthRows } from './pilot-d24-depth-selfcheck.mjs';
+// @ts-expect-error Independent concrete transition-authority audit.
+import { assertTransitionAuthorities } from './pilot-transition-authority-selfcheck.mjs';
 // @ts-expect-error Test-only ESM support.
 import { createIsolatedRoot, repositorySnapshot, isolatedSnapshot, isolationCases, guardEffects, effectGuardOracle, metricsCases, inside, wilson, kappa } from './pilot-metrics-isolation.mjs';
 
@@ -102,6 +104,7 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
     const normative = cases.filter((c: FixtureCase) => c.caseName === 'attempt-state-transition');
     expect(normative).toHaveLength(18);
     expect(new Set(normative.map((c: FixtureCase) => hash(c.fixture))).size).toBe(18);
+    expect(assertTransitionAuthorities(contract, workflow, cases)).toMatchObject({ status: 'green', totalRows: 18, isolatedRows: 18 });
   });
   it('TC-PILOT-REISSUE-001 closes the old plan and creates an unexecuted, unlinked new plan', () => {
     reissueCases(contract, workflow);
