@@ -32,18 +32,79 @@ export function streamFileOracle(path) {
   finally { closeSync(fd); }
   return {sha256:digest.digest('hex'),byteLength};
 }
-export const clone = value => structuredClone(value);
+const immutableFixtureNodes = new WeakSet(), immutableCanonical = new WeakMap();
+// Only explicitly detached, recursively frozen snapshots may share a cached
+// object serialization. Mutable inputs always take the uncached path.
+export function immutableSnapshot(value) {
+  if (value && typeof value === 'object' && immutableFixtureNodes.has(value)) return value;
+  const detached = clone(value);
+  const freeze = node => {
+    if (!node || typeof node !== 'object' || immutableFixtureNodes.has(node)) return;
+    immutableFixtureNodes.add(node);
+    Object.values(node).forEach(freeze); Object.freeze(node);
+  };
+  freeze(detached); return detached;
+}
+export const isImmutableSnapshot = value => !!value && typeof value === 'object' && immutableFixtureNodes.has(value);
+export const clone = value => {
+  // A frozen old graph is authority data, shared by many independent attacks.
+  // Keep every mutable fixture node detached, including both inventories.
+  if (value && !Array.isArray(value) && (isImmutableSnapshot(value.oldGraph) || isImmutableSnapshot(value.sources))) {
+    const mutable = { ...value }, shared = {};
+    for (const key of ['oldGraph', 'sources']) if (isImmutableSnapshot(value[key])) {
+      shared[key] = value[key]; delete mutable[key];
+    }
+    // Certified frozen inventory payloads can be shared while membership and
+    // row summaries stay mutable and detached. Mutable D-24 object attacks
+    // remain fully copied; no payload is frozen implicitly by cloning it.
+    for (const key of ['oldInventory', 'newInventory']) if (Array.isArray(value[key])) {
+      shared[key] = value[key].map(row => {
+        const copy = { ...row }, immutable = {};
+        for (const field of ['object', 'embeddedRefs']) if (isImmutableSnapshot(row[field])) {
+          immutable[field] = row[field]; delete copy[field];
+        }
+        return { ...structuredClone(copy), ...immutable };
+      });
+      delete mutable[key];
+    }
+    return { ...structuredClone(mutable), ...shared };
+  }
+  return structuredClone(value);
+};
 export const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 export const hex = bytes => Buffer.from(bytes).toString('hex');
+const canonicalStrings = new Map(), canonicalScalars = new Map();
 export const jcs = value => {
   if (value === null || typeof value === 'boolean') return JSON.stringify(value);
   if (typeof value === 'number') { assert(Number.isFinite(value) && !Object.is(value, -0)); return JSON.stringify(value); }
-  if (typeof value === 'string') { assert.equal(value.normalize('NFC'), value); return JSON.stringify(value); }
-  if (Array.isArray(value)) return `[${value.map(jcs).join(',')}]`;
+  if (typeof value === 'string') {
+    const cache = value.length >= 1024 ? canonicalStrings : canonicalScalars, limit = value.length >= 1024 ? 128 : 4096;
+    if (cache.has(value)) return cache.get(value);
+    assert.equal(value.normalize('NFC'), value); const encoded = JSON.stringify(value);
+    // Both prompts and repeated property tokens are immutable by value. Keep
+    // separate bounded caches so many scalar mutations cannot evict prompts.
+    if (cache.size === limit) cache.delete(cache.keys().next().value);
+    cache.set(value, encoded);
+    return encoded;
+  }
+  if (isImmutableSnapshot(value) && immutableCanonical.has(value)) return immutableCanonical.get(value);
+  if (Array.isArray(value)) {
+    const encoded = `[${value.map(jcs).join(',')}]`;
+    if (isImmutableSnapshot(value)) immutableCanonical.set(value, encoded);
+    return encoded;
+  }
   assert(value && typeof value === 'object');
-  return `{${Object.keys(value).sort(cmp).map(k => `${jcs(k)}:${jcs(value[k])}`).join(',')}}`;
+  const encoded = `{${Object.keys(value).sort(cmp).map(k => `${jcs(k)}:${jcs(value[k])}`).join(',')}}`;
+  if (isImmutableSnapshot(value)) immutableCanonical.set(value, encoded);
+  return encoded;
 };
-export const hash = value => sha(jcs(value));
+const immutableHashes = new WeakMap();
+export const hash = value => {
+  if (isImmutableSnapshot(value) && immutableHashes.has(value)) return immutableHashes.get(value);
+  const digest = sha(jcs(value));
+  if (isImmutableSnapshot(value)) immutableHashes.set(value, digest);
+  return digest;
+};
 export const fileBytes = value => `${jcs(value)}\n`;
 export const jsonl = records => records.map(fileBytes).join('');
 export const wrapped = (purpose, rest) => ({ hashSchema: HASH_SCHEMA, purpose, ...rest });

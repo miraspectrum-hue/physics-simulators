@@ -1,7 +1,7 @@
 // Independent positive-fixture oracle. No validator, case registry, negative-case
 // module, filesystem writes, or production logic is imported here.
 import { pathToFileURL } from 'node:url';
-import { assert, clone, fileBytes, hash, jcs, sha, whash, idHash, schemaAccepts, parseUnique, placeholders, HASH_SCHEMA } from './pilot-oracle.mjs';
+import { assert, clone, fileBytes, hash, jcs, sha, whash, idHash, schemaAccepts, parseUnique, placeholders, HASH_SCHEMA, immutableSnapshot, isImmutableSnapshot } from './pilot-oracle.mjs';
 import { REISSUE_CAUSES, REISSUE_FREEZE_ORDER, EXECUTION_COLLECTIONS, artifactGraphNodes,
   collectArtifactInventory, flattenArtifactReferences, materializeOldGraph, materializeReissuePlan,
   materializePromptChain, materializeReplacementCampaign, materializeValidWrapper } from './pilot-d20-builders.mjs';
@@ -92,7 +92,7 @@ function expectedInventory(graph) {
 // Inspect the actual inventory, not just its summaries. Every mutable inventory
 // descendant must belong to that row alone and must be detached from both source
 // graphs and the other inventory. Strings keep exact immutable file bytes.
-function checkConcreteInventories(graphs, inventories) {
+function checkConcreteInventories(graphs, inventories, certifiedInventories = new Map()) {
   const graphObjects = new WeakSet(), inventoryObjects = new WeakSet();
   const visit = (value, seen, label, rejectShared = false) => {
     if (!value || typeof value !== 'object') return;
@@ -106,6 +106,15 @@ function checkConcreteInventories(graphs, inventories) {
   graphs.forEach(graph => visit(graph, graphObjects));
   for (const inventory of inventories) {
     visit(inventory, inventoryObjects, 'concrete inventory', true);
+    const certified = certifiedInventories.get(inventory);
+    if (certified) {
+      assert(isImmutableSnapshot(certified));
+      // The full byte/decode/hash/reference audit already certified this exact
+      // detached frozen value. Equality proves the same semantics here; the
+      // alias walk above still checks every caller-owned mutable descendant.
+      equal(inventory, certified, 'certified immutable inventory contents');
+      continue;
+    }
     for (const row of inventory) {
       assert.equal(typeof row.bytes, 'string', row.name + ' exact bytes');
       equal(sha(row.bytes), row.fileSha256, row.name + ' file hash');
@@ -429,10 +438,23 @@ function checkExecutionGraph(graph) {
   }
 }
 
+const immutableOldAudits = new WeakMap();
+function auditOldGraph(graph) {
+  if (isImmutableSnapshot(graph) && immutableOldAudits.has(graph)) return immutableOldAudits.get(graph);
+  const checks = checkCommonGraph(graph);
+  checkExecutionGraph(graph);
+  const inventory = immutableSnapshot(expectedInventory(graph));
+  // All original byte, schema and alias checks run on the independent
+  // inventory before reuse. Each caller still compares its complete inventory
+  // against this immutable authority and checks mutable row isolation below.
+  checkConcreteInventories([graph], [inventory]);
+  const result = { checks, inventory };
+  if (isImmutableSnapshot(graph)) immutableOldAudits.set(graph, result);
+  return result;
+}
 export function assertReissuePositive(built) {
   const { oldGraph, newGraph, closure, cause } = built;
-  const oldChecks = checkCommonGraph(oldGraph), newChecks = checkCommonGraph(newGraph);
-  checkExecutionGraph(oldGraph);
+  const oldAudit = auditOldGraph(oldGraph), oldChecks = oldAudit.checks, newChecks = checkCommonGraph(newGraph);
   const expectedReasons = {
     'schema-bytes-object-reference': 'schema-change', 'template-bytes': 'prompt-change', 'placeholder-tuple': 'prompt-change',
     renderer: 'prompt-change', 'instruction-semantics': 'prompt-change', 'decision-rules-mapping': 'schema-change',
@@ -485,10 +507,10 @@ export function assertReissuePositive(built) {
   equal(newGraph.restricted.entries, oldGraph.restricted.entries);
   newGraph.inputTables.forEach((table, i) => equal(table.orderedItems, oldGraph.inputTables[i].orderedItems));
   for (const key of EXECUTION_COLLECTIONS) equal(newGraph[key], [], 'new unexecuted ' + key);
-  const oldInventory = expectedInventory(oldGraph), newInventory = expectedInventory(newGraph);
+  const oldInventory = oldAudit.inventory, newInventory = expectedInventory(newGraph);
   equal(oldInventory, built.oldInventory, 'independent old inventory');
   equal(newInventory, built.newInventory, 'independent new inventory');
-  checkConcreteInventories([oldGraph, newGraph], [built.oldInventory, built.newInventory]);
+  checkConcreteInventories([oldGraph, newGraph], [built.oldInventory, built.newInventory], new Map([[built.oldInventory, oldAudit.inventory]]));
   const identities = (rows, graph) => [...new Set([
     ...rows.filter(row => row.planOwned).flatMap(row => [row.objectSha256, row.fileSha256, row.artifactId].filter(Boolean)),
     ...rows.filter(row => row.planOwned).flatMap(row => row.embeddedRefs.filter(([path]) => {
@@ -537,8 +559,9 @@ export function assertOldGraphPositive(graph, inventory) {
 
 export function runPositiveSelfcheck(contract, workflow) {
   const reissues = [];
+  const oldGraphs = new Map([null, workflow.freshPlan].map(plan => [plan, materializeOldGraph(contract, workflow, plan)]));
   for (const cause of REISSUE_CAUSES) for (const oldSecondPlan of [null, workflow.freshPlan]) {
-    const oldGraph = materializeOldGraph(contract, workflow, oldSecondPlan);
+    const oldGraph = oldGraphs.get(oldSecondPlan);
     reissues.push(assertReissuePositive(materializeReissuePlan({ contract, workflow, cause, oldSecondPlan, oldGraph })));
   }
   const run = workflow.runs[0], table = clone(run.table);

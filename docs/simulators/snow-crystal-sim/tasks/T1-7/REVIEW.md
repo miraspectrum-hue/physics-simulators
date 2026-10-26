@@ -4083,3 +4083,171 @@ summary: >-
   hash, or module errors. No physical equations, sources, units, validity
   ranges, tolerances, or numerical behavior changed.
 ```
+
+## implementation review: D-24 final review
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:609520ab26d9835acc5b5e7c47018358d7c0f0f373a59085de6a23fc6fb0d3e2
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-core.mjs
+    hash: sha256:7d810161286431c5da9a3ac33e89a88dd612c4eb0453b9577718bbc980c20f30
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-io.mjs
+    hash: sha256:17fc40a06ba37729fc1d689369b7c0310bb3aea303b61d251105f244148fe9be
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs
+    hash: sha256:2be58dc21164c7ed7c00ce061d862917fd78e60348a9909688faca0f44913118
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:545
+    problem: Old-plan inventory completeness is not enforced, so omitted immutable campaign and invalid-attempt evidence identities escape the cross-plan forbidden set.
+    evidence: "Starting from the valid D-24 plan-reissue baseline, an independent probe removed concrete oldInventory rows `campaign/6` and `invalidEvidence/0`, then recomputed oldIds solely from every remaining verified row using the validator's identity rule. `validatePilot('plan-reissue', fixture)` returned true. validateGraph requires selected core rows and executable roots but does not derive and require the exact old-graph row set; inventoryIdentities consequently cannot forbid identities belonging to omitted old-plan evidence."
+    required_change: Derive the complete required old-inventory node set from the frozen plans, ledger, artifacts, campaigns, invalid evidence, snapshots, approvals, and coverage; require an exact row match and concrete bytes/object/hash/reference verification for every node before deriving oldIds and enforcing cross-plan non-reuse.
+conditions: []
+rollback_to: implementation
+summary: "The fixed PDF/protocol binding, valid and invalid input-change invariants and prompt derivation, frozen plannedRun/ledger active authority, and fixed 23-role schema authorities resisted the assigned regressions. All five self-checks passed with 18 transitions, 12 reissues, 9 wrappers, and exactly 285 negatives; syntax, typecheck, dependency/effect guard, and whitespace checks passed. However, the independent old-graph omission probe demonstrates that prior R-004 is not generalized to graph completeness. The exact target also completed only 15/17 because ATTEMPT and REISSUE fixture-generation tests exceeded their 5-second and 30-second timeouts."
+```
+
+## test-code review: D-25 first review
+
+```yaml
+review_type: test-code
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:ff176c8106ff59077977f8ec4372a4c10db93b74260847c545a05d2ee81770ca
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:453ec2b8f40d72eab011ed605269005928a60ab9a90f64c8db092f97e68b6e4e
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-negative-builders.mjs
+    hash: sha256:41d156e8ed95ec7d640747b0fe08fbdd48d6b2e32fab00a10101c995b29dc098
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-review-gap-cases.mjs
+    hash: sha256:8de8bf1a90f3b20718fffa85478a0224173eea8b3b4da0c9f9c94b31709a8f81
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d24-depth-cases.mjs
+    hash: sha256:1c15934a7d3f9d716d884877e20a69edd0998969e96ed491f2eadc15203b6855
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d25-completeness-cases.mjs
+    hash: sha256:17ca9630bbcd34b83fcc1930999e55e69aba3cb9051582db799c5af7533760b6
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d25-completeness-selfcheck.mjs
+    hash: sha256:5c08d7fc38862a4766063fb4e104d496ca0f34468bab52f710c0b86a3b211836
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:5ad4468ddea8cd2e7e965740b3dbd52aa36c0a9d3eca09fd6e45190bcdbc0001
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-positive-selfcheck.mjs
+    hash: sha256:52a4be142d6a90d918e9637f610625914b914ce6f5ec83071759fc7fbc9a016c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:c5d9050fd93656f45d74bd773a4782f3913942c6f30ae174072de610ddd3c8b8
+findings:
+  - id: R-001
+    severity: medium
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts:194
+    problem: The sole-Red test name still identifies the superseded D-24 absent-protocol defect, although the deterministic first failure is now the D-25 coordinated old-graph omission.
+    evidence: Both target runs reported 16 passes and one failure whose assertion context was plan-reissue/d25/coordinated-campaign-evidence, while the Vitest test name continued to state that selection without concrete protocol authority must be rejected.
+    required_change: Rename the test to identify the D-25 old-graph completeness omission without changing its assertions, ordering, count, or timeout.
+conditions: []
+rollback_to: test-code
+summary: "The substantive D-25 coverage is sound: 17 unique omission negatives retain independently audited complete frozen old graphs for no-second, fresh, and skipped routes; only inventory membership and row-derived IDs change; coordinated campaign/evidence omission isolates the completeness gap; all three complete baselines are accepted; and expected failures use RangeError with protocol-reissue-required/newInventory. Approval is withheld solely because the observable test label states the wrong defect."
+```
+
+## test-code review: D-25 final approval
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:35f3afde287a1d3954d04d3cc40c454896e618e91030a47eb77a4195ddacaac9
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:453ec2b8f40d72eab011ed605269005928a60ab9a90f64c8db092f97e68b6e4e
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-negative-builders.mjs
+    hash: sha256:41d156e8ed95ec7d640747b0fe08fbdd48d6b2e32fab00a10101c995b29dc098
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-review-gap-cases.mjs
+    hash: sha256:8de8bf1a90f3b20718fffa85478a0224173eea8b3b4da0c9f9c94b31709a8f81
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d24-depth-cases.mjs
+    hash: sha256:1c15934a7d3f9d716d884877e20a69edd0998969e96ed491f2eadc15203b6855
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d25-completeness-cases.mjs
+    hash: sha256:17ca9630bbcd34b83fcc1930999e55e69aba3cb9051582db799c5af7533760b6
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d25-completeness-selfcheck.mjs
+    hash: sha256:5c08d7fc38862a4766063fb4e104d496ca0f34468bab52f710c0b86a3b211836
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-oracle.mjs
+    hash: sha256:5ad4468ddea8cd2e7e965740b3dbd52aa36c0a9d3eca09fd6e45190bcdbc0001
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-positive-selfcheck.mjs
+    hash: sha256:52a4be142d6a90d918e9637f610625914b914ce6f5ec83071759fc7fbc9a016c
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-state-cases.mjs
+    hash: sha256:c5d9050fd93656f45d74bd773a4782f3913942c6f30ae174072de610ddd3c8b8
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The prior label finding is resolved. Replacing only the corrected Vitest title
+  with the superseded title reproduces the prior main-file hash exactly, proving
+  that assertions, execution order, counts, timeouts, and fixtures did not
+  change. The other nine hashes exactly match the prior review. Independent
+  D-25 validation passed for 17 registered omission rows, three frozen old
+  graphs, and zero mutable aliases; positive, negative, D-23, D-24, and
+  transition-authority selfchecks also passed. Syntax checks and typecheck
+  passed. Target Vitest completed without timeout with exactly 16 passes and
+  the sole intentional Red at plan-reissue/d25/coordinated-campaign-evidence,
+  where the current validator accepted the coordinated old-graph omission.
+  No physical equations, sources, units, dimensions, validity ranges,
+  tolerances, or numerical behavior changed.
+```
+
+## design review: D-25 option 1 freshness approval
+
+```yaml
+review_type: design
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:9ad6c9e4555b491e54fedd61c9311a2ddca415a49554c6522ca01027130bcab2
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  D-25 option 1 is strictly a limited test/implementation realization of the
+  approved D-20 no-reuse and fail-closed contract. DESIGN, the normative
+  protocol, and TESTCASES are byte-identical to the D-20 final-approved inputs;
+  the only relevant higher-level delta is the additive D-25 decision record.
+  Independently deriving the complete required node set from the existing
+  frozen old graph and requiring inventory exactness closes an omission hole;
+  it adds no signed manifest, schema field, protocol state, acceptance
+  criterion, physics, UI, pilot-scope, or production-data change.
+```
+
+## testcases review: D-25 option 1 freshness approval
+
+```yaml
+review_type: testcases
+status: approved
+reviewed_files:
+  - path: docs/simulators/snow-crystal-sim/SPEC.md
+    hash: sha256:92c0ee8ad1fd22f31915bac66f6369b155072ce70dd725078bfcb5f1f3eaedd1
+  - path: docs/simulators/snow-crystal-sim/DESIGN-OUTLINE.md
+    hash: sha256:b0aecd2dd517e810913d44e93fea02aa6f50dc56398ef5ee046d9ca514bc68ff
+  - path: docs/simulators/snow-crystal-sim/TASKS.md
+    hash: sha256:6b8205edc58b83ecb29039d4017461cff53db78390bb9faa99c2672de637cab4
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md
+    hash: sha256:88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md
+    hash: sha256:bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/TESTCASES.md
+    hash: sha256:fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52
+  - path: docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md
+    hash: sha256:9ad6c9e4555b491e54fedd61c9311a2ddca415a49554c6522ca01027130bcab2
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  D-25 option 1 preserves the approved D-20 design and testcase contract. Its
+  17 old-graph omission regressions concretize existing TC-PILOT-REISSUE-001
+  and TC-PILOT-SLOTS-003 requirements. Deriving the required inventory from the
+  frozen old graph closes an oracle-completeness gap without a new manifest,
+  schema, acceptance criterion, timeout, physical source, unit, validity range,
+  tolerance, or calibration change.
+```

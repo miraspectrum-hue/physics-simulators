@@ -372,3 +372,24 @@ ui_acceptance: not-required
   - Guarded direct diagnostics showed that 13 of the 14 new negatives were accepted; the ordinal mutation was
     already rejected with the required error contract.
   - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.
+
+## D-25 old-graph completeness regressions and expected Red
+
+- Date: 2026-10-26.
+- Human-approved option 1 keeps D-20 unchanged and adds an independent frozen oldGraph authority from which the
+  complete required node set can be derived.
+- Seventeen fully coherent omission negatives cover no-second-plan, fresh, and skipped routes. The deterministic
+  first probe removes `campaign/6` and `invalidEvidence/0` together, recomputes all row-derived identity summaries,
+  and leaves the frozen oldGraph unchanged.
+- Independent D-25 self-check: Green with 17 registered rows, 3 complete frozen graphs, and zero mutable aliases.
+- Existing checks remain Green: D-22=253, D-23=14, D-24=18, transitions=18, positive reissues=12, wrappers=9.
+- Fresh test-code re-review returned `approved`; its sole first-pass finding was only the outdated test title.
+- Targeted command, repeated twice on unchanged files:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Both runs exited 1 with 16 tests passed, no skips, no timeouts, and exactly one expected assertion failure.
+  - The sole failure is `plan-reissue/d25/coordinated-campaign-evidence`: the current validator accepts the
+    coordinated old-graph inventory omission instead of throwing `RangeError` with reason
+    `protocol-reissue-required` and field `newInventory`.
+  - Run timings were 42.25/41.58 seconds total; ATTEMPT 2.886/2.648 seconds; REISSUE 21.890/22.079 seconds;
+    D-24 audit 2.886/3.336 seconds, all within unchanged per-test limits.
+- Syntax, typecheck, and whitespace checks passed; no physical or numerical behavior changed.

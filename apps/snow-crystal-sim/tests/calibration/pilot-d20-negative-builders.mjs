@@ -1,6 +1,6 @@
 // D-22 negative materializers. Positive builders are immutable inputs.
 // Every row carries a concrete baseline and a single named mutation source.
-import { assert, clone, fileBytes, hash, jcs, sha, whash, utc, bad } from './pilot-oracle.mjs';
+import { assert, clone, fileBytes, hash, jcs, sha, whash, utc, bad, immutableSnapshot } from './pilot-oracle.mjs';
 import { materializePromptChain, materializeReplacementCampaign, materializeValidWrapper,
   materializeOldInvalidEvidence, flattenArtifactReferences, collectArtifactInventory, renderExactTemplate } from './pilot-d20-builders.mjs';
 import { makeLedger } from './pilot-workflow-fixtures.mjs';
@@ -41,13 +41,16 @@ function row(rows, baseline, key, mutate, field, options = {}) {
   // Concrete inventories are large. Keep one detached baseline authority and
   // compare it structurally after every mutation instead of serializing it
   // repeatedly. This still detects any mutation of the shared baseline.
-  if (!baselineAuthorities.has(baseline)) baselineAuthorities.set(baseline, { snapshot: clone(baseline), hash: hash(baseline) });
+  if (!baselineAuthorities.has(baseline)) {
+    const snapshot = immutableSnapshot(baseline);
+    baselineAuthorities.set(baseline, { snapshot, hash: hash(snapshot) });
+  }
   const authority = baselineAuthorities.get(baseline), baselineHash = authority.hash;
   const fixture = clone(baseline);
   mutate(fixture);
   assert.deepEqual(baseline, authority.snapshot, 'mutation must not modify baseline');
   assert.notDeepEqual(fixture, authority.snapshot, 'negative must change its baseline: ' + key);
-  rows.push({ key, baseline, fixture, baselineHash,
+  rows.push({ key, baseline: authority.snapshot, fixture, baselineHash,
     caseName: options.caseName ?? 'invalid-attempt',
     errorClass: options.errorClass ?? 'RangeError',
     reason: options.reason ?? 'invalid-attempt-evidence', field,
@@ -272,19 +275,19 @@ export function buildReissueNegativeRows(contract, workflow, built) {
   newRun.inventory.find(i => i.kind === 'role-schema').fileSha256 = next.prompts[0].schemaFileSha256;
   signArtifact(newRun);
   const newLedger = makeLedger({ ...contract, protocol: next.protocol, manifest: next.manifest }, next.firstPlan, [], null);
-  const sources = { oldProtocol: old.protocol, oldSelection: old.selection, oldManifest: old.manifest,
+  const sources = immutableSnapshot({ oldProtocol: old.protocol, oldSelection: old.selection, oldManifest: old.manifest,
     oldFirstPlan: old.firstPlan, oldSecondPlan: built.old.secondPlan, oldLedger: old.ledger,
     oldRun: old.runs[0], oldCampaign: old.campaigns[0], oldEvidence: old.invalidEvidence[0],
     oldSnapshot: old.snapshots[0], oldApproval: workflow.approvals[0], oldCoverage: workflow.coverage,
-    availableSecondPlan: workflow.freshPlan, history, newRun, newLedger };
+    availableSecondPlan: workflow.freshPlan, history, newRun, newLedger });
   const baseline = { protocol: old.protocol, selectionPlan: old.selection, oldFirstPlan: old.firstPlan,
-    oldSecondPlan: built.old.secondPlan, oldLedger: old.ledger,
+    oldSecondPlan: built.old.secondPlan, oldLedger: old.ledger, oldGraph: old,
     closure: built.closure, closureBytes: built.closureBytes, closureFileSha256: built.closureFileSha256, closureFilename: built.closureFilename,
     freezeOrder: built.freezeOrder, newProtocol: next.protocol, newSelection: next.selection, newManifest: next.manifest,
     newRestricted: next.restricted, newTable: next.inputTables[0], newVariables: next.prompts[0].variables,
     newEvidence: next.prompts[0].evidence, newRendered: next.prompts[0].rendered, newFirstPlan: next.firstPlan,
     newSchema: { object: built.schema, bytes: fileBytes(built.schema), fileSha256: sha(fileBytes(built.schema)), objectSha256: hash(built.schema) },
-    newTemplateBytes: built.template, oldInventory: built.oldInventory, newInventory: built.newInventory,
+    newTemplateBytes: built.template, oldInventory: immutableSnapshot(built.oldInventory), newInventory: immutableSnapshot(built.newInventory),
     oldIds: built.oldIds, newIds: built.newIds, sources,
     oldPlanSubmissionsAfterClosure: [], oldPlanRootsAfterClosure: [], oldPlanLedgerEntriesAfterClosure: [],
     oldPlanApprovalsAfterClosure: [], oldPlanCoverageAfterClosure: [], crossPlanReferences: [],

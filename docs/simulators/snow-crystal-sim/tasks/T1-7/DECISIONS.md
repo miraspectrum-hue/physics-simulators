@@ -1,5 +1,21 @@
 # T1-7 判断記録
 
+## D-25: 再発行グラフ完全性の3回連続未達
+
+- 状態: 人間承認済み（2026-10-26、推奨案1の限定修正を採用）。
+- 変えないもの: 承認済みD-20設計、24画像pilot、物理解釈、単位、3モデル＋人間最終確認、production/LocalStorage隔離。
+- 3回の独立実装レビューで繰り返した同一根本原因:
+  1. 第1回: 新inventoryの隠れた旧plan参照を、自己申告`newIds`だけでは検出できなかった。
+  2. 第2回: 一部inventory行だけを実体bytesへ束縛し、未束縛行の置換を受理した。
+  3. 第3回: 全提示行を実体検証しても、旧inventoryから相互に参照する`campaign/6`と`invalidEvidence/0`を両方省略すると、完全な旧グラフとの差分を検出できず受理した。
+- 根本原因: validatorが「提示されたinventory行は正しいか」を検証している一方、「凍結された旧planから存在すべき全行」を独立に導出しておらず、省略された行を禁止ID集合へ入れられない。
+- 追加観測: 最終実装は単独実行で17/17 Greenだったが、独立レビュー再実行では巨大fixture生成がATTEMPT 5秒・REISSUE 30秒を超え15/17となった。タイムアウト緩和ではなく、完全性導出とfixture計算量の再整理が必要。
+- 選択肢:
+  1. **推奨・限定修正**: 既存D-20契約を変えず、fixtureが保持する凍結旧グラフ（plans、ledger、artifacts、campaigns、invalid evidence、snapshots、approvals、coverage）から必須node集合を独立導出し、inventoryとの完全一致を要求する。省略負例を先に追加し、共有済みimmutable graphの再計算を1回へ集約して既存timeout内に収める。
+  2. **設計変更**: protocolへ署名済みの完全graph manifestを新設し、それを唯一の完全性authorityにする。より明示的だがschema・DESIGN・TESTCASES・全plan再発行設計の再レビューが必要。
+  3. scopeを縮小して省略検査を外す案は、承認済みno-reuse/fail-closed要件を弱めるため非推奨。
+- 再開条件: 2026-10-26に人間が選択肢1を承認。省略負例、完全node集合の独立導出、既存timeout内の計算量補正の順で再開する。
+
 ## D-22: D-21 builder再構築後の3回連続未達
 
 - 状態: 人間承認済み（2026-10-21、推奨案1を採用）

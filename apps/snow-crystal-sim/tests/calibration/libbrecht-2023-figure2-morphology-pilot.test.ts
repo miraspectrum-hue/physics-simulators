@@ -29,6 +29,10 @@ import { assertReviewGapRows } from './pilot-d20-review-gap-selfcheck.mjs';
 import { buildDepthRows, registerDepthRows } from './pilot-d24-depth-cases.mjs';
 // @ts-expect-error Independent signature and target-isolation audit.
 import { assertDepthRows } from './pilot-d24-depth-selfcheck.mjs';
+// @ts-expect-error Test-only graph-completeness omission fixtures.
+import { buildCompletenessRows, registerCompletenessRows } from './pilot-d25-completeness-cases.mjs';
+// @ts-expect-error Independent frozen-graph and identity-set audit.
+import { assertCompletenessRows, assertImmutableRegistrySharing } from './pilot-d25-completeness-selfcheck.mjs';
 // @ts-expect-error Independent concrete transition-authority audit.
 import { assertTransitionAuthorities } from './pilot-transition-authority-selfcheck.mjs';
 // @ts-expect-error Test-only ESM support.
@@ -46,6 +50,7 @@ let initialRepository: unknown;
 let inputSnapshot: unknown;
 let initialOwnFiles: unknown;
 let networkGuard: any;
+let completenessRows: any[];
 const ownSnapshot = () => readdirSync(resolve(ROOT, 'apps/snow-crystal-sim/tests/calibration')).filter((name: string) => name.startsWith('pilot-') || name === 'libbrecht-2023-figure2-morphology-pilot.test.ts').sort().map((name: string) => [name, sha(readFileSync(resolve(ROOT, 'apps/snow-crystal-sim/tests/calibration', name)))]);
 
 describe('T1-7 morphology ensemble pilot — synthetic independent conformance corpus', () => {
@@ -108,6 +113,11 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
   });
   it('TC-PILOT-REISSUE-001 closes the old plan and creates an unexecuted, unlinked new plan', () => {
     reissueCases(contract, workflow);
+    completenessRows = buildCompletenessRows(contract, workflow);
+    registerCompletenessRows(completenessRows);
+    expect(assertCompletenessRows(contract, workflow, completenessRows, cases)).toMatchObject({
+      status: 'green', totalRows: 17, registeredRows: 17, frozenOldGraphs: 3, mutableAliasCount: 0,
+    });
   }, 30000); // Full independent schema/byte/graph checks for all 12 reissues.
   it('TC-PILOT D-20 implementation-review gaps have independent signed fixtures and exact registration', () => {
     const rows = buildReviewGapRows(contract, workflow, resolve(workRoot, 'inputs/attempts/original.txt'));
@@ -173,13 +183,15 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
     expect(new Set(negativeMatrix.map((c: FixtureCase) => c.label)).size).toBe(253);
     expect(cases.filter((c: FixtureCase) => c.label.startsWith('d23/'))).toHaveLength(14);
     expect(cases.filter((c: FixtureCase) => c.label.startsWith('d24/'))).toHaveLength(18);
+    expect(cases.filter((c: FixtureCase) => c.label.startsWith('d25/'))).toHaveLength(17);
+    expect(assertImmutableRegistrySharing(contract, workflow, cases)).toMatchObject({ status: 'green', mutableAliasCount: 0 });
     for (const c of cases as FixtureCase[]) {
       expect(c.caseName).not.toBe(''); expect(c.fixture).not.toBeNull();
       if (c.errorClass) { expect(c.field).toBeTruthy(); expect(c.reason).toBeTruthy(); }
       else expect(Object.hasOwn(c, 'expected')).toBe(true);
     }
   });
-  it('TC-PILOT-RED-001 sole expected Red: selection without concrete protocol authority must be rejected', async () => {
+  it('TC-PILOT-RED-001 sole expected Red: D-25 coordinated old-graph inventory omission must be rejected', async () => {
     const path = resolve(ROOT, VALIDATOR_REL);
     expect(existsSync(path), `missing pilot validator artifact: ${VALIDATOR_REL}`).toBe(true);
     const dependencyGraph = assertValidatorDependencies(path);
@@ -215,7 +227,16 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
           expect(existsSync(resolve((fixture as any).outputRoot, (fixture as any).atomicWrite.temporaryBasename))).toBe(false);
         }
       };
-      // The new absent-protocol gap fails deterministically before shuffle.
+      // D-25 isolates graph completeness: the complete byte-identical baseline
+      // accepts before the exact coordinated omission must fail. This first
+      // semantic probe keeps the new Red deterministic, ahead of shuffle.
+      const omissionProbe = (cases as FixtureCase[]).find(c => c.label === 'd25/coordinated-campaign-evidence');
+      expect(omissionProbe).toBeDefined();
+      for (const baseline of new Set(completenessRows.map(row => row.baseline))) {
+        await runOne({ caseName: 'plan-reissue', fixture: baseline, expected: true, label: 'd25/complete-old-graph' });
+      }
+      await runOne(omissionProbe!);
+      // Retain the earlier D-24 protocol-authority regression.
       // All 18 D-24 cases remain in the guarded randomized registry afterward.
       const protocolProbe = (cases as FixtureCase[]).find(c => c.label === 'd24/selection/absent-protocol');
       expect(protocolProbe).toBeDefined();

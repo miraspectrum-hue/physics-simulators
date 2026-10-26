@@ -79,7 +79,7 @@ function reissue(contract, workflow) {
   const oldGraph = materializeOldGraph(contract, workflow, null);
   const b = materializeReissuePlan({ contract, workflow, cause: REISSUE_CAUSES[0], oldSecondPlan: null, oldGraph });
   return { protocol: contract.protocol, selectionPlan: contract.plan, oldFirstPlan: workflow.firstPlan,
-    oldSecondPlan: null, oldLedger: workflow.emptyLedger, closure: b.closure, closureBytes: b.closureBytes,
+    oldSecondPlan: null, oldLedger: workflow.emptyLedger, oldGraph, closure: b.closure, closureBytes: b.closureBytes,
     closureFileSha256: b.closureFileSha256, closureFilename: b.closureFilename, freezeOrder: b.freezeOrder,
     newProtocol: b.protocol, newSelection: b.selection, newManifest: b.manifest, newRestricted: b.restricted,
     newTable: b.table, newVariables: b.prompt.variables, newEvidence: b.prompt.evidence, newRendered: b.prompt.rendered,

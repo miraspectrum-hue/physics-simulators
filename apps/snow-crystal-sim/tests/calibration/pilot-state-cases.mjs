@@ -308,16 +308,17 @@ export function reissueCases(c,w){
   const causes=REISSUE_CAUSES;
   const skippedGraph=materializeOldGraph(c,w,w.skippedPlan);
   assertOldGraphPositive(skippedGraph,collectArtifactInventory({oldGraph:skippedGraph,newGraph:skippedGraph}).oldInventory);
+  const oldGraphs=new Map([null,w.freshPlan].map(plan=>[plan,materializeOldGraph(c,w,plan)]));
   for(const cause of causes)for(const oldSecondPlan of [null,w.freshPlan]){
     // The old graph is deliberately passed as data, not read through module
     // state.  It includes every family that could otherwise be silently
     // carried across a plan boundary.
-    const oldGraph=materializeOldGraph(c,w,oldSecondPlan);
+    const oldGraph=oldGraphs.get(oldSecondPlan);
     const oldInvalidEvidence=oldGraph.invalidEvidence;
     const built=materializeReissuePlan({contract:c,workflow:w,cause,oldSecondPlan,oldGraph});
     assertReissuePositive(built);
     const fixture={
-      protocol:c.protocol,selectionPlan:c.plan,oldFirstPlan:w.firstPlan,oldSecondPlan,oldLedger:w.emptyLedger,
+      protocol:c.protocol,selectionPlan:c.plan,oldFirstPlan:w.firstPlan,oldSecondPlan,oldLedger:w.emptyLedger,oldGraph,
       closure:built.closure,closureBytes:built.closureBytes,closureFileSha256:built.closureFileSha256,closureFilename:built.closureFilename,
       freezeOrder:['old-plan-closed','old-ledger-frozen','closure-frozen','new-authority-frozen','new-protocol-frozen','new-selection-manifest-map-frozen','new-input-prompt-frozen','new-first-plan-unexecuted'],
       newSchema:{object:built.schema,bytes:fileBytes(built.schema),fileSha256:sha(fileBytes(built.schema)),objectSha256:hash(built.schema)},newTemplateBytes:built.template,

@@ -1,6 +1,6 @@
 // D-20 test-only fixture materializers.  They intentionally derive every
 // downstream byte/hash from concrete inputs; the validator never imports them.
-import { assert, CONTRACT, PROTOCOL, POLICY, clone, fileBytes, hash, jcs, sha, utc, whash, placeholders } from './pilot-oracle.mjs';
+import { assert, CONTRACT, PROTOCOL, POLICY, clone, fileBytes, hash, jcs, sha, utc, whash, placeholders, immutableSnapshot, isImmutableSnapshot } from './pilot-oracle.mjs';
 
 const names = ['protocolCanonicalJson', 'modelPayloadSchemaCanonicalJson', 'batchInputTableCanonicalJson', 'candidatePayloadCanonicalJson'];
 
@@ -189,14 +189,18 @@ export function artifactGraphNodes(graph) {
   return nodes;
 }
 
+const immutableInventoryTemplates = new WeakMap();
 function inventoryOfGraph(graph) {
-  return artifactGraphNodes(graph).map(node => ({
+  if (isImmutableSnapshot(graph) && immutableInventoryTemplates.has(graph)) return clone(immutableInventoryTemplates.get(graph));
+  const inventory = artifactGraphNodes(graph).map(node => ({
     name: node.name, format: node.format, schemaKey: node.schemaKey, planOwned: node.planOwned,
     ...(node.object === undefined ? {} : { object: clone(node.object) }), bytes: node.bytes,
     objectSha256: node.object === undefined ? null : hash(node.object),
     fileSha256: sha(node.bytes), bytesSha256: sha(node.bytes), artifactId: node.artifactId ?? null,
     embeddedRefs: flattenArtifactReferences(node.object),
   }));
+  if (isImmutableSnapshot(graph)) immutableInventoryTemplates.set(graph, immutableSnapshot(inventory));
+  return inventory;
 }
 
 // These are plan/execution references, not reusable source image IDs, schema
@@ -251,7 +255,7 @@ export function materializeOldGraph(contract, workflow, oldSecondPlan) {
   const approvals = hasSecond ? fresh ? workflow.approvals : workflow.skippedApprovals : [];
   const coverage = hasSecond ? [fresh ? workflow.coverage : workflow.skippedCoverage] : [];
   const execution = [...workflow.runs, workflow.consensus, ...(fresh ? [workflow.adjudication] : []), ...approvals, ...coverage];
-  return {
+  const graph = immutableSnapshot({
     bundle: clone(contract.bundle), templates: { annotator: contract.prompts[0].template,
       adjudicator: workflow.adjudication.prompt.template },
     protocol: contract.protocol, selection: contract.plan, manifest: contract.manifest, restricted: contract.restricted,
@@ -266,7 +270,8 @@ export function materializeOldGraph(contract, workflow, oldSecondPlan) {
     invalidEvidence, snapshots: [workflow.snapshot, ...(fresh ? [workflow.upstreamFreshBatch, workflow.upstreamFresh, workflow.coverage.snapshot]
       : hasSecond ? [workflow.upstreamSkipped, workflow.skippedCoverage.snapshot] : [])],
     approvals, coverage,
-  };
+  });
+  return graph;
 }
 
 export function materializeReissuePlan({ contract, workflow, cause, oldSecondPlan, oldGraph }) {
@@ -316,12 +321,12 @@ export function materializeReissuePlan({ contract, workflow, cause, oldSecondPla
   const prompts = inputTables.map(table => materializePromptChain({ protocol, schemaObject: schema, table, templateBytes: template, rendererId: protocol.prompts.rendererId }));
   const firstPlan = { ...clone(workflow.firstPlan), protocolObjectSha256: hash(protocol), blindedManifestObjectSha256: hash(manifest),
     slots: workflow.firstPlan.slots.map(slot => ({ ...slot, rootArtifactId: 'reissue-' + cause.key + '-' + slot.rootArtifactId })) };
-  const newGraph = {
+  const newGraph = immutableSnapshot({
     bundle, templates: { ...oldGraph.templates, annotator: template }, protocol, selection, manifest, restricted,
     candidateSet: contract.candidateSet, proxyInput: contract.proxyInput, truthTable: contract.truthTable,
     tables, inputTables, prompts, firstPlan, ledger: null, consensus: null, adjudication: null, aliases: null, candidateTable: null,
     ...Object.fromEntries(EXECUTION_COLLECTIONS.map(name => [name, []])),
-  };
+  });
   const { oldInventory, newInventory } = collectArtifactInventory({ oldGraph, newGraph });
   // Immutable authorities are inventoried, but are not executable identities.
   const identities = (inventory, graph) => [...new Set([

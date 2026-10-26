@@ -2,7 +2,7 @@
 // Test-only materializers; this module never imports a validator.
 import { assert, bad, clone, fileBytes, hash, sha, whash } from './pilot-oracle.mjs';
 import { materializePromptChain, materializeReplacementCampaign, materializeValidWrapper,
-  materializeOldGraph, materializeReissuePlan, REISSUE_CAUSES, artifactGraphNodes,
+  materializeOldGraph, materializeReissuePlan, REISSUE_CAUSES,
   flattenArtifactReferences } from './pilot-d20-builders.mjs';
 
 const orderedHash = table => whash('ordered-image-input', {
@@ -33,23 +33,18 @@ function validAttempt(c, w, reason, table = w.runs[0].table, inputProtocol = c.p
     requiredAnnotationRoot: true, failurePolicy: 'stop-pilot', invalidEvidenceInLedger: [], invalidEvidenceInSnapshots: [] };
 }
 
-function reissue(c, w) {
-  const oldGraph = materializeOldGraph(c, w, null);
-  const b = materializeReissuePlan({ contract: c, workflow: w, cause: REISSUE_CAUSES[0], oldSecondPlan: null, oldGraph });
-  const concrete = (inventory, graph) => {
-    const nodes = artifactGraphNodes(graph);
-    return inventory.map(row => { const node = nodes.find(n => n.name === row.name);
-      return { ...row, bytes: node.bytes, ...(node.object === undefined ? {} : { object: clone(node.object) }) }; });
-  };
+export function materializeDepthReissue(c, w, oldSecondPlan = null) {
+  const oldGraph = materializeOldGraph(c, w, oldSecondPlan);
+  const b = materializeReissuePlan({ contract: c, workflow: w, cause: REISSUE_CAUSES[0], oldSecondPlan, oldGraph });
   return { protocol: c.protocol, selectionPlan: c.plan, oldFirstPlan: w.firstPlan,
-    oldSecondPlan: null, oldLedger: w.emptyLedger,
+    oldSecondPlan, oldLedger: w.emptyLedger, oldGraph,
     closure: b.closure, closureBytes: b.closureBytes, closureFileSha256: b.closureFileSha256,
     closureFilename: b.closureFilename, freezeOrder: b.freezeOrder,
     newProtocol: b.protocol, newSelection: b.selection, newManifest: b.manifest, newRestricted: b.restricted,
     newTable: b.table, newVariables: b.prompt.variables, newEvidence: b.prompt.evidence, newRendered: b.prompt.rendered,
     newFirstPlan: b.firstPlan, newSchema: { object: b.schema, bytes: fileBytes(b.schema),
       fileSha256: sha(fileBytes(b.schema)), objectSha256: hash(b.schema) }, newTemplateBytes: b.template,
-    oldInventory: concrete(b.oldInventory, oldGraph), newInventory: concrete(b.newInventory, b.newGraph),
+    oldInventory: b.oldInventory, newInventory: b.newInventory,
     oldIds: b.oldIds, newIds: b.newIds,
     oldPlanSubmissionsAfterClosure: [], oldPlanRootsAfterClosure: [], oldPlanLedgerEntriesAfterClosure: [],
     oldPlanApprovalsAfterClosure: [], oldPlanCoverageAfterClosure: [], crossPlanReferences: [],
@@ -113,7 +108,7 @@ export function buildDepthRows(c, w) {
     f.validWrapper.header.generator.campaignIdSha256 = hash(f.campaign); signWrapper(f.validWrapper);
   }, 'attempt-campaign-invalid', target === 'file' ? 'activeArtifactFileSha256BeforeCampaign' : 'activeArtifactIdBeforeCampaign');
 
-  const reissued = reissue(c, w);
+  const reissued = materializeDepthReissue(c, w);
   for (const target of ['candidateSet', 'proxyInput', 'truthTable', 'decision/growth']) {
     add('reissue/substituted-' + target, 'plan-reissue', reissued, f => {
       // Reorder actual rows: all row types and counts remain legal, while the
