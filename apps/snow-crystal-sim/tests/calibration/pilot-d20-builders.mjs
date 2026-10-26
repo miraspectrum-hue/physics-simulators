@@ -192,6 +192,7 @@ export function artifactGraphNodes(graph) {
 function inventoryOfGraph(graph) {
   return artifactGraphNodes(graph).map(node => ({
     name: node.name, format: node.format, schemaKey: node.schemaKey, planOwned: node.planOwned,
+    ...(node.object === undefined ? {} : { object: clone(node.object) }), bytes: node.bytes,
     objectSha256: node.object === undefined ? null : hash(node.object),
     fileSha256: sha(node.bytes), bytesSha256: sha(node.bytes), artifactId: node.artifactId ?? null,
     embeddedRefs: flattenArtifactReferences(node.object),

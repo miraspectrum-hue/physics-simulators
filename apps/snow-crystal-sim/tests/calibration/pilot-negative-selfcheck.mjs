@@ -1,6 +1,7 @@
 // Independent D-22 negative-fixture audit. This file never imports or calls
 // the validator. Rejection expectations are literal test-contract metadata.
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { assert, clone, fileBytes, hash, jcs, sha, whash, schemaAccepts, utc } from './pilot-oracle.mjs';
 import { materializeOldGraph, materializeReissuePlan, REISSUE_CAUSES,
   flattenArtifactReferences } from './pilot-d20-builders.mjs';
@@ -32,7 +33,7 @@ const postClosureFields = { submission: 'oldPlanSubmissionsAfterClosure', root: 
   approval: 'oldPlanApprovalsAfterClosure', coverage: 'oldPlanCoverageAfterClosure' };
 
 function changedKeys(a, b) {
-  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(k => jcs(a[k] ?? null) !== jcs(b[k] ?? null)).sort();
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(k => !isDeepStrictEqual(a[k] ?? null, b[k] ?? null)).sort();
 }
 function onlyKeys(a, b, allowed, label) {
   const actual = changedKeys(a, b);
@@ -265,9 +266,13 @@ function expectedReissueKeys(second) {
 }
 export function assertReissueNegatives(contract, rows, second) {
   eq(rows.map(r => r.key).sort(), expectedReissueKeys(second)); eq(rows.length, second ? 67 : 66);
+  // The audit is read-only; each immutable row baseline needs one independent
+  // signature calculation even when dozens of mutations share that baseline.
+  const baselineHashes = new WeakMap();
   for (const r of rows) {
     const f = r.fixture, b = r.baseline, [, , group, key, time] = r.key.split('/');
-    eq(hash(b), r.baselineHash); eq(f.sources, b.sources);
+    if (!baselineHashes.has(b)) baselineHashes.set(b, hash(b));
+    eq(baselineHashes.get(b), r.baselineHash); eq(f.sources, b.sources);
     eq(r.caseName, 'plan-reissue'); eq(r.errorClass, 'RangeError'); eq(r.reason, 'protocol-reissue-required');
     const expectedField = group === 'closure' ? key.startsWith('unknown-') ? key.slice(8) : closureFields[key]
       : group === 'nonempty' ? 'newPlan' + key : group === 'post-closure' ? postClosureFields[key]

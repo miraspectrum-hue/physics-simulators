@@ -36,11 +36,17 @@ export function signClosure(fixture) {
   fixture.closureFileSha256 = sha(fixture.closureBytes);
   fixture.closureFilename = fixture.closure.planClosureId + '.json';
 }
+const baselineAuthorities = new WeakMap();
 function row(rows, baseline, key, mutate, field, options = {}) {
-  const fixture = clone(baseline), baselineHash = hash(baseline);
+  // Concrete inventories are large. Keep one detached baseline authority and
+  // compare it structurally after every mutation instead of serializing it
+  // repeatedly. This still detects any mutation of the shared baseline.
+  if (!baselineAuthorities.has(baseline)) baselineAuthorities.set(baseline, { snapshot: clone(baseline), hash: hash(baseline) });
+  const authority = baselineAuthorities.get(baseline), baselineHash = authority.hash;
+  const fixture = clone(baseline);
   mutate(fixture);
-  assert.equal(hash(baseline), baselineHash, 'mutation must not modify baseline');
-  assert.notEqual(hash(fixture), baselineHash, 'negative must change its baseline: ' + key);
+  assert.deepEqual(baseline, authority.snapshot, 'mutation must not modify baseline');
+  assert.notDeepEqual(fixture, authority.snapshot, 'negative must change its baseline: ' + key);
   rows.push({ key, baseline, fixture, baselineHash,
     caseName: options.caseName ?? 'invalid-attempt',
     errorClass: options.errorClass ?? 'RangeError',

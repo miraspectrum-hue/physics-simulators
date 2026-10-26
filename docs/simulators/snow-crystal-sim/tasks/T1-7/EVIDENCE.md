@@ -306,6 +306,20 @@ ui_acceptance: not-required
     containing `attempt-campaign-invalid` and `invalidEvidence`.
   - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.
 
+## D-24 concrete-inventory fixture correction
+
+- Date: 2026-10-26.
+- Ordinary old/new plan inventories now retain exact bytes and separately cloned concrete objects for every
+  applicable row, allowing validator-side authority checks to recompute every identity and reference.
+- The independent positive oracle verifies canonical serialization, object/file hashes, embedded references, and
+  absence of mutable aliases within inventories, across old/new inventories, and back into source graphs.
+- D-22 support caches only detached immutable baseline snapshots/signatures; labels, outcomes, assertions, and the
+  30-second reissue timeout remain unchanged.
+- Fresh independent test-code review returned `approved` with no findings or conditions.
+- All four self-check suites and typecheck passed. Target Vitest completed with 16 passes and exactly the existing
+  intentional D-24 absent-protocol Red; the earlier fixture-generation timeout was eliminated without increasing
+  the timeout or weakening coverage.
+
 ## D-24 authority-depth regressions and expected Red
 
 - Date: 2026-10-26.

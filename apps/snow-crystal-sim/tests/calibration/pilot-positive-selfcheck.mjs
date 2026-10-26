@@ -39,23 +39,25 @@ const schemaCheck = (bundle, key, value, label = key) => assert(schemaAccepts(lo
 const imageInput = table => whash('ordered-image-input', { orderedItems: table.orderedItems.map(({ attachmentSlot, ...row }) => row) });
 const equal = (actual, expected, label) => assert.deepEqual(actual, expected, label);
 
+function inventoryReferences(value, path = '') {
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, item]) => {
+    const next = Array.isArray(value) ? `${path}[${key}]` : path ? `${path}.${key}` : key;
+    if (!Array.isArray(value) && /Sha256$|ArtifactId$|Id$/.test(key) && typeof item === 'string') return [[next, item]];
+    return inventoryReferences(!Array.isArray(value) && /CanonicalJson$/.test(key) && typeof item === 'string' ? parseUnique(item) : item, next);
+  }).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+}
+
 // Enumerate from the graph's concrete collections, independently of both the
 // builder's node walk and inventory helper. Missing families or nested evidence
 // must fail even if the builder and its reported inventory omit them together.
 function expectedInventory(graph) {
   const result = [];
-  const refs = (value, path = '') => {
-    if (!value || typeof value !== 'object') return [];
-    return Object.entries(value).flatMap(([key, item]) => {
-      const next = Array.isArray(value) ? `${path}[${key}]` : path ? `${path}.${key}` : key;
-      if (!Array.isArray(value) && /Sha256$|ArtifactId$|Id$/.test(key) && typeof item === 'string') return [[next, item]];
-      return refs(!Array.isArray(value) && /CanonicalJson$/.test(key) && typeof item === 'string' ? parseUnique(item) : item, next);
-    }).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  };
   const add = (name, value, schemaKey = null, planOwned = true, format = 'json', bytes, artifactId = null) => {
     const serialized = bytes ?? (format === 'jsonl' ? value.map(fileBytes).join('') : fileBytes(value));
-    result.push({ name, format, schemaKey, planOwned, objectSha256: value === undefined ? null : hash(value),
-      fileSha256: sha(serialized), bytesSha256: sha(serialized), artifactId, embeddedRefs: refs(value) });
+    result.push({ name, format, schemaKey, planOwned, ...(value === undefined ? {} : { object: clone(value) }), bytes: serialized,
+      objectSha256: value === undefined ? null : hash(value),
+      fileSha256: sha(serialized), bytesSha256: sha(serialized), artifactId, embeddedRefs: inventoryReferences(value) });
   };
   const artifact = (name, a, schema = 'artifactSchemaFileSha256') => add(name, [a.header, ...a.records], schema, true, 'jsonl', a.bytes, a.header.artifactId);
   for (const [key, value] of Object.entries(graph.bundle)) add('schema/' + key, value.object, null, false, 'json', value.bytes);
@@ -85,6 +87,42 @@ function expectedInventory(graph) {
   graph.approvals.forEach((value, i) => artifact('approval/' + i, value));
   graph.coverage.forEach((value, i) => artifact('coverage/' + i, value));
   return result;
+}
+
+// Inspect the actual inventory, not just its summaries. Every mutable inventory
+// descendant must belong to that row alone and must be detached from both source
+// graphs and the other inventory. Strings keep exact immutable file bytes.
+function checkConcreteInventories(graphs, inventories) {
+  const graphObjects = new WeakSet(), inventoryObjects = new WeakSet();
+  const visit = (value, seen, label, rejectShared = false) => {
+    if (!value || typeof value !== 'object') return;
+    if (rejectShared) {
+      assert(!graphObjects.has(value), label + ' must not alias a source graph');
+      assert(!seen.has(value), label + ' must not alias another inventory value');
+    } else if (seen.has(value)) return;
+    seen.add(value);
+    for (const child of Object.values(value)) visit(child, seen, label, rejectShared);
+  };
+  graphs.forEach(graph => visit(graph, graphObjects));
+  for (const inventory of inventories) {
+    visit(inventory, inventoryObjects, 'concrete inventory', true);
+    for (const row of inventory) {
+      assert.equal(typeof row.bytes, 'string', row.name + ' exact bytes');
+      equal(sha(row.bytes), row.fileSha256, row.name + ' file hash');
+      equal(sha(row.bytes), row.bytesSha256, row.name + ' bytes hash');
+      if (row.format === 'text') {
+        assert(!Object.hasOwn(row, 'object'), row.name + ' text has no object');
+        equal(row.objectSha256, null); equal(row.embeddedRefs, []);
+      } else {
+        assert(Object.hasOwn(row, 'object'), row.name + ' concrete object');
+        const decoded = row.format === 'jsonl' ? row.bytes.trimEnd().split('\n').map(parseUnique) : parseUnique(row.bytes);
+        equal(decoded, row.object, row.name + ' bytes decode to concrete object');
+        equal(row.bytes, row.format === 'jsonl' ? row.object.map(fileBytes).join('') : fileBytes(row.object), row.name + ' canonical bytes');
+        equal(hash(row.object), row.objectSha256, row.name + ' object hash');
+        equal(inventoryReferences(decoded), row.embeddedRefs, row.name + ' embedded references');
+      }
+    }
+  }
 }
 
 function checkSchemaDefinition(schema) {
@@ -450,6 +488,7 @@ export function assertReissuePositive(built) {
   const oldInventory = expectedInventory(oldGraph), newInventory = expectedInventory(newGraph);
   equal(oldInventory, built.oldInventory, 'independent old inventory');
   equal(newInventory, built.newInventory, 'independent new inventory');
+  checkConcreteInventories([oldGraph, newGraph], [built.oldInventory, built.newInventory]);
   const identities = (rows, graph) => [...new Set([
     ...rows.filter(row => row.planOwned).flatMap(row => [row.objectSha256, row.fileSha256, row.artifactId].filter(Boolean)),
     ...rows.filter(row => row.planOwned).flatMap(row => row.embeddedRefs.filter(([path]) => {
@@ -492,6 +531,7 @@ export function assertOldGraphPositive(graph, inventory) {
   const checks = checkCommonGraph(graph);
   checkExecutionGraph(graph);
   equal(expectedInventory(graph), inventory, 'independent alternative inventory');
+  checkConcreteInventories([graph], [inventory]);
   return { artifactCount: inventory.length, ...checks };
 }
 

@@ -4011,3 +4011,42 @@ summary: >-
   skips, timeout weakening, tolerance changes, or changes to physical sources,
   units, mappings, validity ranges, or model behavior were introduced.
 ```
+
+## test-code review: D-24 concrete-inventory fixture correction
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-builders.mjs
+    hash: sha256:fe38c8ae5dece6f266799c6fb03f72a2b54ac37dd4702fb970de7a2f5f2586a0
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-positive-selfcheck.mjs
+    hash: sha256:6f5d975b388680f8041e1fe377177fd39f97b829fa109fdb37f2c4fb2480513b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d20-negative-builders.mjs
+    hash: sha256:b0039269bbc78e1a0f470aec9b26658bda97f3f80fe9fd30a992a6312a9c975e
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-negative-selfcheck.mjs
+    hash: sha256:217a1ff481640fbb11a6d173e92c8d43bb3644a6f0bc6b29783100fa62fe0762
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  Every ordinary old/new graph inventory row now carries exact immutable bytes
+  and a separately cloned concrete object except text rows, whose absent object
+  and null object hash are explicitly checked. The independent positive oracle
+  decodes the bytes, verifies canonical JSON/JSONL serialization, recomputes
+  object/file/byte hashes and embedded references, and rejects mutable aliasing
+  within either inventory, between old/new inventories, and back to either
+  source graph. Inventory names, ordering, counts, identity derivation, and
+  old/new intersection checks remain unchanged. Negative-row performance caches
+  retain only inaccessible detached baseline snapshots and immutable hash
+  signatures; every row still clones before mutation, deep-compares its shared
+  baseline to the detached snapshot after mutation, proves a nonempty fixture
+  change, and preserves the original 48 replacement, 72 attempt-state, and 133
+  reissue labels, outcomes, fields, and error classes. All four selfchecks passed
+  with 12 reissue chains, 9 valid wrappers, 253 D-22 negatives, 14 D-23 rows,
+  and 18 D-24 rows. Typecheck passed. Target Vitest completed without timeout
+  with exactly 16 passes and the sole intentional assertion Red at
+  d24/selection/absent-protocol. Diff whitespace checks passed. The correction
+  changes no physical equations, sources, units, dimensions, mappings, validity
+  ranges, numerical tolerances, or timeout limits.
+```
