@@ -3710,6 +3710,94 @@ summary: >-
   d23/selection/joint-pdf-spoof.
 ```
 
+## test-code review: D-24 authority-depth regressions
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d24-depth-cases.mjs
+    hash: sha256:317b9c8a03f8631550a6b2d34130fac795eca81731f8dffd4e4e087ebfdd691b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d24-depth-selfcheck.mjs
+    hash: sha256:63d89d36a695c06bd4cc87e73e5960e91be4ac3910fac17e3aa0fdbd874bc2c6
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:91e0ef4670601bac12148ed5d4f0e8ea73311aa26d6c74ea873b5eb8bc5ef088
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:f50c41aa027160f6043b089805f3f9cede136b96c1927a29ad35143c9233038a
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The 18 unique and registered D-24 rows coherently cover absent and foreign
+  protocol selection authority; valid input-change with no attachment delta and
+  coordinated ordinal, protocol, manifest, batch, and combined authority
+  mutations; forged frozen active ID, file hash, and both for model-retry;
+  concrete candidate-set, proxy-input, truth-table, and growth-decision inventory
+  substitutions plus embedded-reference mismatch; and two deep nested schema
+  semantic mutations. Independent self-checks verified canonical bytes, object
+  and file hashes, wrapper signatures, complete prompt-chain derivation,
+  concrete inventory objects and references, schema-valid carriers, isolated
+  target defects, and stable reason/field contracts. The ordinary selection
+  fixture now supplies the normative protocol with its original expected plan
+  and remains Green. D-22 remains exactly 253 unique negatives, D-23 remains
+  exactly 14 registered rows, and positive checks remain 12 reissue chains,
+  9 valid wrappers, and 23 schema authorities. Syntax checks, typecheck, and
+  diff whitespace checks passed. Target Vitest produced exactly 16 passes and
+  the sole deterministic assertion Red at d24/selection/absent-protocol. No
+  skips, timeout weakening, tolerance changes, or changes to physical sources,
+  units, mappings, validity ranges, or model behavior were introduced.
+```
+
+## implementation review: D-23 re-review
+
+```yaml
+review_type: implementation
+status: changes-requested
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs
+    hash: sha256:bb899b239e3c7d2b929c3b190d8f8a6275a7f560297ce2ac2e74542a17477c08
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-core.mjs
+    hash: sha256:7d810161286431c5da9a3ac33e89a88dd612c4eb0453b9577718bbc980c20f30
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-io.mjs
+    hash: sha256:17fc40a06ba37729fc1d689369b7c0310bb3aea303b61d251105f244148fe9be
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs
+    hash: sha256:1cf65bdeefb66eb6dc4f5abfad4b1dd6fabd18ecab8ac11895e38bf4edac884e
+findings:
+  - id: R-001
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs:201
+    problem: The three-way fixed-PDF authority check treats the protocol object as optional.
+    evidence: A selection fixture containing the unchanged candidate set, proxy input, and selection plan but no protocol object was accepted and returned the normative PDF digest. The conditional `f.protocol && ...` therefore establishes only candidate/plan/fixed-digest equality when the third authority is absent.
+    required_change: Require a concrete protocol object, bind the plan's protocolObjectSha256 to its recomputed hash, and require protocol, candidate set, selection plan, and the normative literal to carry the same fixed PDF digest.
+  - id: R-002
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:321
+    problem: Valid input-change transitions do not enforce the old/new input invariants or a nonempty attachmentSlot delta.
+    evidence: Independently materialized and re-signed valid-attempt-1 campaigns were accepted both with a byte-identical old table and with ordinal changed to 99. Each returned active-replacement. The invariant checks added to invalidAttempt are not applied by validateCampaignAuthority to valid wrappers.
+    required_change: For every valid input-change attempt, compare the frozen old table with the new wrapper table, require exact equality of protocol, manifest, batch, ordinal, IDs, image hashes, count, and order, require at least one attachmentSlot change, and verify the complete prompt-chain derivation.
+  - id: R-003
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:330
+    problem: Replacement campaign authority still trusts the caller-supplied activeBefore tuple instead of the frozen active artifact.
+    evidence: A fully re-signed model-retry valid attempt using forged-active and SHA-256 of unrelated bytes as the active ID/file authority was accepted as active-replacement even though plannedRun identified a different frozen active artifact. The implementation compares campaign fields only with the duplicated activeBefore wrapper.
+    required_change: Derive the campaign's active ID and file hash from the validated frozen active artifact or ledger terminal, reject self-consistent foreign tuples, and perform this authority validation before any state transition.
+  - id: R-004
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs:399
+    problem: Plan-reissue inventory authority remains incomplete because many required inventory rows are not bound to concrete artifact bytes and references.
+    evidence: Replacing the candidateSet inventory row's object, file, and byte hashes with unrelated digests was accepted although newSelection.candidateSetObjectSha256 retained the original digest. Only a subset of expected rows is passed through bindInventoryNode; candidateSet, proxyInput, truthTable, decision artifacts, the second batch chain, and other rows remain caller-reported summaries.
+    required_change: Supply and validate concrete bytes/objects for every expected old and new inventory row, recompute each hash and embedded-reference set, bind every selection/protocol reference, and derive oldIds/newIds solely from that verified inventory.
+  - id: R-005
+    severity: high
+    location: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator-schema.mjs:48
+    problem: Named schema-role validation is shallow and does not establish the complete normative semantics of all 23 roles.
+    evidence: A coordinated replacement of selectionCandidateSet.properties.rows with an array-of-string schema, followed by recomputation of object/file hashes and the protocol reference, was accepted by schema-bundle. Pairwise distinct hashes and top-level fields/discriminants pass even when the schema cannot validate the named role's required value structure.
+    required_change: Bind each of the 23 literal role names to its complete normative schema structure or an independently fixed role authority, including nested properties, constraints, formats, and unions; retain pairwise-distinct object/file authority checks.
+conditions: []
+rollback_to: implementation
+summary: "Target Vitest passed 16/16; positive, negative, and D-23 self-checks passed with 12 reissues, 9 wrappers, 18 transitions, 23 reported schema authorities, and 253 D-22 negatives. Syntax checks, typecheck, and diff whitespace checks also passed. Independent adversarial checks nevertheless reproduced acceptance gaps for every prior authority category: optional protocol PDF authority, valid-path input-change invariants, forged active campaign authority, unbound concrete reissue inventory, and shallow schema-role semantics. Return only the four validator implementation files to implementation; retain committed tests and higher-level artifacts."
+```
+
 ## testcases review: D-20/D-22 freshness approval
 
 ```yaml
@@ -3884,4 +3972,42 @@ summary: >-
   validity-range changes. Target Vitest produced exactly 15 passes and one
   deterministic assertion Red because the current validator accepts
   d23/selection/joint-pdf-spoof.
+```
+
+## test-code review: D-24 authority-depth regressions (current)
+
+```yaml
+review_type: test-code
+status: approved
+reviewed_files:
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d24-depth-cases.mjs
+    hash: sha256:317b9c8a03f8631550a6b2d34130fac795eca81731f8dffd4e4e087ebfdd691b
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-d24-depth-selfcheck.mjs
+    hash: sha256:63d89d36a695c06bd4cc87e73e5960e91be4ac3910fac17e3aa0fdbd874bc2c6
+  - path: apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts
+    hash: sha256:91e0ef4670601bac12148ed5d4f0e8ea73311aa26d6c74ea873b5eb8bc5ef088
+  - path: apps/snow-crystal-sim/tests/calibration/pilot-contract-fixtures.mjs
+    hash: sha256:f50c41aa027160f6043b089805f3f9cede136b96c1927a29ad35143c9233038a
+findings: []
+conditions: []
+rollback_to: none
+summary: >-
+  The 18 unique and registered D-24 rows coherently cover absent and foreign
+  protocol selection authority; valid input-change with no attachment delta and
+  coordinated ordinal, protocol, manifest, batch, and combined authority
+  mutations; forged frozen active ID, file hash, and both for model-retry;
+  concrete candidate-set, proxy-input, truth-table, and growth-decision inventory
+  substitutions plus embedded-reference mismatch; and two deep nested schema
+  semantic mutations. Independent self-checks verified canonical bytes, object
+  and file hashes, wrapper signatures, complete prompt-chain derivation,
+  concrete inventory objects and references, schema-valid carriers, isolated
+  target defects, and stable reason/field contracts. The ordinary selection
+  fixture now supplies the normative protocol with its original expected plan
+  and remains Green. D-22 remains exactly 253 unique negatives, D-23 remains
+  exactly 14 registered rows, and positive checks remain 12 reissue chains,
+  9 valid wrappers, and 23 schema authorities. Syntax checks, typecheck, and
+  diff whitespace checks passed. Target Vitest produced exactly 16 passes and
+  the sole deterministic assertion Red at d24/selection/absent-protocol. No
+  skips, timeout weakening, tolerance changes, or changes to physical sources,
+  units, mappings, validity ranges, or model behavior were introduced.
 ```

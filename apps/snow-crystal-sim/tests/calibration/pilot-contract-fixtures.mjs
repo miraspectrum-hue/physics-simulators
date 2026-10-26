@@ -157,7 +157,7 @@ export function buildContract() {
 }
 
 export function contractCases(c) {
-  const selection={candidateSet:c.candidateSet,proxyInput:c.proxyInput,selectionPlan:c.plan};good('selection',selection,c.plan);
+  const selection={protocol:c.protocol,candidateSet:c.candidateSet,proxyInput:c.proxyInput,selectionPlan:c.plan};good('selection',selection,c.plan);
   for(const [label,fn,field] of [
     ['candidate-205',f=>f.candidateSet.rows.pop(),'candidateSet.rows'],['candidate-207',f=>f.candidateSet.rows.push(clone(f.candidateSet.rows[0])),'candidateSet.rows'],['proxy-205',f=>f.proxyInput.rows.pop(),'proxyInput.rows'],['proxy-207',f=>f.proxyInput.rows.push(clone(f.proxyInput.rows[0])),'proxyInput.rows'],
     ['missing-A',f=>{delete f.proxyInput.rows[0].annotatorA;},'annotatorA'],['missing-B',f=>{delete f.proxyInput.rows[0].annotatorB;},'annotatorB'],['missing-field',f=>{delete f.proxyInput.rows[0].annotatorA.confidence;},'confidence'],

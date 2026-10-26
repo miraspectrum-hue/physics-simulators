@@ -305,6 +305,26 @@ ui_acceptance: not-required
     invalid-evidence attempt, leaving `duplicateError` undefined instead of throwing the required `RangeError`
     containing `attempt-campaign-invalid` and `invalidEvidence`.
   - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.
+
+## D-24 authority-depth regressions and expected Red
+
+- Date: 2026-10-26.
+- The second implementation review found five deeper authority gaps: optional protocol authority, valid-path
+  input-change omissions, caller-supplied active-artifact authority, partially unbound reissue inventory, and
+  shallow named-schema semantics.
+- Eighteen fully rebuilt, re-signed, and uniquely registered D-24 negative fixtures cover those gaps.
+- Independent D-24 self-check: Green; existing D-22 (253), D-23 (14), and positive (12 reissues / 9 wrappers)
+  self-checks remain Green.
+- Fresh independent test-code review returned `approved` with no findings or conditions.
+- Typecheck, syntax checks, and whitespace checks passed without timeout changes.
+- Targeted command:
+  `npm.cmd test --workspace apps/snow-crystal-sim -- tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
+  - Result: exited 1; 16 tests passed, no tests skipped, and exactly one expected assertion failure.
+  - The sole failure is `d24/selection/absent-protocol`: the current validator accepts selection validation without
+    the protocol authority instead of throwing `RangeError` with reason `selection-invalid` and field `protocol`.
+  - Direct diagnostics showed 16 of 18 adversarial rows were accepted; two protocol-changing input cases were
+    rejected only through a generic wrapper path rather than the required authority-specific error field.
+  - No syntax, type, dependency, module-resolution, environment, timeout, or unrelated regression was present.
 - Approved positive support files remained byte-identical throughout the negative substage.
 
 ## D-23 implementation-review gap regressions and expected Red
