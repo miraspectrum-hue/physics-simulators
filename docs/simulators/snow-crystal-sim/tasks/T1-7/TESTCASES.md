@@ -1231,6 +1231,23 @@ holdout synthetic一時fileはtest終了時に隔離temp directoryごと破棄�
 導出する。期待24 ID、各page6件、`pageSlot=1..6`、全体ordinal`0..23`、batch`12+12`をliteral snapshotとして
 test codeへ固定し、validator自身の出力を期待値に使わない。
 
+実pilot入力の回帰fixture `REAL-PILOT-SELECTION-206` は `SYN-PILOT-24` と分離する。実画像、
+human final、pilot finalは含めず、次の既知raw file SHA-256と固定PDF hashが一致する読み取り専用入力
+からcandidate/proxyをtest-local oracleが再構成する。raw file hash不一致はparse前に停止し、実行時path、
+file timestamp、whitespace、validator出力を期待値に使わない。
+
+| 入力 | raw file SHA-256 |
+|---|---|
+| source locator inventory | `0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e` |
+| frozen annotator A draft | `5a971dbfb0eda56b1f61c456f7ad7ad6f8bde5af38ade153199a6c413f2a1394` |
+| frozen annotator B draft | `f92e527f738035abc224062d16c3fbf6f0ada9a29701f3afaf29e5eed63fde4f` |
+
+source locator inventoryからID ASCII順で再構成したcandidate setのLFなしJCS object SHA-256は
+`2ed0c86bd7484e2fa25117eedfc81116263029f6a76bba7fb137ab72aaf2f716`、A/B draftから再構成した
+proxy inputのLFなしJCS object SHA-256は
+`3ab6789058efcc435ad90ac17e9d4a34510940a0db6c288eb4159d4d82db35b8`とする。これらは実データの再生可能性を
+固定するexecution-time regressionであり、§3のpage別件数の規範原典を本書へ移さない。
+
 匿名IDは `img-001..img-024`、filenameは `img-001.png..img-024.png` とし、source/page/条件を符号化しない。
 hash fixtureはtest-local `H(label)=SHA-256(UTF-8("SYN-PILOT-24/"+label))` で互いに異なる64 lowercase hexを
 作る。実装validatorへ渡す期待hashは、JCS/PNG/raw byteをtest oracleが再計算してからliteral fixtureと照合する。
@@ -1262,6 +1279,59 @@ mutationは candidate/proxy 205または207件、A/B片側欠落、field欠落�
 page候補5件、page quota `7/5/6/6`、pageSlot/ordinal/key/orderの1 byte相当変更、選定後の画像/slot差替え、
 planの`sourcePdfSha256`欠落/1 hex変更、planだけ候補集合またはprotocolと異なるPDF hashを含む。
 いずれも`selection-invalid`または対応する最初のstable reasonで停止し、別候補で補完しない。
+
+#### 実データ回帰（TC-PILOT-SELECTION-001）: 206候補のpage domainと選定snapshot
+
+`REAL-PILOT-SELECTION-206` について、上記3 raw fileをvalidatorと別のloader、JCS、SHA-256で再計算し、
+次をすべて満たす。
+
+1. candidate/proxyは同じ206 IDをASCII順でちょうど1回覆う。source locator inventoryから独立に導出した
+   page別件数はP11/P12/P13/P14=`[50,54,54,48]`、ordinal setはそれぞれ`1..50`、`1..54`、
+   `1..54`、`1..48`と厳密一致する。validatorは`page<=12 ? 52 : 51`のような別fixture由来の
+   上限を使わず、全206件、page/ordinal/ID整合、page内の1始まり連続性からdomainを検査する。
+2. positive boundaryとして`L23-F2-P11-N050`、`L23-F2-P12-N054`、`L23-F2-P13-N054`、
+   `L23-F2-P14-N048`を受理する。範囲外の4 mutationはbaseを別々にdeep cloneし、各pageの
+   最終candidate tupleを次の完全形tupleへ置換する。
+
+   | page | 置換前candidate tuple | 置換後candidate tuple |
+   |---|---|---|
+   | 11 | `['L23-F2-P11-N050',11,50]` | `['L23-F2-P11-N051',11,51]` |
+   | 12 | `['L23-F2-P12-N054',12,54]` | `['L23-F2-P12-N055',12,55]` |
+   | 13 | `['L23-F2-P13-N054',13,54]` | `['L23-F2-P13-N055',13,55]` |
+   | 14 | `['L23-F2-P14-N048',14,48]` | `['L23-F2-P14-N049',14,49]` |
+
+   同じmutationで対応するproxy rowの`sourceObservationId`も置換後の完全形IDへ変更し、A/B voteと
+   proxy signatureは置換前rowの値を保つ。candidate/proxyは同じ206 IDで同順のままとし、変更後の
+   candidate/proxy object hashをtest-local oracleで再計算し、`selectionPlan.candidateSetObjectSha256`と
+   `selectionPlan.proxyInputObjectSha256`もその値へ差し替える。selection key、batch key、page slot、
+   ordinalを同じoracleで再計算し、選定対象24 IDとbatch orderが上記positive snapshotから1件も
+   変わらないことをvalidator呼び出し前に検査する。上位artifactがselection plan object hashを参照する
+   fixtureではその参照hashも再計算値へ更新する。
+
+   このように件数、tuple内のID/page/ordinal、candidate/proxy対応、直接・上位hash、選定24件を
+   すべて整合させた後でも、元の末尾ordinalが欠落して最大値+1が存在するため、各4 mutationを
+   page内連続性違反として`RangeError`, `field=sourceObservationId`, `reason=selection-invalid` で拒否する。
+3. candidate/proxy object hashは上記literalと一致し、A/Bの片方、1 field、1 ID、locator inventoryの
+   page/ordinalのどれかが欠落または1 byte相当変更されれば、hash不一致または`selection-invalid`で
+   選定前に停止する。
+4. 規範selection algorithmをtest-local oracleで再計算した24 IDのbatch orderは次と完全一致する。
+   pageごと6件、source ID重複なし、ordinal `0..23`、batch-01=`0..11`、batch-02=`12..23`も
+   独立に検査する。
+
+```text
+batch-01:
+L23-F2-P12-N021, L23-F2-P14-N032, L23-F2-P14-N041, L23-F2-P13-N037,
+L23-F2-P14-N038, L23-F2-P11-N009, L23-F2-P12-N041, L23-F2-P14-N003,
+L23-F2-P14-N013, L23-F2-P11-N049, L23-F2-P11-N048, L23-F2-P13-N039
+
+batch-02:
+L23-F2-P13-N005, L23-F2-P12-N030, L23-F2-P13-N044, L23-F2-P13-N020,
+L23-F2-P12-N050, L23-F2-P12-N019, L23-F2-P13-N012, L23-F2-P12-N006,
+L23-F2-P14-N030, L23-F2-P11-N026, L23-F2-P11-N024, L23-F2-P11-N012
+```
+
+`SYN-PILOT-24` の `[52,52,51,51]` とその期待24 IDはこの回帰追加で変更しない。
+synthetic fixtureと実入力の両方がGreenの場合だけselection gateをGreenとする。
 
 ### TC-PILOT-SELECTION-002: blinded manifestとrestricted mapの非漏洩
 

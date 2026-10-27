@@ -15,6 +15,8 @@ import { assert, cases, ROOT, DOC, sha, hash, clone, hex, SCHEMA_PROPERTIES, sch
 import { imageCases, png, maskedPixels, rgbaHash } from './pilot-images.mjs';
 // @ts-expect-error Test-only ESM support.
 import { buildContract, contractCases } from './pilot-contract-fixtures.mjs';
+// @ts-expect-error Test-only real frozen-input selection oracle.
+import { buildRealSelectionFixture, realSelectionBoundaryMutations, REAL_SELECTION_SNAPSHOT } from './pilot-real-selection-cases.mjs';
 // @ts-expect-error Test-only ESM support.
 import { buildWorkflow, workflowCases } from './pilot-workflow-fixtures.mjs';
 // @ts-expect-error Test-only ESM support.
@@ -71,7 +73,7 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
     for (const [name, expected] of [
       ['DESIGN.md', '88dd9568e737a5abac9f25a120cdd24fcb9c701dbcb437509cb161e1bedba781'],
       ['MORPHOLOGY-ENSEMBLE-PILOT-PROTOCOL.md', 'bdf96f43db8f042ee2b83afee804f3b398c57f5dbc77d7940c842f78d1267e40'],
-      ['TESTCASES.md', 'fa16236613963557bbcc3f2d2979b8b63b8af98f0de02e4129b7945312e17b52'],
+      ['TESTCASES.md', 'cd73ba36e30ab87aefa13a69f8009b51073f58982473c1e6e2894bb8bb6f5e61'],
     ]) expect(sha(readFileSync(resolve(DOC, name)))).toBe(expected);
     parserOracleCases();
     dependencyGateOracle();
@@ -97,6 +99,20 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
     expect(contract.manifest.batches.map((b: any) => b.orderedAnonymousImageIds.length)).toEqual([12, 12]);
     expect(Object.keys(contract.protocol.schemaFiles)).toEqual(SCHEMA_PROPERTIES);
     expect(cases.filter((c: FixtureCase) => c.caseName === 'transport' && c.label === 'positive')).toHaveLength(5);
+  });
+  it('TC-PILOT-SELECTION-001 real 206-input page domain and batch-order snapshot', async () => {
+    const fixture = buildRealSelectionFixture(contract.protocol);
+    expect(fixture.selectionPlan.slots.map((slot: any) => slot.sourceObservationId)).toEqual(REAL_SELECTION_SNAPSHOT);
+    const path = resolve(ROOT, VALIDATOR_REL);
+    const loaded = await import(/* @vite-ignore */ pathToFileURL(path).href) as Validator;
+    expect(await loaded.validatePilot('selection', fixture)).toEqual(fixture.selectionPlan);
+    for (const mutation of realSelectionBoundaryMutations(fixture)) {
+      let error: unknown;
+      try { await loaded.validatePilot('selection', mutation.fixture); } catch (caught) { error = caught; }
+      expect(error, `page ${mutation.page} must reject ${mutation.sourceObservationId}`).toBeInstanceOf(RangeError);
+      expect((error as Error).message).toContain('selection-invalid');
+      expect((error as Error).message).toContain('sourceObservationId');
+    }
   });
   it('TC-PILOT-RUN-001..002, CONSENSUS-001 complete six-run/72-record immutable artifact chain', () => {
     workflow = buildWorkflow(contract); workflowCases(contract, workflow);

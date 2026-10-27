@@ -1,0 +1,1869 @@
+{
+  "metadata": {
+    "schemaVersion": "snow-crystal-morphology-draft/1",
+    "annotator": "B",
+    "annotationPhase": "final-after-transcription-source-reinspection",
+    "sourcePdfSha256": "20f579e01777d51b81b527751b32c3e44b1d8ebe9f1d09a7f15554c2445381af",
+    "transcriptionEvidenceSha256": "dd55666cc796e1055f9c9f144bbcaea63e5bbadd4fc7297a5c6054b141d628ac",
+    "morphologyVocabulary": "MorphologyVoteV1",
+    "vocabularyReference": "docs/simulators/snow-crystal-sim/tasks/T1-7/DESIGN.md#51-project-annotation",
+    "decisionReference": "docs/simulators/snow-crystal-sim/tasks/T1-7/DECISIONS.md#d-03-形態タグの-provenance",
+    "ordering": "pdfPage ascending; within each page top-to-bottom, then left-to-right; page-local ordinal starts at 1"
+  },
+  "entries": [
+    {
+      "sourceObservationId": "L23-F2-P11-N001",
+      "page": 11,
+      "pagePanelOrdinal": 1,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N002",
+      "page": 11,
+      "pagePanelOrdinal": 2,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N003",
+      "page": 11,
+      "pagePanelOrdinal": 3,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N004",
+      "page": 11,
+      "pagePanelOrdinal": 4,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N005",
+      "page": 11,
+      "pagePanelOrdinal": 5,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N006",
+      "page": 11,
+      "pagePanelOrdinal": 6,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N007",
+      "page": 11,
+      "pagePanelOrdinal": 7,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N008",
+      "page": 11,
+      "pagePanelOrdinal": 8,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N009",
+      "page": 11,
+      "pagePanelOrdinal": 9,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N010",
+      "page": 11,
+      "pagePanelOrdinal": 10,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N011",
+      "page": 11,
+      "pagePanelOrdinal": 11,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N012",
+      "page": 11,
+      "pagePanelOrdinal": 12,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N013",
+      "page": 11,
+      "pagePanelOrdinal": 13,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N014",
+      "page": 11,
+      "pagePanelOrdinal": 14,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N015",
+      "page": 11,
+      "pagePanelOrdinal": 15,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N016",
+      "page": 11,
+      "pagePanelOrdinal": 16,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N017",
+      "page": 11,
+      "pagePanelOrdinal": 17,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N018",
+      "page": 11,
+      "pagePanelOrdinal": 18,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N019",
+      "page": 11,
+      "pagePanelOrdinal": 19,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N020",
+      "page": 11,
+      "pagePanelOrdinal": 20,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N021",
+      "page": 11,
+      "pagePanelOrdinal": 21,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N022",
+      "page": 11,
+      "pagePanelOrdinal": 22,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N023",
+      "page": 11,
+      "pagePanelOrdinal": 23,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N024",
+      "page": 11,
+      "pagePanelOrdinal": 24,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N025",
+      "page": 11,
+      "pagePanelOrdinal": 25,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N026",
+      "page": 11,
+      "pagePanelOrdinal": 26,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N027",
+      "page": 11,
+      "pagePanelOrdinal": 27,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N028",
+      "page": 11,
+      "pagePanelOrdinal": 28,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N029",
+      "page": 11,
+      "pagePanelOrdinal": 29,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N030",
+      "page": 11,
+      "pagePanelOrdinal": 30,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N031",
+      "page": 11,
+      "pagePanelOrdinal": 31,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N032",
+      "page": 11,
+      "pagePanelOrdinal": 32,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N033",
+      "page": 11,
+      "pagePanelOrdinal": 33,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N034",
+      "page": 11,
+      "pagePanelOrdinal": 34,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N035",
+      "page": 11,
+      "pagePanelOrdinal": 35,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N036",
+      "page": 11,
+      "pagePanelOrdinal": 36,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N037",
+      "page": 11,
+      "pagePanelOrdinal": 37,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N038",
+      "page": 11,
+      "pagePanelOrdinal": 38,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N039",
+      "page": 11,
+      "pagePanelOrdinal": 39,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N040",
+      "page": 11,
+      "pagePanelOrdinal": 40,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N041",
+      "page": 11,
+      "pagePanelOrdinal": 41,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N042",
+      "page": 11,
+      "pagePanelOrdinal": 42,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N043",
+      "page": 11,
+      "pagePanelOrdinal": 43,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N044",
+      "page": 11,
+      "pagePanelOrdinal": 44,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N045",
+      "page": 11,
+      "pagePanelOrdinal": 45,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N046",
+      "page": 11,
+      "pagePanelOrdinal": 46,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N047",
+      "page": 11,
+      "pagePanelOrdinal": 47,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N048",
+      "page": 11,
+      "pagePanelOrdinal": 48,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N049",
+      "page": 11,
+      "pagePanelOrdinal": 49,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P11-N050",
+      "page": 11,
+      "pagePanelOrdinal": 50,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N001",
+      "page": 12,
+      "pagePanelOrdinal": 1,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N002",
+      "page": 12,
+      "pagePanelOrdinal": 2,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N003",
+      "page": 12,
+      "pagePanelOrdinal": 3,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N004",
+      "page": 12,
+      "pagePanelOrdinal": 4,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N005",
+      "page": 12,
+      "pagePanelOrdinal": 5,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N006",
+      "page": 12,
+      "pagePanelOrdinal": 6,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N007",
+      "page": 12,
+      "pagePanelOrdinal": 7,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N008",
+      "page": 12,
+      "pagePanelOrdinal": 8,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N009",
+      "page": 12,
+      "pagePanelOrdinal": 9,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N010",
+      "page": 12,
+      "pagePanelOrdinal": 10,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N011",
+      "page": 12,
+      "pagePanelOrdinal": 11,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N012",
+      "page": 12,
+      "pagePanelOrdinal": 12,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N013",
+      "page": 12,
+      "pagePanelOrdinal": 13,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N014",
+      "page": 12,
+      "pagePanelOrdinal": 14,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N015",
+      "page": 12,
+      "pagePanelOrdinal": 15,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N016",
+      "page": 12,
+      "pagePanelOrdinal": 16,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N017",
+      "page": 12,
+      "pagePanelOrdinal": 17,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N018",
+      "page": 12,
+      "pagePanelOrdinal": 18,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N019",
+      "page": 12,
+      "pagePanelOrdinal": 19,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N020",
+      "page": 12,
+      "pagePanelOrdinal": 20,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N021",
+      "page": 12,
+      "pagePanelOrdinal": 21,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N022",
+      "page": 12,
+      "pagePanelOrdinal": 22,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N023",
+      "page": 12,
+      "pagePanelOrdinal": 23,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N024",
+      "page": 12,
+      "pagePanelOrdinal": 24,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N025",
+      "page": 12,
+      "pagePanelOrdinal": 25,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N026",
+      "page": 12,
+      "pagePanelOrdinal": 26,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N027",
+      "page": 12,
+      "pagePanelOrdinal": 27,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N028",
+      "page": 12,
+      "pagePanelOrdinal": 28,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N029",
+      "page": 12,
+      "pagePanelOrdinal": 29,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N030",
+      "page": 12,
+      "pagePanelOrdinal": 30,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N031",
+      "page": 12,
+      "pagePanelOrdinal": 31,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N032",
+      "page": 12,
+      "pagePanelOrdinal": 32,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N033",
+      "page": 12,
+      "pagePanelOrdinal": 33,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N034",
+      "page": 12,
+      "pagePanelOrdinal": 34,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N035",
+      "page": 12,
+      "pagePanelOrdinal": 35,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N036",
+      "page": 12,
+      "pagePanelOrdinal": 36,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N037",
+      "page": 12,
+      "pagePanelOrdinal": 37,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N038",
+      "page": 12,
+      "pagePanelOrdinal": 38,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N039",
+      "page": 12,
+      "pagePanelOrdinal": 39,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N040",
+      "page": 12,
+      "pagePanelOrdinal": 40,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N041",
+      "page": 12,
+      "pagePanelOrdinal": 41,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N042",
+      "page": 12,
+      "pagePanelOrdinal": 42,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N043",
+      "page": 12,
+      "pagePanelOrdinal": 43,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N044",
+      "page": 12,
+      "pagePanelOrdinal": 44,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N045",
+      "page": 12,
+      "pagePanelOrdinal": 45,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N046",
+      "page": 12,
+      "pagePanelOrdinal": 46,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N047",
+      "page": 12,
+      "pagePanelOrdinal": 47,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N048",
+      "page": 12,
+      "pagePanelOrdinal": 48,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N049",
+      "page": 12,
+      "pagePanelOrdinal": 49,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N050",
+      "page": 12,
+      "pagePanelOrdinal": 50,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N051",
+      "page": 12,
+      "pagePanelOrdinal": 51,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N052",
+      "page": 12,
+      "pagePanelOrdinal": 52,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N053",
+      "page": 12,
+      "pagePanelOrdinal": 53,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P12-N054",
+      "page": 12,
+      "pagePanelOrdinal": 54,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N001",
+      "page": 13,
+      "pagePanelOrdinal": 1,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N002",
+      "page": 13,
+      "pagePanelOrdinal": 2,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N003",
+      "page": 13,
+      "pagePanelOrdinal": 3,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N004",
+      "page": 13,
+      "pagePanelOrdinal": 4,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N005",
+      "page": 13,
+      "pagePanelOrdinal": 5,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N006",
+      "page": 13,
+      "pagePanelOrdinal": 6,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N007",
+      "page": 13,
+      "pagePanelOrdinal": 7,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N008",
+      "page": 13,
+      "pagePanelOrdinal": 8,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N009",
+      "page": 13,
+      "pagePanelOrdinal": 9,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N010",
+      "page": 13,
+      "pagePanelOrdinal": 10,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N011",
+      "page": 13,
+      "pagePanelOrdinal": 11,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N012",
+      "page": 13,
+      "pagePanelOrdinal": 12,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N013",
+      "page": 13,
+      "pagePanelOrdinal": 13,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N014",
+      "page": 13,
+      "pagePanelOrdinal": 14,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N015",
+      "page": 13,
+      "pagePanelOrdinal": 15,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N016",
+      "page": 13,
+      "pagePanelOrdinal": 16,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N017",
+      "page": 13,
+      "pagePanelOrdinal": 17,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N018",
+      "page": 13,
+      "pagePanelOrdinal": 18,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N019",
+      "page": 13,
+      "pagePanelOrdinal": 19,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N020",
+      "page": 13,
+      "pagePanelOrdinal": 20,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N021",
+      "page": 13,
+      "pagePanelOrdinal": 21,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N022",
+      "page": 13,
+      "pagePanelOrdinal": 22,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N023",
+      "page": 13,
+      "pagePanelOrdinal": 23,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N024",
+      "page": 13,
+      "pagePanelOrdinal": 24,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N025",
+      "page": 13,
+      "pagePanelOrdinal": 25,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N026",
+      "page": 13,
+      "pagePanelOrdinal": 26,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N027",
+      "page": 13,
+      "pagePanelOrdinal": 27,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N028",
+      "page": 13,
+      "pagePanelOrdinal": 28,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N029",
+      "page": 13,
+      "pagePanelOrdinal": 29,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N030",
+      "page": 13,
+      "pagePanelOrdinal": 30,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N031",
+      "page": 13,
+      "pagePanelOrdinal": 31,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N032",
+      "page": 13,
+      "pagePanelOrdinal": 32,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N033",
+      "page": 13,
+      "pagePanelOrdinal": 33,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N034",
+      "page": 13,
+      "pagePanelOrdinal": 34,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N035",
+      "page": 13,
+      "pagePanelOrdinal": 35,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N036",
+      "page": 13,
+      "pagePanelOrdinal": 36,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N037",
+      "page": 13,
+      "pagePanelOrdinal": 37,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N038",
+      "page": 13,
+      "pagePanelOrdinal": 38,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N039",
+      "page": 13,
+      "pagePanelOrdinal": 39,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N040",
+      "page": 13,
+      "pagePanelOrdinal": 40,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N041",
+      "page": 13,
+      "pagePanelOrdinal": 41,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N042",
+      "page": 13,
+      "pagePanelOrdinal": 42,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N043",
+      "page": 13,
+      "pagePanelOrdinal": 43,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N044",
+      "page": 13,
+      "pagePanelOrdinal": 44,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N045",
+      "page": 13,
+      "pagePanelOrdinal": 45,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N046",
+      "page": 13,
+      "pagePanelOrdinal": 46,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N047",
+      "page": 13,
+      "pagePanelOrdinal": 47,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N048",
+      "page": 13,
+      "pagePanelOrdinal": 48,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N049",
+      "page": 13,
+      "pagePanelOrdinal": 49,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N050",
+      "page": 13,
+      "pagePanelOrdinal": 50,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N051",
+      "page": 13,
+      "pagePanelOrdinal": 51,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N052",
+      "page": 13,
+      "pagePanelOrdinal": 52,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N053",
+      "page": 13,
+      "pagePanelOrdinal": 53,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P13-N054",
+      "page": 13,
+      "pagePanelOrdinal": 54,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N001",
+      "page": 14,
+      "pagePanelOrdinal": 1,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N002",
+      "page": 14,
+      "pagePanelOrdinal": 2,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 3,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N003",
+      "page": 14,
+      "pagePanelOrdinal": 3,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N004",
+      "page": 14,
+      "pagePanelOrdinal": 4,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N005",
+      "page": 14,
+      "pagePanelOrdinal": 5,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N006",
+      "page": 14,
+      "pagePanelOrdinal": 6,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N007",
+      "page": 14,
+      "pagePanelOrdinal": 7,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N008",
+      "page": 14,
+      "pagePanelOrdinal": 8,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 2,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N009",
+      "page": 14,
+      "pagePanelOrdinal": 9,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N010",
+      "page": 14,
+      "pagePanelOrdinal": 10,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N011",
+      "page": 14,
+      "pagePanelOrdinal": 11,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N012",
+      "page": 14,
+      "pagePanelOrdinal": 12,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N013",
+      "page": 14,
+      "pagePanelOrdinal": 13,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N014",
+      "page": 14,
+      "pagePanelOrdinal": 14,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N015",
+      "page": 14,
+      "pagePanelOrdinal": 15,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N016",
+      "page": 14,
+      "pagePanelOrdinal": 16,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N017",
+      "page": 14,
+      "pagePanelOrdinal": 17,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N018",
+      "page": 14,
+      "pagePanelOrdinal": 18,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N019",
+      "page": 14,
+      "pagePanelOrdinal": 19,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N020",
+      "page": 14,
+      "pagePanelOrdinal": 20,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N021",
+      "page": 14,
+      "pagePanelOrdinal": 21,
+      "growthAxis": "mixed",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N022",
+      "page": 14,
+      "pagePanelOrdinal": 22,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N023",
+      "page": 14,
+      "pagePanelOrdinal": 23,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N024",
+      "page": 14,
+      "pagePanelOrdinal": 24,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N025",
+      "page": 14,
+      "pagePanelOrdinal": 25,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N026",
+      "page": 14,
+      "pagePanelOrdinal": 26,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N027",
+      "page": 14,
+      "pagePanelOrdinal": 27,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N028",
+      "page": 14,
+      "pagePanelOrdinal": 28,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 0,
+      "hollowing": "absent",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N029",
+      "page": 14,
+      "pagePanelOrdinal": 29,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N030",
+      "page": 14,
+      "pagePanelOrdinal": 30,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N031",
+      "page": 14,
+      "pagePanelOrdinal": 31,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N032",
+      "page": 14,
+      "pagePanelOrdinal": 32,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": 1,
+      "hollowing": "indeterminate",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N033",
+      "page": 14,
+      "pagePanelOrdinal": 33,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N034",
+      "page": 14,
+      "pagePanelOrdinal": 34,
+      "growthAxis": "basal-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N035",
+      "page": 14,
+      "pagePanelOrdinal": 35,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N036",
+      "page": 14,
+      "pagePanelOrdinal": 36,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N037",
+      "page": 14,
+      "pagePanelOrdinal": 37,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N038",
+      "page": 14,
+      "pagePanelOrdinal": 38,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "high"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N039",
+      "page": 14,
+      "pagePanelOrdinal": 39,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N040",
+      "page": 14,
+      "pagePanelOrdinal": 40,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N041",
+      "page": 14,
+      "pagePanelOrdinal": 41,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N042",
+      "page": 14,
+      "pagePanelOrdinal": 42,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N043",
+      "page": 14,
+      "pagePanelOrdinal": 43,
+      "growthAxis": "c-axis-dominant",
+      "basalBranchingLevel": null,
+      "hollowing": "present",
+      "confidence": "medium"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N044",
+      "page": 14,
+      "pagePanelOrdinal": 44,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N045",
+      "page": 14,
+      "pagePanelOrdinal": 45,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N046",
+      "page": 14,
+      "pagePanelOrdinal": 46,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N047",
+      "page": 14,
+      "pagePanelOrdinal": 47,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    },
+    {
+      "sourceObservationId": "L23-F2-P14-N048",
+      "page": 14,
+      "pagePanelOrdinal": 48,
+      "growthAxis": "indeterminate",
+      "basalBranchingLevel": null,
+      "hollowing": "indeterminate",
+      "confidence": "low"
+    }
+  ]
+}
