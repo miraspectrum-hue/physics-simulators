@@ -19,11 +19,17 @@ holdout 一回開封手順、および `DESIGN.md` §5.1A / 規範
   4. `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot.test.ts`
 - pilot validator実装（test-only、browser/runtime/domainからexportしない）:
   - `apps/snow-crystal-sim/tests/calibration/libbrecht-2023-figure2-morphology-pilot-validator.mjs`
+- pilot Phase A freeze tooling（test-only、browser/runtime/domainからexportしない）:
+  - `apps/snow-crystal-sim/tests/calibration/prepare-morphology-pilot.mjs`
+  - `apps/snow-crystal-sim/tests/calibration/morphology-pilot-freeze.mjs`
+  - `apps/snow-crystal-sim/tests/calibration/fixtures/morphology-pilot-contract-v1/`
 - 実装成果物:
   - `apps/snow-crystal-sim/calibration/libbrecht-2023-figure2-v1/{corpus.json,split.json,protocol.json,SHA256SUMS}`
   - `docs/simulators/snow-crystal-sim/tasks/T1-7/SOURCE-AUDIT.json`
   - 上記3 test file
   - pilot専用の4番目のtest fileとtest-only validator module
+  - `apps/snow-crystal-sim/tests/calibration/`内だけのpilot Phase A review済みcontract asset、
+    test-only freeze module、CLI
   - holdout 状態機械の synthetic test だけが使う一時 directory
 - 禁止: domain、app、UI、scene、公開 export、論文 PDF、panel crop、mask、raw model/chat response、
   restricted source mapping、pilot個票のrepository追加または変更。既存LocalStorage、source-audit UI、
@@ -52,7 +58,7 @@ production runtimeへ依存しない。
 | 1 | `libbrecht-2023-figure2-schema-artifacts.test.ts` | `TC-CORPUS-001..003`, `TC-SOURCE-001..004`, `TC-SOURCE-AUDIT-001..005`, `TC-ANNOTATION-001..003`, `TC-SHAPE-001..003`, `TC-JCS-001..002`, `TC-SPLIT-003..004`, `TC-PROTOCOL-003..005`, `TC-REAL-001`, `TC-RED-001` | duplicate-aware JSON tokenization、JCS、Corpus/Observation/SourceAudit/Split/Protocol の完全 schema、A/B候補hash・既存入力移行・人間の全field確認、annotation、projected shape、著作権・非ネットワーク・成果物境界、REAL206、および5件すべての期待 Red を所有する。 |
 | 2 | `libbrecht-2023-figure2-scoring-protocol.test.ts` | `TC-SPLIT-001..002`, `TC-RANK-001..003`, `TC-CDF-001..003`, `TC-SCALE-001..002`, `TC-CANDIDATE-001`, `TC-BASELINE-001`, `TC-ACCEPT-001`, `TC-PROTOCOL-001..002` | split導出、rank/CDF/scale、seed/radius/lattice、候補・baseline・Pareto と決定的なprotocol数値挙動を所有する。完全 schema validator は持たず、schema fileの完全契約検査を複製しない。 |
 | 3 | `libbrecht-2023-figure2-holdout-safety.test.ts` | `TC-HOLDOUT-001..003` | training leakage、sealed検証、永続exclusive marker、atomic write、child-process race、crash/restart状態行列を所有する。 |
-| 4 | `libbrecht-2023-figure2-morphology-pilot.test.ts` | `TC-PILOT-*` | 24画像pilotのselection、blinding、transport、mapping、prompt/schema binding、run、retry、consensus、slot/ledger/snapshot、adjudication、全24人間final、isolation、metrics、期待Redを単独所有する。既存3ファイルのcaseを複製しない。 |
+| 4 | `libbrecht-2023-figure2-morphology-pilot.test.ts` | `TC-PILOT-*` | 24画像pilotのselection、Phase A contract/selection freeze、blinding、transport、mapping、prompt/schema binding、run、retry、consensus、slot/ledger/snapshot、adjudication、全24人間final、isolation、metrics、期待Redを単独所有する。既存3ファイルのcaseを複製しない。 |
 
 test-code reviewは表の順に、各回fresh Reviewerで1ファイルだけを独立に審査する。既存1..3は現在の
 承認済み実装を変更せず、今回の追加test-code review対象は4だけとする。validatorは期待Red後の
@@ -1333,6 +1339,204 @@ L23-F2-P14-N030, L23-F2-P11-N026, L23-F2-P11-N024, L23-F2-P11-N012
 `SYN-PILOT-24` の `[52,52,51,51]` とその期待24 IDはこの回帰追加で変更しない。
 synthetic fixtureと実入力の両方がGreenの場合だけselection gateをGreenとする。
 
+### TC-PILOT-FREEZE-001: review済みcontract assetとPhase A exact inventory
+
+Phase Aは画像を扱わず、schema/prompt/protocolと実206候補からのselectionだけを
+repository外の`PILOT_WORK_ROOT`へfreezeする。実装は
+`apps/snow-crystal-sim/tests/calibration/morphology-pilot-freeze.mjs`、CLIは
+`apps/snow-crystal-sim/tests/calibration/prepare-morphology-pilot.mjs`とする。両者はtest-onlyで、
+productionの`apps/snow-crystal-sim/src/`、`apps/snow-crystal-sim/scripts/`、
+`apps/snow-crystal-sim/calibration/`へmodule、asset、delivery directoryを追加しない。両者は
+`pilot-oracle.mjs`、`pilot-images.mjs`、`pilot-real-selection-cases.mjs`をimportせず、
+browser/runtime/domain export、network、PDF、page raster、crop、mask、restricted source mapを読み書きしない。
+pilot validatorは生成済みobjectの検査に使えるが、期待object、hash、file bytesの生成に使わない。
+
+review済みcontract asset rootは
+`apps/snow-crystal-sim/tests/calibration/fixtures/morphology-pilot-contract-v1/`とする。`schema/`は次の
+23 basenameを厳密集合とし、各fileは`UTF-8(JCS(schemaObject))||LF`、BOMなし、NFC、
+LFのみ、末尾LF厳密1個とする。basenameとprotocolの`schemaFiles` propertyの対応は
+kebab-case部分をlowerCamelCaseへ戻し、`SchemaFileSha256`を付けた値に一意とする。
+
+```text
+protocol-object.schema.json
+selection-candidate-set.schema.json
+selection-proxy-input.schema.json
+selection-plan.schema.json
+blinded-manifest.schema.json
+restricted-map.schema.json
+batch-input-table.schema.json
+annotation-payload.schema.json
+adjudication-payload.schema.json
+consensus-routing-truth-table.schema.json
+artifact.schema.json
+candidate-alias.schema.json
+candidate-payload-table.schema.json
+annotation-consensus-slot-plan.schema.json
+active-annotation-consensus-snapshot.schema.json
+supersession-ledger.schema.json
+invalid-attempt-evidence.schema.json
+plan-closure.schema.json
+rendered-prompt-evidence.schema.json
+post-consensus-route-slot-plan.schema.json
+active-upstream-snapshot.schema.json
+human-approval.schema.json
+pilot-coverage.schema.json
+```
+
+残るcontract assetは次の7 file、asset合計は厳密30 fileとする。promptは規範protocol
+§15/§16のexact bytes、JSONはJCS+LFであり、追加・欠落・alias・同一bytesの使い回しを拒否する。
+
+```text
+prompts/annotator-template.md
+prompts/adjudicator-template.md
+protocol/growth-truth-table.json
+protocol/branching-truth-table.json
+protocol/hollowing-truth-table.json
+protocol/consensus-routing-truth-table.json
+protocol/figure2-projection-v1.json
+```
+
+test-local oracleはassetをbuilderと別のduplicate-aware parser、RFC 8785 JCS、SHA-256で読み、
+次のliteralと厳密一致させる。これらはvalidatorの出力から作らず、規範型、
+truth table、exact template、§9.2のrasterization literalから独立再計算する。
+
+| object/file | byte length / LFなしJCS object SHA-256 / file SHA-256 |
+|---|---|
+| inherited `figure2-projection-v1` object | `2195316a0480e2b204ccd2e0f41211ccd44b319ac7090fa999ead6e76b792953` |
+| growth truth table object | `b8f89729365eef88aaba56803627abd3eba8cc63765bc7be8f6f2cf6f0f817d5` |
+| branching truth table object | `8593fc2ef7078001e256bb951bacd7f5fc121dd71779773f763f7bbf3b6342ea` |
+| hollowing truth table object | `77f8f298bd4ec609b1ad24a43de1317fd9e8c42775692b62697c2d00b252df70` |
+| consensus routing truth table object | `7794c28359dc2fa7d918a49b2ba4f0cad335d6b54c5d589ca8da95940b7686d7` |
+| annotator template file | `4531` byte / `d5d5f557b701e76cb1c71b86c378e59cb44a8ddb81dba33577a248767bb5ed8c` |
+| adjudicator template file | `3133` byte / `21c13a7dc4a782181dc0df55ac24a17f1840bf457b4196a09894160fc4174a03` |
+| morphology pilot protocol object | `a4e03bf680979cc65ec6389ca89475201a73c77163bf2533845b8ee75be13b68` |
+| real candidate set object | `2ed0c86bd7484e2fa25117eedfc81116263029f6a76bba7fb137ab72aaf2f716` |
+| real proxy input object | `3ab6789058efcc435ad90ac17e9d4a34510940a0db6c288eb4159d4d82db35b8` |
+| real selection plan object | `cc90c71fee3dcae0c19ae55433f145d449d3c4d5860bcf1c1dd0245357b6408a` |
+
+protocol objectは23 schema file hash、2 prompt file hash、4 truth-table object hash、inherited raster object hashと
+規範literalからtest-local oracleが構築し、上記protocol object hashと一致させる。
+candidate/proxy/planは`REAL-PILOT-SELECTION-206`の3 raw inputと§TC-PILOT-SELECTION-001の
+独立oracleから構築し、上記3 hash、各page6件、24件batch-order snapshotを一致させる。
+builderはraw input、30 contract asset、それらから構築した全objectをwrite前に検査し、
+1つでも不一致なら`RangeError`, `reason=phase-a-input-invalid`,
+`field=<logical input or relative asset path>`で、0 byteも出力しない。
+
+Phase Aのowned final inventoryは次の35 fileとする。先頭34 fileだけを
+`phase-a-hash-inventory.json`のentryとし、inventory自身をself-referenceさせない。
+
+- `frozen/schema/<上記23 basename>`
+- `frozen/prompts/annotator-template.md`, `frozen/prompts/adjudicator-template.md`
+- `frozen/protocol/growth-truth-table.json`, `branching-truth-table.json`,
+  `hollowing-truth-table.json`, `consensus-routing-truth-table.json`
+- `frozen/protocol/figure2-projection-v1.json`
+- `frozen/protocol/morphology-ensemble-pilot-v1.json`
+- `restricted/selection/candidate-set.json`, `restricted/selection/proxy-input.json`,
+  `restricted/selection/pilot-selection-plan.json`
+- `frozen/protocol/phase-a-hash-inventory.json`
+
+schema/prompt/truth/rasterの30 outputはreview済みassetとbyte-for-byte一致する。残るprotocol/
+candidate/proxy/planは`JCS(object)||LF`とする。inventory objectはpropertyを
+`schemaVersion='snow-crystal-morphology-pilot-phase-a-inventory/1'`,
+`contractId='t1-7-morphology-ensemble-pilot-contract/1'`, `entryCount=34`, `entries`に限定する。
+entriesはrelative path ASCII昇順で、各rowは
+`{relativePath,contentKind:'jcs-json'|'exact-text',byteLength,fileSha256,objectSha256}`を持ち、
+`exact-text`のobject hashだけ`null`。pathは`/`区切り、absolute、drive letter、`..`、
+username、account、credentialを含まない。test oracleは34 finalからinventory objectを別経路で
+再構築し、保存inventoryのJCS+LF bytes、全34 entry、総final数35を厳密一致させる。
+
+### TC-PILOT-FREEZE-002: immutable atomic write、no-op、resume、isolation
+
+`freezeMorphologyPilotPhaseA` はabsolute `pilotWorkRoot`、repository/workspace root、3 raw input pathを
+引数で受ける。repository/workspaceは実在pathを`realpath`でcanonicalizeする。work rootは実在する場合は
+root自身、未作成の場合はnearest existing parentを`realpath`でcanonicalizeし、残りsegmentをその下へ
+解決した候補を検査する。lexical pathだけでなくcanonical pathがrepository/workspaceと同一または子孫なら、
+入力parse・directory作成前に`RangeError`, `reason=phase-a-root-invalid`, `field=pilotWorkRoot`で拒否する。
+rootまたは既存の子directoryがsymlink、junction、reparse point経由でrepository/workspace内へ解決する場合も
+write前に同じerrorとする。
+
+directoryを1段作成するたび、また各temp作成・hard-link公開の直前に、rootから対象parentまでの
+各実在pathを再度`realpath`/canonicalizeし、root作成後に固定したidentityとrepository/workspace外という
+境界を維持することを確認する。作成途中のpath差替え、外部root内の`frozen`または`restricted`を
+repository内へ向けるjunction、公開直前のsymlink/junction/reparse-point差替えは
+`phase-a-root-invalid`で停止し、repository/workspace内のmutationを0件とする。隔離temp rootの
+repository、workspace、root外、既存LocalStorage/SOURCE-AUDIT/approval相当sentinelのfile list・bytes・hashを
+実行前後で厳密比較し、全て不変とする。
+
+owned finalごとに同directoryの`.<basename>.phase-a.tmp`をexclusive `wx`で作成し、expected bytesを書き、
+file handleをflush/syncし、close後に別readで再parse・byte length・file hash・object hashを再検証する。
+公開原語は通常の`rename`ではなく、同じdirectory内での`link(temp, final)`による排他的hard-link作成だけとする。
+`final`が存在すればlinkは失敗し、置換・上書き・unlinkを行わない。link成功後にparent directoryをfsyncし、
+その後tempだけをunlinkし、再度parent directoryをfsyncする。directory fsync非対応platformでは、その既知の
+capability/errorだけを明示的に判別してtest evidenceへ記録し、hard-linkの排他性を保ったままdirectory fsyncだけを
+省略する。未知のdirectory sync errorは成功扱いしない。対応platformとfault adapterでは
+`file sync -> verify -> link -> directory sync -> temp unlink -> directory sync`の順序を厳密検査する。
+hard-link自体が非対応ならfinalが存在しないことを確認してown tempだけをcleanupし、
+`RangeError`, `reason=phase-a-hardlink-unsupported`, `field=<relative final path>`で停止する。
+この場合はfinalもtempも残さず、通常rename/copyへfallbackしない。inventoryは先34 finalの
+検証・確定後に最後へ同じ原語で公開するcompletion markerとする。
+
+正例は空の隔離rootへ35 fileを1回だけ生成し、全output/hash/inventoryを
+TC-PILOT-FREEZE-001の独立oracleと一致させる。同じ入力の2回目は`status='unchanged'`、
+write/link/unlink 0回で、owned finalのbytes、hash、mtimeを変更しない。inventoryが未作成で、
+存在するowned finalがすべてexpected bytesと一致し、orphan tempが0件の場合だけ、
+既存finalをno-opとして不足finalだけを書き、`status='resumed'`で完了できる。
+
+atomic/crash testは実native CLIのcontractと同じ内部APIにfilesystem adapterを注入し、
+実装と独立したfault adapterで検査する。テスト用adapterをCLI option、environment variable、
+serialized artifactへ露出しない。(a)link成功かつtemp unlink後の例外でfinalだけが残る場合、次回は
+そのfinalを再検証して不足分だけresumeする。(b)temp write/flush後かつlink前の例外、またはlink成功後かつ
+temp unlink前の例外でorphan tempが残る場合、次回は自動削除・上書き・resumeせず`RangeError`,
+`reason=phase-a-temp-present`, `field=<relative temp path>`で停止する。後者では公開済みfinalもexpected bytesと
+一致することを検査し、testがoperator相当としてtempを明示削除した後だけfinalをno-opとしてresumeする。
+
+次のmutationはすべてfail closedで、失敗時に意図しない新しいfinal、更新final、owned final deletion、
+root外writeを0件とする。既知のhard-link非対応または検出済みlink競合後のown temp cleanupだけを許す。
+
+- raw inputまたはcontract assetの1 byte変更、欠落、追加、hash不一致
+- existing owned finalの1 byte変更、別のwell-formed JCS、正しいobjectのpretty print
+- inventoryがあるのにreferenced finalが欠落/不一致/余分entry/順序違反
+- temp先取り、同時2 writerの`wx`競合、`link(temp, final)`直前のfinal割込みと`EEXIST`
+- relative pathの`..`、absolute path、drive letter、username/account/credential混入
+- symlink/junction/reparse pointによるrepository/workspace内への解決、作成途中のpath identity差替え
+
+real filesystemでsymlink/junctionを作成できる環境では外部rootからrepository内sentinelへ向けた実caseを実行し、
+capability結果を記録する。権限/platformにより作成不能でも単純skipにはせず、test-only freeze moduleと同じrealpath resolverを
+注入したfixtureで、外部に見えるpathがrepository内canonical pathへ解決するcase、途中で解決先が変わるcase、
+公開直前に変わるcaseを必ず検査する。実FS caseの可否にかかわらずresolver fixtureとsentinel不変検査は必須Greenとする。
+
+existing final不一致は`phase-a-final-conflict`、inventory完了後の欠落/不一致は
+`phase-a-incomplete`、asset/raw input不一致は`phase-a-input-invalid`、競合は
+`phase-a-write-conflict`とし、全て`RangeError`とstable `field`を検査する。
+
+### TC-PILOT-FREEZE-003: CLI、実行summary、単一の期待Red
+
+CLIは次の4 optionを1回ずつ必須とし、duplicate/unknown/missing option、relative root、空値を
+write前に`TypeError`/`RangeError`で拒否する。contract asset rootはscript locationから上記固定pathへ
+解決し、CLI argumentで別assetへ差し替えない。
+
+```text
+--work-root <absolute PILOT_WORK_ROOT>
+--locator-inventory <path>
+--draft-a <path>
+--draft-b <path>
+```
+
+success stdoutはJCS+LF 1 objectだけで、propertyは
+`{schemaVersion:'snow-crystal-morphology-pilot-phase-a-result/1',status,
+protocolObjectSha256,candidateSetObjectSha256,proxyInputObjectSha256,
+selectionPlanObjectSha256,inventoryFileSha256,ownedFinalCount:35}`に限定する。`status`は
+`created|resumed|unchanged`だけ。stdout/stderr/artifactにabsolute path、username、account、credentialを出さず、
+failureはnonzero exit、stable reason/fieldだけをstderrへ出し、stackとOS absolute pathを出さない。
+
+test codeは`TC-PILOT-FREEZE-001..003`を1つのVitest caseで順に実行する。先頭でlibraryとCLIの
+computed pathに対する`existsSync`結果を単一object assertionで
+`{library:true,cli:true}`と比較し、一方でも未実装ならdynamic import、child process、filesystem writeを
+行わない。この明示assertion failureだけを実装前の期待Redとし、module-not-found、構文、型、
+asset hash、environment、permission、タイムアウトのerrorをRedとして認めない。
+Green時は同じcase内でcontract assetの独立検査、library positive/negative、実CLI child processの
+created/unchangedとerror redactionを全て実行する。
+
 ### TC-PILOT-SELECTION-002: blinded manifestとrestricted mapの非漏洩
 
 positiveではmanifest/mapが同じ24 anonymous ID、filename、relative pathを一対一で持ち、entriesはanonymous ID昇順、
@@ -1793,6 +1997,7 @@ test-code review後は本書のmutation、count、toleranceを削除、skip、�
 | DESIGN/protocol handoff | testcase | 単独所有file |
 |---|---|---|
 | 24 selection、page quota、proxy blindness、batch order | TC-PILOT-SELECTION-001 | morphology-pilot |
+| Phase A 30 contract assets、35 owned finals、atomic/no-op/resume/conflict、CLI | TC-PILOT-FREEZE-001..003 | morphology-pilot |
 | blinded/restricted分離、匿名性、workspace inventory | TC-PILOT-SELECTION-002, TC-PILOT-RUN-001 | morphology-pilot |
 | crop/mask/PNG/RGBA/upload evidence | TC-PILOT-DERIVATIVE-001..002 | morphology-pilot |
 | transport 972/5、policy binding | TC-PILOT-TRANSPORT-001 | morphology-pilot |
