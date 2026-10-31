@@ -495,28 +495,9 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
             assertSentinels(dirSyncUnknown);
           } finally { disposeSandbox(dirSyncUnknown); }
 
-          const cli = spawnSync(process.execPath, [CLI, '--work-root', resolve(sandbox.root, 'cli'), '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath], { encoding:'utf8' });
-          expect(cli.status).toBe(0); expect(cli.stderr).toBe('');
-      assertSentinels(sandbox);
-          expect(cli.stdout.endsWith('\n')).toBe(true); expect(cli.stdout.includes('\r\n')).toBe(false);
-          const summary=JSON.parse(cli.stdout); expect(Object.keys(summary).sort()).toEqual(['candidateSetObjectSha256','inventoryFileSha256','ownedFinalCount','protocolObjectSha256','proxyInputObjectSha256','schemaVersion','selectionPlanObjectSha256','status']);
-          expect(summary).toEqual({ schemaVersion:'snow-crystal-morphology-pilot-phase-a-result/1', status:'created', ownedFinalCount:35, protocolObjectSha256:PHASE_A_OBJECT_HASHES.protocol, candidateSetObjectSha256:PHASE_A_OBJECT_HASHES.candidate, proxyInputObjectSha256:PHASE_A_OBJECT_HASHES.proxy, selectionPlanObjectSha256:PHASE_A_OBJECT_HASHES.plan, inventoryFileSha256:sha(readFileSync(resolve(sandbox.root, 'cli/frozen/protocol/phase-a-hash-inventory.json'))) });
-          expect(cli.stdout).toBe(`${jcs(summary)}\n`);
-          const cliUnchanged=spawnSync(process.execPath, [CLI, '--work-root', resolve(sandbox.root, 'cli'), '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath], { encoding:'utf8' });
-          expect(cliUnchanged.status).toBe(0); expect(cliUnchanged.stderr).toBe('');
-      assertSentinels(sandbox);
-          const unchangedSummary=JSON.parse(cliUnchanged.stdout);
-          expect(Object.keys(unchangedSummary).sort()).toEqual(Object.keys(summary).sort());
-          expect(unchangedSummary).toEqual({ ...summary, status:'unchanged' });
-          expect(cliUnchanged.stdout).toBe(`${jcs(unchangedSummary)}\n`);
-          const cliInvalid=spawnSync(process.execPath, [CLI, '--work-root', sandbox.repository, '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath], { encoding:'utf8' });
-          expect(cliInvalid.status).not.toBe(0); expect(cliInvalid.stderr).toMatch(/phase-a-root-invalid/); expect(cliInvalid.stderr).not.toContain(sandbox.repository);
-      assertSentinels(sandbox);
-          const requiredOptions = ['--work-root','--locator-inventory','--draft-a','--draft-b'] as const;
-          const invalidRoots = new Set<string>();
-          // Unlike the final inventory (which has files only), a controlled
-          // cwd snapshot must also detect creation/removal/rename of empty
-          // directories.  Every entry records its relative path and type.
+          // This tree snapshot deliberately includes directories (including
+          // empty ones) and exact file bytes.  It protects the only two Phase A
+          // output prefixes when a CLI request tries to use the real repository.
           const exactTree = (root:string) => {
             const visit = (directory:string, prefix:string): any[] => (phaseAFs.readdirSync(directory, { withFileTypes:true }) as any[])
               .sort((left:any, right:any) => String(left.name).localeCompare(String(right.name)))
@@ -532,6 +513,49 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
               });
             return visit(root, '');
           };
+          const phaseAOutputSnapshot = (root:string) => Object.fromEntries(['frozen','restricted'].map(relativePath => {
+            const absolutePath=resolve(root, relativePath);
+            let entry:any;
+            try { entry=phaseAFs.lstatSync(absolutePath); }
+            catch (error:any) { if (error?.code === 'ENOENT') return [relativePath, { entryType:'missing' }]; throw error; }
+            if (entry.isDirectory()) return [relativePath, { entryType:'directory', tree:exactTree(absolutePath) }];
+            if (entry.isFile()) {
+              const bytes=Buffer.from(readFileSync(absolutePath));
+              return [relativePath, { entryType:'file', byteLength:bytes.length, sha256:sha(bytes), bytes }];
+            }
+            if (entry.isSymbolicLink()) return [relativePath, { entryType:'symlink', target:phaseAFs.readlinkSync(absolutePath, 'utf8') }];
+            const entryType=entry.isBlockDevice?.() ? 'block-device' : entry.isCharacterDevice?.() ? 'character-device' : entry.isFIFO?.() ? 'fifo' : entry.isSocket?.() ? 'socket' : 'other';
+            return [relativePath, { entryType }];
+          }));
+
+          const cli = spawnSync(process.execPath, [CLI, '--work-root', resolve(sandbox.root, 'cli'), '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath], { encoding:'utf8' });
+          expect(cli.status).toBe(0); expect(cli.stderr).toBe('');
+      assertSentinels(sandbox);
+          expect(cli.stdout.endsWith('\n')).toBe(true); expect(cli.stdout.includes('\r\n')).toBe(false);
+          const summary=JSON.parse(cli.stdout); expect(Object.keys(summary).sort()).toEqual(['candidateSetObjectSha256','inventoryFileSha256','ownedFinalCount','protocolObjectSha256','proxyInputObjectSha256','schemaVersion','selectionPlanObjectSha256','status']);
+          expect(summary).toEqual({ schemaVersion:'snow-crystal-morphology-pilot-phase-a-result/1', status:'created', ownedFinalCount:35, protocolObjectSha256:PHASE_A_OBJECT_HASHES.protocol, candidateSetObjectSha256:PHASE_A_OBJECT_HASHES.candidate, proxyInputObjectSha256:PHASE_A_OBJECT_HASHES.proxy, selectionPlanObjectSha256:PHASE_A_OBJECT_HASHES.plan, inventoryFileSha256:sha(readFileSync(resolve(sandbox.root, 'cli/frozen/protocol/phase-a-hash-inventory.json'))) });
+          expect(cli.stdout).toBe(`${jcs(summary)}\n`);
+          const cliUnchanged=spawnSync(process.execPath, [CLI, '--work-root', resolve(sandbox.root, 'cli'), '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath], { encoding:'utf8' });
+          expect(cliUnchanged.status).toBe(0); expect(cliUnchanged.stderr).toBe('');
+      assertSentinels(sandbox);
+          const unchangedSummary=JSON.parse(cliUnchanged.stdout);
+          expect(Object.keys(unchangedSummary).sort()).toEqual(Object.keys(summary).sort());
+          expect(unchangedSummary).toEqual({ ...summary, status:'unchanged' });
+          expect(cliUnchanged.stdout).toBe(`${jcs(unchangedSummary)}\n`);
+          // The CLI itself derives its protected repository root from its module
+          // location.  A synthetic sibling directory is a legitimate shared
+          // PILOT_WORK_ROOT, even if it has unrelated files, so exercise the
+          // actual protected boundary rather than inventing a sentinel rule.
+          const cliRepositoryRoot=phaseAPath.resolve(phaseAPath.dirname(CLI), '../../../../');
+          const protectedBefore=repositorySnapshot();
+          const protectedPhaseAOutputsBefore=phaseAOutputSnapshot(cliRepositoryRoot);
+          const cliInvalid=spawnSync(process.execPath, [CLI, '--work-root', cliRepositoryRoot, '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath], { encoding:'utf8' });
+          expect(cliInvalid.status).not.toBe(0); expect(cliInvalid.stderr).toMatch(/phase-a-root-invalid/); expect(cliInvalid.stderr).not.toContain(cliRepositoryRoot);
+          expect(repositorySnapshot()).toEqual(protectedBefore);
+          expect(phaseAOutputSnapshot(cliRepositoryRoot)).toEqual(protectedPhaseAOutputsBefore);
+      assertSentinels(sandbox);
+          const requiredOptions = ['--work-root','--locator-inventory','--draft-a','--draft-b'] as const;
+          const invalidRoots = new Set<string>();
           const emptyWorkRootCwd=resolve(sandbox.root, 'invalid-empty-work-root-cwd');
           mkdirSync(emptyWorkRootCwd, { recursive:true });
           const baseCli = (workRoot:string) => ['--work-root', workRoot, '--locator-inventory', sandbox.locatorInventoryPath, '--draft-a', sandbox.draftAPath, '--draft-b', sandbox.draftBPath];
@@ -566,7 +590,7 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
             for (const root of invalidRoots) if (existsSync(root)) expect(filesUnder(root)).toEqual([]);
           }
         } finally { disposeSandbox(sandbox); }
-  });
+  }, 120_000);
 
 
   it('TC-PILOT-RED-001 sole expected Red: D-25 coordinated old-graph inventory omission must be rejected', async () => {
