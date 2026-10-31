@@ -303,6 +303,32 @@ describe('T1-7 morphology ensemble pilot — synthetic independent conformance c
             writeFileSync(resolve(conflictBeforeInventory.work, 'restricted/selection/candidate-set.json'), 'x', { flag:'wx' });
             await reject(conflictBeforeInventory, { ...input, pilotWorkRoot:conflictBeforeInventory.work, repositoryRoot:conflictBeforeInventory.repository, workspaceRoot:conflictBeforeInventory.workspace, locatorInventoryPath:conflictBeforeInventory.locatorInventoryPath, draftAPath:conflictBeforeInventory.draftAPath, draftBPath:conflictBeforeInventory.draftBPath }, 'phase-a-final-conflict', 'restricted/selection/candidate-set.json');
           } finally { disposeSandbox(conflictBeforeInventory); }
+
+          // An owned final can appear after the preflight conflict scan.  The
+          // second exists check in this publication window must revalidate its
+          // exact bytes rather than treating every late arrival as resumable.
+          const lateConflict = makeSandbox();
+          try {
+            const lateCandidate=resolve(lateConflict.work, 'restricted/selection/candidate-set.json');
+            const lateBytes=Buffer.from('late-race-conflict\\n');
+            let candidateExistsChecks=0;
+            const racingAdapter:any={ ...baseFilesystem, exists: (path:string) => {
+              if (path===lateCandidate && ++candidateExistsChecks===6) {
+                baseFilesystem.mkdir(phaseAPath.dirname(path), { recursive:true });
+                baseFilesystem.writeFile(path, lateBytes, { flag:'wx' });
+                return true;
+              }
+              return baseFilesystem.exists(path);
+            }};
+            const lateInput={ ...input, pilotWorkRoot:lateConflict.work, repositoryRoot:lateConflict.repository, workspaceRoot:lateConflict.workspace, locatorInventoryPath:lateConflict.locatorInventoryPath, draftAPath:lateConflict.draftAPath, draftBPath:lateConflict.draftBPath, filesystem:racingAdapter };
+            let lateError:unknown;
+            try { await phase.freezeMorphologyPilotPhaseA(lateInput); } catch (error) { lateError=error; }
+            expectRange(lateError, 'phase-a-final-conflict', 'restricted/selection/candidate-set.json');
+            expect(candidateExistsChecks).toBe(6);
+            expect(readFileSync(lateCandidate)).toEqual(lateBytes);
+            expect(existsSync(resolve(lateConflict.work, 'frozen/protocol/phase-a-hash-inventory.json'))).toBe(false);
+            assertSentinels(lateConflict);
+          } finally { disposeSandbox(lateConflict); }
           await reject(sandbox, { ...input, pilotWorkRoot:sandbox.repository }, 'phase-a-root-invalid', 'pilotWorkRoot');
 
           const incomplete = makeSandbox();
