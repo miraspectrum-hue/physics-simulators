@@ -21,15 +21,20 @@ Phase B1 は次の二段階とする。
 2. **B1b finalize-blinding**: 24件すべての人間確認済み mask plan だけを入力に、canonical blinded PNG、
    blinded manifest、restricted map、2つの batch input table を immutable に凍結する。
 
-この前提として、画像を読まない独立 Stage **B0 bootstrap-toolchain** でexact toolchainを外部rootへ準備する。
-B0は画像準備ではなく環境provisioningであり、外部AI通信ではない。
+この前提として、画像を読まない独立 Stage **L0 curate-toolchain-lock** で供給元lockを先に凍結し、
+Stage **B0 bootstrap-toolchain** でそのlockだけに従ってexact toolchainを外部rootへ準備する。
+L0/B0は画像準備ではなく供給元確認と環境provisioningであり、外部AI通信ではない。
 
 ## 2. 信頼境界と保存先
 
-唯一の作業 root を repository 外の絶対 path `PILOT_WORK_ROOT` とする。
+画像準備で使う唯一の作業 root を repository 外の絶対 path `PILOT_WORK_ROOT` とする。
 repository root、workspace root、その祖先・子孫、symlink、junction、reparse point を root または
 owned path に使わない。実装は既存 ancestor から各 path component を `lstat` / canonical path /
 file identity で検査し、検査後の差替えを fail closed にする。
+
+L0だけは別の絶対 path `PILOT_LOCK_CURATION_ROOT` を使う。このrootもrepository、workspace、
+`PILOT_WORK_ROOT`のいずれとも祖先・子孫関係を持たず、同じreparse/file identity検査を通す。
+L0以外はこのrootへread/writeせず、L0は`PILOT_WORK_ROOT`へread/writeしない。
 
 許可する書込み先は次だけである。
 
@@ -48,30 +53,56 @@ PILOT_WORK_ROOT/
   restricted/phase-b1-final-closures/
   images/source-crops/
   frozen/phase-b1-generations/
+
+PILOT_LOCK_CURATION_ROOT/
+  authority/
+  staging/
+  generations/
 ```
 
 既存の Phase A final、`restricted/source/`、`restricted/selection/`、その他の無関係な外部 file/directory は
 read-only とし、削除・rename・上書き・一括 cleanup しない。repository、LocalStorage、source-audit UI、
 production corpusへのwriteを禁止する。repositoryは全pathについてwrite、temp、cache、lock、log、生成物作成を禁止し、
-§2.1のallowlist以外のreadもfail closedとする。LocalStorage、source-audit UIはread/writeとも禁止する。
+process loadは§2.1のexecution artifact gate、それ以後のapplication readは同節のruntime allowlist以外を
+fail closedとする。LocalStorage、source-audit UIはread/writeとも禁止する。
 
 `tooling/phase-b1/` は data-preparation 専用で、manifest、restricted map、hash preimage、actor input、
-evidenceへ絶対 path、drive letter、username、package cache pathを入れない。package download はB0だけに
-分離し、B1a/B1b の実行中はoffline強制かつnetwork callを0件にする。
+evidenceへ絶対 path、drive letter、username、package cache pathを入れない。networkを使う取得はL0とB0だけに
+分離し、通常testとB1a/B1bの実行中はoffline強制かつnetwork callを0件にする。
 
 ### 2.1 repository read allowlist
 
-実行時にrepositoryから読めるregular fileは次だけである。pathとfile SHA-256は後続の承認済みTESTCASES/test codeが
-literal `RepositoryReadAllowlistV1`として固定し、未確定hash、hash不一致、追加import、directory走査、package resolution、
-symlink/reparse、allowlist外readを`phase-b1-repository-read-forbidden`で入力読取前に拒否する。
+repository fileの検証を、process起動前の**execution artifact gate**と、process起動後の
+**runtime read allowlist**に分離する。OS/PowerShell/Nodeがentrypointをprocess imageへ読み込む処理は前者、
+entrypoint開始後にapplication codeが明示的に行うfile readは後者に属する。
 
-| logical role | repository-relative path |
-|---|---|
-| B0 reviewed launcher | `apps/snow-crystal-sim/tests/calibration/bootstrap-morphology-pilot-toolchain.ps1` |
-| B1 reviewed launcher/implementation | `apps/snow-crystal-sim/tests/calibration/prepare-morphology-pilot-images.mjs` |
-| B0 exact dependency source | `apps/snow-crystal-sim/tests/calibration/phase-b1-toolchain-lock.json` |
+execution artifact gateの対象は次の3 fileである。
 
-launcherが分割moduleを必要とする場合は、その各regular fileもTESTCASESでpath/hashを個別列挙するまで実行しない。
+| logical role | repository-relative path | hashを固定する工程 |
+|---|---|---|
+| B0 reviewed launcher | `apps/snow-crystal-sim/tests/calibration/bootstrap-morphology-pilot-toolchain.ps1` | implementation review後 |
+| B1 reviewed launcher/implementation | `apps/snow-crystal-sim/tests/calibration/prepare-morphology-pilot-images.mjs` | implementation review後 |
+| B0 platform acquisition lock | `apps/snow-crystal-sim/tests/calibration/phase-b1-toolchain-lock.json` | test-code review前 |
+
+B0/B1 entrypointの最終file SHA-256を未実装時のTESTCASES/test codeへliteral固定しない。実装レビューが
+`approved`となった時点のreviewed file hashをCoordinatorが`EVIDENCE.md`へ記録し、実PDFまたは実networkを使う
+各commandの直前にrepositoryの現在bytesを再hashして一致を要求する。不一致、未承認hash、review後の変更では
+processを起動しない。このhashをentrypoint自身へ埋め込んだり、entrypointに自身を再読込・自己hash検証させたり
+しない。したがって自己参照hashも、実装後に承認済みtest codeを書き換える循環も生じない。
+
+Phase B1のB0/B1 entrypointは各1 fileで完結させ、repository内の分割moduleをimportしない。process起動後の
+runtime repository read allowlistは、B0ではtest-code工程で先に凍結した
+`phase-b1-toolchain-lock.json` 1 fileだけ、B1a/B1b/save-mask-draftでは空集合とする。B0 test codeはlockの
+pathとfile SHA-256をliteral `RepositoryReadAllowlistV1`として固定できる。未確定hash、hash不一致、追加import、
+directory走査、package resolution、entrypoint自身の明示的再読込、symlink/reparse、allowlist外readを
+`phase-b1-repository-read-forbidden`で入力読取前に拒否する。将来分割moduleが必要になった場合は本設計と
+test caseを再レビューするまで追加しない。
+
+testはentrypointのload自体をspy対象にせず、load完了後のapplication filesystem adapterをspyする。
+repository内の全write/temp/cache/lock/log生成を拒否し、B0では上記lock以外のreadを、B1では全repository readを
+拒否する。実行前execution artifact gateはtest内の自己hash検査ではなく、review/EVIDENCEと現在bytesを比較する
+Coordinator gateとして別に検証する。
+
 Phase A contract、schema、protocol、selection final、PDFはrepository fixtureから読まず、`PILOT_WORK_ROOT/frozen/`、
 `PILOT_WORK_ROOT/restricted/`のhash-bound finalだけを読む。locator inventoryはrepository外のread-only regular fileで、
 raw file SHA-256 `0d3bcacabfe8625e3c76f7d48bba3fb99280d48cac15c40cff5551f66d5e2c1e`だけを許す。
@@ -97,9 +128,455 @@ OS runtime libraryはB0が外部rootへ凍結したpayloadだけを使い、repo
 `RangeError('phase-b1-environment-invalid <field>')` とする。現在の通常 workspace runtimeが別versionでも
 緩和せず、`PILOT_WORK_ROOT/tooling/phase-b1/` に exact-version の一時環境を構築して実行する。
 
-### 3.1 Stage B0 bootstrap-toolchain
+### 3.1 Stage L0 curate-toolchain-lock
 
-B0だけがpackage/runtime取得のためnetworkを使える。repositoryのscriptをhost PowerShellから次の契約で起動する。
+#### 3.1.0 L0 execution authority
+
+L0を自己申告scriptとして実行しない。L0より前に、lockを必要としない単一fileの
+`curate-morphology-pilot-toolchain-lock.ps1`を通常workspaceのhost Windows PowerShellだけで実行できる
+**L0 curation runner**として、独立したtest-first mini-cycleで作る。このmini-cycleは
+TESTCASES/test code review、runner未存在だけのexpected Red、実装、Green、implementation reviewの順とし、
+Phase B1のB0/B1 entrypoint実装より先に完了する。runnerはpackage/module install、repository module import、
+child process、dynamic code generation/eval、profile、ambient proxy設定を使わず、単一file内のreview済み
+network/filesystem/audit adapter以外からapplication I/Oを行わない。したがってrunnerの作成・test・reviewは
+Node/npm acquisition lockへ依存せず、lockを作るためにlockが必要となる循環を生じない。
+
+implementation reviewが`approved`としたrunnerのrepository-relative path、file SHA-256、canonical approval binding、
+host Windows PowerShellの`powershell.exe` file SHA-256と`5.1` full version、runner contract versionを
+Coordinatorが`PhaseB1L0AuthorityBundleV1`へ固定する。Coordinatorはreviewed runner bytesを
+`PILOT_LOCK_CURATION_ROOT/authority/<runnerFileSha256>/curate-morphology-pilot-toolchain-lock.ps1`へ
+create-new copyし、copy bytes/hash、authority bundle、host runtime hashを再検証してからだけprocessを起動する。
+repositoryからのrunner loadは行わず、process load後はrepository read/writeを0件とする。OS loader/runtime自身の
+system file readはapplication filesystem countに含めないが、runner codeからの全file APIはadapter境界に含める。
+
+```ts
+interface PhaseB1L0RunnerReviewRequestV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-runner-review-request/1';
+  readonly requestId: `T1-7-l0-runner-${Sha256Hex}`;
+  readonly taskId: 'T1-7';
+  readonly stage: 'l0-curation-runner';
+  readonly reviewType: 'implementation';
+  readonly reviewedFiles: readonly [{
+    readonly path: 'apps/snow-crystal-sim/tests/calibration/curate-morphology-pilot-toolchain-lock.ps1';
+    readonly hash: `sha256:${Sha256Hex}`;
+  }];
+}
+
+interface PhaseB1L0RunnerApprovalProjectionV1 {
+  readonly reviewType: 'implementation';
+  readonly status: 'approved';
+  readonly reviewedFiles: readonly [{
+    readonly path: 'apps/snow-crystal-sim/tests/calibration/curate-morphology-pilot-toolchain-lock.ps1';
+    readonly hash: `sha256:${Sha256Hex}`;
+  }];
+  readonly findings: readonly [];
+  readonly conditions: readonly [];
+  readonly rollbackTo: 'none';
+}
+
+interface PhaseB1L0RunnerApprovalBindingV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-runner-approval/1';
+  readonly reviewRequestObjectSha256: Sha256Hex;
+  readonly reviewRequestFileSha256: Sha256Hex;
+  readonly approval: PhaseB1L0RunnerApprovalProjectionV1;
+}
+
+interface PhaseB1L0AuthorityBundleV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-authority/1';
+  readonly runnerContractVersion: '1';
+  readonly runnerRepositoryRelativePath: 'apps/snow-crystal-sim/tests/calibration/curate-morphology-pilot-toolchain-lock.ps1';
+  readonly runnerFileSha256: Sha256Hex;
+  readonly runnerReviewRequestObjectSha256: Sha256Hex;
+  readonly runnerReviewRequestFileSha256: Sha256Hex;
+  readonly runnerApprovalBindingObjectSha256: Sha256Hex;
+  readonly runnerApprovalBindingFileSha256: Sha256Hex;
+  readonly externalRunnerRelativePath: `authority/${Sha256Hex}/curate-morphology-pilot-toolchain-lock.ps1`;
+  readonly hostRuntime: 'windows-powershell-5.1';
+  readonly hostRuntimeFileSha256: Sha256Hex;
+  readonly hostRuntimeFullVersion: string;
+}
+```
+
+Coordinatorはreview依頼前に、runnerの現在file SHA-256から
+`requestId='T1-7-l0-runner-'+runnerFileSha256`を決定し、上記requestを生成する。同じrunner bytesに対する
+requestは同じstrict objectだけであり、session、時刻、proposal ID、乱数を含めない。requestとnested objectは記載propertyの
+厳密集合、UTF-8 BOMなし、NFC、LFなしJCS objectをobject SHA-256 preimageとし、同じJCS bytesへfinal LFを1つ付けた
+bytesをfile SHA-256 preimageとする。`requestId`末尾と`reviewedFiles[0].hash`のhexはrunner file SHA-256と
+exact一致しなければならない。Coordinatorはreview開始前にexact request bytesを
+`PILOT_LOCK_CURATION_ROOT/authority-requests/<reviewRequestFileSha256>.json`へcreate-newで保存し、
+request object/file hashとdecoded requestをreviewerへ渡す。ただしreviewerが返すmachine resultは規範の標準review schemaだけとし、
+request IDやsession IDを追加fieldとして返させない。
+
+Coordinatorは標準review resultの`review_type,status,reviewed_files,findings,conditions,rollback_to`だけを検査する。
+`review_type='implementation'`、`status='approved'`、`rollback_to='none'`、findings/conditionsが空であり、
+`reviewed_files`がrequestのpath/hashとexact一致する1件だけの場合に限り、snake_caseの標準fieldから上記camelCaseの
+`PhaseB1L0RunnerApprovalProjectionV1`へ名前を固定対応させてapproval bindingを生成する。標準resultの`summary`、
+`REVIEW.md`のYAML fence、表示上の改行・scalar表現は投影にもhash preimageにも使わない。追加・欠落した標準field、
+複数reviewed file、requestと異なるpath/hash、未承認statusではbindingを生成しない。
+
+bindingも記載propertyの厳密集合を同じJCS object/file規則でhashし、requestのobject/file hashとapproval projectionを結合する。
+Coordinatorはrequest exact bytesを`authority/<runnerFileSha256>/runner-review-request.json`へ、binding exact bytesを
+同directoryの`runner-approval-binding.json`へcreate-new copyし、両fileを別readしてhash一致を確認する。
+runner hashごとにrequest bytesが一意で、approval projectionからsummary等を除いたため、同じ標準承認に対するbindingも一意である。
+再reviewでrunner bytesが変われば別request/directoryとなり、bytesが同じなら同じrequestを再利用し、承認済みbindingと競合する
+異なるbytesを受理しない。commit proposalはこのmini-cycleの後に作るためrequest/bindingの入力にせず、後続proposalは
+request file hash、binding file hash、runner hashを別途照合する。これにより標準review schemaを拡張せず、proposal、session、
+YAML表現への循環・依存を生じない。
+
+authority bundleはJCS+LFでrunnerと同じhash directoryへimmutable公開する。`externalRunnerRelativePath`のhash
+segmentは`runnerFileSha256`と一致し、external runner bytes、approved implementation reviewの対象hash、
+repository current bytes、review request、approval projectionの対象path/hash/type/statusの全てが一致しなければL0を起動しない。
+runnerまたはhost runtimeが変わった場合は
+既存authorityを再利用せず、runner mini-cycleまたはhost runtime reviewからやり直す。
+
+runnerのnetwork adapterはdeny-by-defaultで、§3.1に列挙したexact request ruleへ一致するURLだけを受ける。
+filesystem adapterはexternal runner、authority bundle、`PILOT_LOCK_CURATION_ROOT`内のowned pathだけを許し、
+他pathのread/write/list/statを拒否する。各application I/O attemptは実行前に、ordinal、operation、logical target、
+decision、priorEntryHashをJCS化したSHA-256 hash chainへ追加し、許可operationは完了後にresult hash/lengthを持つ
+paired entryを追加する。最初の`priorEntryHash`は64桁のzero、最後のentry hashを
+`lock-curation-audit.json`へ固定し、途中entryの削除、並べ替え、重複、未完了pairを拒否する。
+network request recordはauditの許可済みnetwork-start/completion pairとordinal・URL・response hash/lengthが
+一対一でなければならない。禁止対象0件とrepository/image/PDF/AI access countはevidence writerの申告値ではなく、
+このaudit全entryを独立集計して導出する。
+
+runnerのtestはsynthetic adapterで、全network/file operationがadapterとauditを通ること、直接I/O API、module import、
+child processがsource/dependency boundaryに存在しないこと、許可外attemptがdispatch前にdeny記録されcompletionを
+公開しないことを検査する。implementation reviewは単一file dependency boundaryを静的に再確認する。
+これにより、approved runner hashと改変不能なhash chainの組だけをL0の実行・監視authorityとする。
+
+L0はB0/B1 test-code工程より前、かつ§3.1.0のrunner mini-cycle後に1回だけ行う、供給元lock作成専用の
+隔離network工程である。実行時B0ではなく、
+product/runtime実装でもない。L0が取得できるのは次だけである。
+
+1. `nodejs.org`上のNode `24.14.1` win-x64 zip、同releaseの`SHASUMS256.txt`とそのdetached signature。
+2. `registry.npmjs.org`上の`pdfjs-dist@6.3.289`、`@napi-rs/canvas@1.0.6`およびそれらの
+   exact transitive/native dependency metadataとtarball。
+3. `raw.githubusercontent.com`上の、Node.js公式GitHub organization `nodejs`が所有する
+   `nodejs/release-keys` repositoryのimmutable 40 lowercase hex commitに固定したrelease keyring bytes。
+4. `raw.githubusercontent.com`上の、Node.js公式`nodejs/node` repositoryのimmutable 40 lowercase hex commitに
+   固定した`README.md`と、`nodejs.org`のrelease index。
+5. `api.github.com`のexact endpoint
+   `https://api.github.com/repos/nodejs/release-keys/commits/main`と
+   `https://api.github.com/repos/nodejs/node/commits/main`から得る、両immutable commitのtip/provenance response。
+
+許可hostはASCII順のexact集合
+`['api.github.com','nodejs.org','raw.githubusercontent.com','registry.npmjs.org']`、schemeは`https`だけ、redirectは0回とする。
+userinfo、query、fragment、IP literal、非default port、短縮URL、mutable branch/tag URLを禁止する。
+上記2つ以外のGitHub API、search、package manager install、lifecycle script、AI/provider endpointへの接続を禁止する。
+GitHub APIの`main`はimmutable artifact取得には使わず、responseが示す40桁commitのprovenanceを凍結してから、
+artifact本体をそのcommitを含むexact raw URLで取得するためだけに使う。
+Node/npmについては上記exact versionのrelease path、exact package-version metadata path、そのmetadataが示す
+exact tarball pathだけを許し、別versionや汎用registry queryを許さない。
+
+L0のnetwork計測範囲は最初のDNS/socket試行直前からcompletion inventoryの排他的公開後までである。
+request ordinal、logical purpose、exact URL、host、response byte length、response file SHA-256、redirect count、
+TLS検証結果を外部rootの`lock-curation-evidence.json`へ記録し、全application I/Oを§3.1.0のauditへ記録する。
+credential/header値、絶対local path、usernameは記録しない。
+画像、PDF、Phase A/B artifact、LocalStorage、source-audit UI、production corpusはread/writeとも0件、
+AI/provider requestは0件でなければL0全体を拒否する。repositoryはread/writeとも0件とし、候補lockを
+repositoryへ直接作成しない。
+
+L0は全responseを`PILOT_LOCK_CURATION_ROOT/staging/<nonce>/`へcreate-newで保存し、digestと署名検証前の
+bytesを展開・実行しない。trust rootを先に検証してfile hashを固定し、そのhashを参照する
+candidate lock、response bytes、curation evidence、audit logを
+`generations/lock-<candidateLockFileSha256>/`という未存在directoryへcreate-new renameで公開する。
+最後に同directoryの`curation-inventory.json`をexclusive hardlinkでcompletion markerとして公開する。
+各file write、fsync、別read hash検証、parent directory syncを行い、既存generationをreplace/mergeしない。
+temp残存、同basename異bytes、欠落、path identity変更、directory sync未知errorはfail closedとし、自動削除しない。
+
+同じcandidate lock hashの再実行はcompletion inventoryと全owned fileが一致すればnetworkへ接続せず`unchanged`、
+不一致なら停止する。供給元metadataやkeyring commitを更新する場合は明示的な新curationとして別generationを作り、
+旧generationを保持して再レビューする。L0完了だけでは候補lockを権威化しない。独立reviewが§3.1.1のtrust root、
+Node署名、npm integrity、依存closure、request完全性、禁止対象0件、atomicityを`approved`とした後に限り、
+候補lockのexact bytesをtest-code工程でrepositoryの`phase-b1-toolchain-lock.json`へ追加する。
+Coordinatorはcandidate lock、repository copy、reviewed hashの3者一致に加え、trust root、curation evidence、
+curation inventoryのfile hashを`EVIDENCE.md`へ記録する。
+
+#### 3.1.1 Node release signing trust root
+
+Node署名の信頼根はcandidate lock内の`signerFingerprint`ではなく、先に凍結する
+`node-release-trust-root.json`である。
+
+```ts
+interface PhaseB1AuthorizedNodeSignerV1 {
+  readonly primaryFingerprint: string; // 40 lowercase hex
+  readonly signingSubkeyFingerprint: string; // 40 lowercase hex
+  readonly primaryCreatedAtUtc: UtcSeconds;
+  readonly primaryExpiresAtUtc: UtcSeconds | null;
+  readonly signingSubkeyCreatedAtUtc: UtcSeconds;
+  readonly signingSubkeyExpiresAtUtc: UtcSeconds | null;
+  readonly primaryRevokedAtUtc: UtcSeconds | null;
+  readonly signingSubkeyRevokedAtUtc: UtcSeconds | null;
+}
+
+interface PhaseB1NodeReleaseTrustRootV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-node-release-trust-root/1';
+  readonly officialVerificationRepository: 'https://github.com/nodejs/node';
+  readonly officialVerificationCommitSha: string; // 40 lowercase hex
+  readonly officialVerificationCommitEvidenceFileSha256: Sha256Hex;
+  readonly officialVerificationDocumentUrl: `https://raw.githubusercontent.com/nodejs/node/${string}/README.md`;
+  readonly officialVerificationDocumentFileSha256: Sha256Hex;
+  readonly officialVerificationDocumentByteLength: number;
+  readonly releaseKeysRepository: 'https://github.com/nodejs/release-keys';
+  readonly releaseKeysCommitSha: string; // 40 lowercase hex
+  readonly releaseKeysCommitEvidenceFileSha256: Sha256Hex;
+  readonly keyringSourceUrl: `https://raw.githubusercontent.com/nodejs/release-keys/${string}/${string}`;
+  readonly keyringFileSha256: Sha256Hex;
+  readonly keyringByteLength: number;
+  readonly nodeReleaseIndexUrl: 'https://nodejs.org/dist/index.json';
+  readonly nodeReleaseIndexFileSha256: Sha256Hex;
+  readonly nodeReleaseDateUtc: string; // YYYY-MM-DD
+  readonly manifestSignatureCreatedAtUtc: UtcSeconds;
+  readonly authorizedSigners: readonly PhaseB1AuthorizedNodeSignerV1[];
+}
+```
+
+trust rootはUTF-8 BOMなし・NFC・LFなしJCS object＋final LF 1つとする。
+`officialVerificationDocumentUrl`と`keyringSourceUrl`のcommit segmentはそれぞれ
+`officialVerificationCommitSha`と`releaseKeysCommitSha`にexact一致し、relative pathは非空segment、`..`なしでなければならない。
+両commit evidenceは§3.1で許可したGitHub API response exact bytesであり、repository full name、owner、commit SHAを
+独立parserで検査する。verification documentのfrozen bytesは`Release keys`節で
+`https://github.com/nodejs/release-keys`を公式verification sourceとして参照しなければならない。
+`authorizedSigners`は`primaryFingerprint,signingSubkeyFingerprint`のASCII tuple順、重複なし、1件以上とする。
+独立reviewは、Node.js公式release verification文書が`nodejs/release-keys`を信頼元として示すこと、両immutable commitが
+公式`nodejs` organizationの各repository tip evidenceと一致すること、取得keyring bytes/hash、各primary keyと
+署名可能subkeyのbinding・失効/期限packetを照合する。Node release manifestのdetached signatureは
+このkeyringだけで検証し、実際に署名したsubkeyと対応primary keyのtupleが`authorizedSigners`にexact一致することを要求する。
+candidate lockの`signerFingerprint`はその検証済みsigning subkeyであり、trust root file SHA-256をlockへ結合する。
+lock自身が提示するfingerprint、同じL0で任意生成した鍵、OSのambient keyring、keyserver lookupを信頼根にしない。
+
+時刻判定はfrozen artifactだけから次の順で行う。`nodeReleaseDateUtc`はfrozen Node release indexの
+`version='v24.14.1'`のexact 1 recordにあるUTC calendar dateであり、manifest署名packetのcreation timeを
+`manifestSignatureCreatedAtUtc`とする。署名creation timeのUTC日付は`nodeReleaseDateUtc`とexact一致し、
+`primaryCreatedAtUtc <= signingSubkeyCreatedAtUtc <= manifestSignatureCreatedAtUtc <= startedAtUtc <= finishedAtUtc`
+でなければならない。primary/subkeyの`expiresAtUtc`が非nullなら、それぞれ
+`manifestSignatureCreatedAtUtc < expiresAtUtc`を要求する。つまり署名時点で両keyが有効であることを要求する。
+署名後に期限切れとなり、そのexpiryがL0 `finishedAtUtc`以下でも、署名時点で有効ならexpiryだけを理由に拒否しない。
+一方、frozen keyringにprimaryまたはsubkeyのrevocation signatureがあり、そのsignature creation timeが
+L0 `finishedAtUtc`以下なら、manifest署名時刻の前後を問わず拒否する。各`revokedAtUtc`は該当keyに対する
+最古のrevocation signature creation timeであり、nullなのは該当revocation signatureが
+frozen keyringに存在しない場合だけである。`manifestSignatureCreatedAtUtc <= startedAtUtc <= finishedAtUtc`、
+各key packetから独立導出した時刻とtrust root値の一致を要求する。将来のambient keyring、current clock、
+keyserver状態を再判定に使わず、後日新しいrevocationを反映する場合は新L0 generationと再reviewを必要とする。
+
+L0 artifactも§4.1と同じUTF-8/JCS+LF、strict property、duplicate/unknown/non-JSON拒否を適用し、
+次の契約を使う。
+
+```ts
+interface PhaseB1L0NetworkTargetV1 {
+  readonly kind: 'network';
+  readonly networkClass: 'allowed-supply' | 'ai-provider' | 'other';
+  readonly exactUrl: `https://${string}`;
+  readonly host: string;
+}
+
+interface PhaseB1L0FileTargetV1 {
+  readonly kind: 'file';
+  readonly scope:
+    | 'authority' | 'curation-root' | 'repository' | 'image' | 'pdf'
+    | 'phase-artifact' | 'local-storage' | 'source-audit-ui'
+    | 'production-corpus' | 'other';
+  readonly logicalPath: string;
+}
+
+interface PhaseB1L0BytesResultV1 {
+  readonly kind: 'bytes';
+  readonly resultFileSha256: Sha256Hex;
+  readonly resultByteLength: number;
+}
+
+interface PhaseB1L0DirectoryEntryV1 {
+  readonly name: string;
+  readonly entryType: 'regular-file' | 'directory' | 'reparse' | 'other';
+}
+
+interface PhaseB1L0DirectoryListResultV1 {
+  readonly kind: 'directory-list';
+  readonly entries: readonly PhaseB1L0DirectoryEntryV1[];
+  readonly resultObjectSha256: Sha256Hex;
+}
+
+interface PhaseB1L0StatResultV1 {
+  readonly kind: 'stat';
+  readonly exists: boolean;
+  readonly entryType: 'regular-file' | 'directory' | 'reparse' | 'other' | null;
+  readonly byteLength: number | null;
+  readonly fileIdentity: string | null;
+  readonly reparseTag: number | null;
+  readonly resultObjectSha256: Sha256Hex;
+}
+
+interface PhaseB1L0AuditEntryBaseV1 {
+  readonly ordinal: number; // 0始まり、欠番なし
+  readonly operationId: string; // `io-` + attempt/deny ordinalの8桁0埋め10進数
+  readonly operation: 'network-request' | 'file-read' | 'file-write' | 'file-list' | 'file-stat';
+  readonly priorEntrySha256: Sha256Hex;
+  readonly entrySha256: Sha256Hex;
+}
+
+type PhaseB1L0AllowedAttemptV1 = PhaseB1L0AuditEntryBaseV1 & {
+  readonly phase: 'attempt';
+  readonly decision: 'allow';
+  readonly pairedAttemptOrdinal: null;
+  readonly requestOrdinal: number | null;
+  readonly target: PhaseB1L0NetworkTargetV1 | PhaseB1L0FileTargetV1;
+  readonly result: null;
+  readonly denialReason: null;
+};
+
+type PhaseB1L0CompletedOperationV1 = PhaseB1L0AuditEntryBaseV1 & {
+  readonly phase: 'complete';
+  readonly decision: 'allow';
+  readonly pairedAttemptOrdinal: number;
+  readonly requestOrdinal: number | null;
+  readonly target: PhaseB1L0NetworkTargetV1 | PhaseB1L0FileTargetV1;
+  readonly result:
+    | PhaseB1L0BytesResultV1
+    | PhaseB1L0DirectoryListResultV1
+    | PhaseB1L0StatResultV1;
+  readonly denialReason: null;
+};
+
+type PhaseB1L0DeniedAttemptV1 = PhaseB1L0AuditEntryBaseV1 & {
+  readonly phase: 'deny';
+  readonly decision: 'deny';
+  readonly pairedAttemptOrdinal: null;
+  readonly requestOrdinal: null;
+  readonly target: PhaseB1L0NetworkTargetV1 | PhaseB1L0FileTargetV1;
+  readonly result: null;
+  readonly denialReason:
+    | 'network-rule-mismatch' | 'filesystem-scope-forbidden'
+    | 'path-invalid' | 'reparse-forbidden' | 'operation-forbidden';
+};
+
+type PhaseB1L0AuditEntryV1 =
+  | PhaseB1L0AllowedAttemptV1
+  | PhaseB1L0CompletedOperationV1
+  | PhaseB1L0DeniedAttemptV1;
+
+interface PhaseB1L0AuditLogV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-audit/1';
+  readonly authorityBundleFileSha256: Sha256Hex;
+  readonly authorityRunnerFileSha256: Sha256Hex;
+  readonly entries: readonly PhaseB1L0AuditEntryV1[];
+  readonly finalEntrySha256: Sha256Hex;
+}
+
+interface PhaseB1LockCurationRequestV1 {
+  readonly ordinal: number; // 0始まり、欠番なし
+  readonly purpose:
+    | 'node-verification-repository-tip' | 'node-release-keyring-repository-tip'
+    | 'node-verification-document' | 'node-release-keyring' | 'node-release-index'
+    | 'node-release-manifest' | 'node-release-signature' | 'node-runtime'
+    | 'npm-version-metadata' | 'npm-tarball';
+  readonly exactUrl: `https://${string}`;
+  readonly host: 'api.github.com' | 'nodejs.org' | 'raw.githubusercontent.com' | 'registry.npmjs.org';
+  readonly responseByteLength: number;
+  readonly responseFileSha256: Sha256Hex;
+  readonly redirectCount: 0;
+  readonly tlsOutcome: 'verified';
+}
+
+interface PhaseB1LockCurationEvidenceV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-lock-curation-evidence/1';
+  readonly startedAtUtc: UtcSeconds;
+  readonly finishedAtUtc: UtcSeconds;
+  readonly allowedHosts: readonly ['api.github.com', 'nodejs.org', 'raw.githubusercontent.com', 'registry.npmjs.org'];
+  readonly requests: readonly PhaseB1LockCurationRequestV1[];
+  readonly requestCount: number;
+  readonly aiProviderRequestCount: 0;
+  readonly imageReadCount: 0;
+  readonly pdfReadCount: 0;
+  readonly phaseArtifactReadCount: 0;
+  readonly repositoryReadCount: 0;
+  readonly repositoryWriteCount: 0;
+  readonly authorityBundleFileSha256: Sha256Hex;
+  readonly authorityRunnerFileSha256: Sha256Hex;
+  readonly auditLogFileSha256: Sha256Hex;
+  readonly auditFinalEntrySha256: Sha256Hex;
+  readonly nodeReleaseTrustRootFileSha256: Sha256Hex;
+  readonly candidateLockFileSha256: Sha256Hex;
+}
+
+interface PhaseB1LockCurationOwnedFinalV1 {
+  readonly relativePath: string;
+  readonly fileSha256: Sha256Hex;
+  readonly byteLength: number;
+}
+
+interface PhaseB1LockCurationInventoryV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-lock-curation-inventory/1';
+  readonly generationId: `lock-${Sha256Hex}`;
+  readonly candidateLockFileSha256: Sha256Hex;
+  readonly authorityBundleFileSha256: Sha256Hex;
+  readonly authorityRunnerFileSha256: Sha256Hex;
+  readonly auditLogFileSha256: Sha256Hex;
+  readonly auditFinalEntrySha256: Sha256Hex;
+  readonly nodeReleaseTrustRootFileSha256: Sha256Hex;
+  readonly curationEvidenceFileSha256: Sha256Hex;
+  readonly ownedFinals: readonly PhaseB1LockCurationOwnedFinalV1[];
+}
+```
+
+各entryとnested objectは上記型の該当branchに記載したpropertyだけを持つ。auditの`entrySha256` preimageは
+そのentryから`entrySha256`だけを除いた厳密objectのLFなしJCS bytesである。ordinal 0の
+`priorEntrySha256`は64桁zero、以後は直前entryの`entrySha256`である。`finalEntrySha256`は空配列を禁止した
+最後のentry hashと一致する。`operationId`はattemptまたはdeny自身のordinalから決まり、completeは対応attemptと
+同じ値を持つ。許可attemptの直後entryはexact 1件のcompleteで、completeの`pairedAttemptOrdinal`、operation、target、
+requestOrdinalはattemptとexact一致する。denyはdispatchせずcompleteを持たず、denyが1件でもあるrunは成功inventoryを
+公開できない。`network-request`はnetwork targetだけ、4つのfile operationはfile targetだけを持つ。
+complete resultはnetwork-request/file-read/file-writeでbytes、file-listでdirectory-list、file-statでstatだけを許す。
+
+network targetの`exactUrl`はuserinfo/query/fragmentなしのcanonical HTTPS URL、`host`はURL parserが返す
+lowercase ASCII hostnameとexact一致する。許可network attempt/completeだけが0始まり欠番なしの非null
+`requestOrdinal`を持ち、file operationとdenyではnullである。`requests`の各recordは、同じrequest ordinalを持つ
+network completeとexact 1対1で、`exactUrl`、host、response hash、response byte lengthが一致する。
+反対方向にも各network completeにexact 1 recordを要求するため、auditにないrequestまたはrequestのないaudit pairを
+受理しない。2 repository tip、Node verification document、keyring、release index、manifest、signature、runtimeは各1件、
+npm metadata/tarballはcandidate lockのdependency closureと一対一に対応する。
+
+file targetの`logicalPath`はNFC、`/`区切りで、許可rootでは`authority/<relative>`または
+`curation/<relative>`とする。既知の禁止rootは`repository/<relative>`、`image/<relative>`、`pdf/<relative>`、
+`phase-artifact/<relative>`、`local-storage/<relative>`、`source-audit-ui/<relative>`、
+`production-corpus/<relative>`としてscopeとprefixを一致させる。その他は
+`other/sha256:<sha256(UTF8(NFC(canonicalAbsolutePath)))>`とし、絶対path自体を保存しない。relative部分は空segment、
+`.`、`..`、backslash、NULを禁止する。同じOS pathは常に同じlogical pathへ分類してからpolicy判定し、denyも省略しない。
+
+`network-request`、`file-read`、`file-write`のcomplete resultは`bytes`だけで、hash preimageは実response/read/written
+bytesそのもの、`resultByteLength`はそのbyte数である。`file-list`のresultは`directory-list`だけで、entry nameはNFC、
+`/`、backslash、NUL、`.`、`..`を含まない単一segment、`name`のUTF-8 byte辞書順、重複なしとする。
+`resultObjectSha256=SHA-256(JCS(entries))`とする。`file-stat`のresultは`stat`だけで、存在しない場合は
+`exists=false`かつentryType/byteLength/fileIdentity/reparseTagを全てnull、存在する場合はentryTypeを非null、
+regular-fileだけbyteLengthを非負safe integer、それ以外はnullとする。`fileIdentity`は
+`<16 lowercase hex volume serial>:<32 lowercase hex file id>`、reparseだけ`reparseTag`を非負uint32、それ以外nullとし、
+`resultObjectSha256`は同resultから自身だけを除いた厳密objectのLFなしJCS bytesのSHA-256とする。
+
+禁止access countはoperationId単位で集計し、attempt+completeを1件、denyを1件と数える。repository/image/PDF/
+phase artifact/LocalStorage/source-audit UI/production corpusはfile target scopeから、AI/provider requestはnetworkClassから
+独立導出する。成功runではこれらのcountとdeny件数が全て0でなければならない。これにより全operationについて同じ
+target/result、request対応、audit hash chainをfrozen bytesだけから独立再生成できる。
+
+response bytesはgeneration内の`responses/<responseFileSha256>`へ保持し、同じhashの同一bytesだけを共有できる。
+`ownedFinals`はresponse全件、`node-release-trust-root.json`、`phase-b1-toolchain-lock.json`、
+`lock-curation-evidence.json`、`lock-curation-audit.json`のexact集合をrelative path ASCII順で列挙し、inventory自身、
+temp、authority directory、他generationを含めない。`generationId`は
+`lock-${candidateLockFileSha256}`とし、generation directory basenameとexact一致する。
+`requestCount=requests.length`、開始時刻は終了時刻以下、
+各requestのhostはURLのcanonical hostと一致し、response fileのhash/lengthも一致しなければならない。
+trust rootの公式verification document bytesはevidenceの対応requestと一致し、その文書が
+`https://github.com/nodejs/release-keys`をrelease verificationの信頼元として示すことを独立reviewで確認する。
+evidence/inventoryのauthority bundle、runner、audit log、final entry hashは相互にexact一致し、audit再計算で
+全hash chain、request一対一対応、禁止access count 0を再現できなければならない。
+L0の成功statusは`created|unchanged`だけとする。許可外request/redirectは`phase-b1-lock-curation-network-forbidden`、
+authority/hash/audit不整合は`phase-b1-lock-curation-authority-invalid`、trust root・署名・integrity・dependency closure不整合は
+`phase-b1-lock-curation-input-invalid`、既存final競合は
+`phase-b1-lock-curation-final-conflict`、temp残存は`phase-b1-lock-curation-temp-present`、hardlink/directory sync失敗は
+`phase-b1-lock-curation-hardlink-unsupported|phase-b1-lock-curation-directory-sync-failed`として停止し、部分finalを権威化しない。
+
+### 3.2 Stage B0 bootstrap-toolchain
+
+B0はreview済みlock記載artifactを再取得するdata-preparation network工程である。L0以外の工程ではB0だけが
+package/runtime取得のためnetworkを使える。repositoryのscriptをhost PowerShellから次の契約で起動する。
 
 ```text
 powershell -NoProfile -File <REPOSITORY_ROOT>/apps/snow-crystal-sim/tests/calibration/bootstrap-morphology-pilot-toolchain.ps1 \
@@ -108,7 +585,8 @@ powershell -NoProfile -File <REPOSITORY_ROOT>/apps/snow-crystal-sim/tests/calibr
 ```
 
 B0はNode `24.14.1` runtime、exact dependency lock、`pdfjs-dist@6.3.289`、
-`@napi-rs/canvas@1.0.6`だけを`tooling/phase-b1/staging/<nonce>/`へ取得する。download bytesは配布元の
+`@napi-rs/canvas@1.0.6`とlockに列挙した全transitive/native packageだけを
+`tooling/phase-b1/staging/<nonce>/`へ取得する。download bytesは配布元の
 review済みintegrity/signatureまたはlockfile integrityへ照合し、展開後にversionと公開versionを検査する。
 package lifecycle script、repository/workspaceへのinstall、PDF・crop・manifestのread、AI/provider endpointへの接続を禁止する。
 全commandのworking directoryは`PILOT_WORK_ROOT/tooling/phase-b1/`内とし、repository cwd、PowerShell profile、NODE_PATH、
@@ -132,6 +610,76 @@ network可能なchild processをdenyし、試行があればoutputを公開せ�
 `RangeError('phase-b1-network-forbidden <logical-operation>')`、0件なら0件をevidenceへ記録する。
 B0のpackage取得は外部AIへの画像・prompt送信とは別であり、
 B0完了をAI upload承認とみなさない。
+
+#### 3.2.1 win32-x64 platform acquisition lock
+
+`phase-b1-toolchain-lock.json`は実装ではなく、test-code工程でB0/B1 entrypointより先に作成・レビュー・固定する
+供給元authorityである。placeholder、semver range、実行時registry metadata解決を禁止する。対象platformは
+`os='win32'`、`arch='x64'`、native ABIは`msvc`だけとし、別platformは別設計・別lockなしに実行しない。
+許可hostはASCII昇順のexact集合 `['nodejs.org','registry.npmjs.org']`、schemeは`https`だけ、redirectは0回とする。
+
+```ts
+interface PhaseB1AcquisitionArtifactV1 {
+  readonly ordinal: number; // 0始まりで欠番なし
+  readonly artifactId: string;
+  readonly kind: 'node-runtime' | 'npm-package';
+  readonly packageName: string | null; // node-runtimeだけnull
+  readonly version: string;
+  readonly exactUrl: `https://${string}`;
+  readonly responseByteLength: number;
+  readonly responseFileSha256: Sha256Hex;
+  readonly integrity:
+    | {
+        readonly kind: 'node-release-sha256-signed-manifest';
+        readonly artifactSha256: Sha256Hex;
+        readonly manifestUrl: `https://nodejs.org/${string}`;
+        readonly manifestFileSha256: Sha256Hex;
+        readonly signatureUrl: `https://nodejs.org/${string}`;
+        readonly signatureFileSha256: Sha256Hex;
+        readonly signerFingerprint: string;
+      }
+    | {
+        readonly kind: 'npm-dist-integrity-sha512';
+        readonly distIntegritySha512: `sha512-${string}`;
+        readonly tarballSha256: Sha256Hex;
+      };
+}
+
+interface PhaseB1ToolchainLockV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-toolchain-lock/1';
+  readonly target: {
+    readonly os: 'win32';
+    readonly arch: 'x64';
+    readonly nativeAbi: 'msvc';
+  };
+  readonly allowedHosts: readonly ['nodejs.org', 'registry.npmjs.org'];
+  readonly redirectPolicy: 'forbid';
+  readonly nodeReleaseTrustRootFileSha256: Sha256Hex;
+  readonly nodeVersion: '24.14.1';
+  readonly packages: readonly [
+    { readonly name: '@napi-rs/canvas'; readonly version: '1.0.6' },
+    { readonly name: 'pdfjs-dist'; readonly version: '6.3.289' },
+  ];
+  readonly artifacts: readonly PhaseB1AcquisitionArtifactV1[];
+}
+```
+
+lockはUTF-8 BOMなし、NFC、LFなしJCS object＋final LF 1つとし、§4.1と同じduplicate/unknown/non-JSON拒否を
+適用する。`exactUrl`のhostは`allowedHosts`にexact一致し、userinfo、query、fragment、IP literal、非default portを
+禁止する。Node recordは公式win-x64 zip 1件で、versionとbasenameが一致し、signed `SHASUMS256.txt`から得た
+artifact SHA-256、manifest/signature bytesのSHA-256、検証済みsigner fingerprintを全て非placeholderで持つ。
+npm recordはoffline展開に必要なtop-level packageと全transitive/native package tarballをexactに1回ずつ列挙し、
+registry `dist.integrity`のSHA-512とdownload bytesのSHA-256の両方を持つ。artifactsはordinal順で、
+`artifactId`、URL、package name/versionの重複を禁止する。
+`signerFingerprint`は40 lowercase hex、`distIntegritySha512`はpaddingを含むcanonical base64 SRIとする。
+
+lock作成時の独立レビューは、§3.1.1の独立trust rootによるNode signed manifestの署名検証結果、npm registry metadataの
+`dist.tarball`/`dist.integrity`、全exact URL・host、全download byte hash、依存closureの完全性を照合する。
+そのreviewが`approved`となり、lock hashがtest code literalと一致するまで実装とreal B0を開始しない。
+B0はlock記載URL以外を組立てず、metadata endpointへ接続せず、redirectを追わず、全digest検証後にだけ展開する。
+通常testはこの実lockをparse/hash検査するがnetworkへ接続せず、synthetic network adapterで正例・host/URL違い・
+redirect・digest不一致・依存欠落を検証する。real networkはtest-code前の隔離L0と、実装Green・実装レビュー・
+execution artifact gate後のdata-preparation B0だけで使える。L0はlock curationだけ、B0はreview済みlockの再取得だけを行う。
 
 ## 4. 入力と hash binding
 
@@ -185,6 +733,9 @@ interface RepositoryReadAllowlistV1 {
 }
 ```
 
+`RepositoryReadAllowlistV1`はprocess load後のapplication readだけを表し、entrypointのprocess loadや
+execution artifact gateを表さない。B0では`phase-b1-toolchain-lock.json` 1件、B1では0件である。
+
 relative pathはNFC、`/`区切り、非空segmentだけとし、absolute/UNC/drive、`.`、`..`、NUL、backslash、usernameを
 禁止する。`ArtifactEntryV1`配列は`relativePath` ASCII昇順で重複不可、allowlistは
 `repositoryRelativePath` ASCII昇順で重複不可とする。各inventoryのowned-final配列は列挙した集合とexact一致し、
@@ -193,7 +744,7 @@ inventory自身、completion marker、temp、inbox、preview、他generation、u
 | schemaVersion | 厳密なtop-level field集合と配列契約 |
 |---|---|
 | `snow-crystal-morphology-pilot-phase-b0-network/1` | `schemaVersion,stage,startedAtUtc,finishedAtUtc,requests,requestCount,aiProviderRequestCount`; `stage='B0'`; UTCは`UtcSeconds`; requestは`ordinal,host,artifactKind,responseByteLength,responseFileSha256,integrityOutcome`だけ、ordinal 0始まり、`artifactKind='node-runtime'|'npm-package'`、`integrityOutcome='verified'`; `requestCount=requests.length`; `aiProviderRequestCount=0` |
-| `snow-crystal-morphology-pilot-toolchain-inventory/1` | `schemaVersion,nodeVersion,packages,lockSource,repositoryReadAllowlist,payloadTreeObjectSha256,payloadFiles,networkLogFileSha256`; exact Node、packagesは`name,version`だけを持つ2件name ASCII順、lockSourceは`repositoryRelativePath,fileSha256`、payloadFilesは全payload regular file、tree object hashは`JCS(payloadFiles)`のSHA-256 |
+| `snow-crystal-morphology-pilot-toolchain-inventory/1` | `schemaVersion,nodeVersion,packages,lockSource,repositoryReadAllowlist,payloadTreeObjectSha256,payloadFiles,networkLogFileSha256`; exact Node、packagesは`name,version`だけを持つ2件name ASCII順、lockSourceは`repositoryRelativePath,fileSha256`、repositoryReadAllowlistはB0 runtimeのlock 1件だけ、payloadFilesは全payload regular file、tree object hashは`JCS(payloadFiles)`のSHA-256 |
 | `snow-crystal-morphology-pilot-toolchain-complete/1` | `schemaVersion,toolchainInventoryFileSha256,toolchainInventoryObjectSha256,networkLogFileSha256,payloadTreeObjectSha256,completedAtUtc`; inventory/marker自身はpayload membership外 |
 | `snow-crystal-morphology-pilot-source-preparation/1` | `schemaVersion,protocolObjectSha256,selectionPlanObjectSha256,sourcePdfSha256,locatorInventoryFileSha256,toolchainInventoryFileSha256,pageRasters,sourceCrops`; pageRastersはpage 11..14昇順の4件、各`pdfPage,widthPx,heightPx,file,rgbaSha256`; sourceCropsはanonymous ID昇順24件、各`anonymousImageId,sourceObservationId,pdfPage,pagePanelOrdinal,widthPx,heightPx,file,rgbaSha256,viewportTransform,cropPixelBounds` |
 | `snow-crystal-morphology-pilot-phase-b1a-inventory/1` | `schemaVersion,protocolObjectSha256,selectionPlanObjectSha256,sourcePdfSha256,toolchainInventoryFileSha256,sourcePreparationFileSha256,initialMaskRevisionFileSha256,initialMaskHeadFileSha256,ownedFinals`; ownedFinalsは4 raster、24 crop、source-preparation、generation 0 mask revision/headの31件exact集合 |
@@ -539,7 +1090,8 @@ phase-b1-directory-sync-failed
 
 ## 8. 検証戦略
 
-test codeは通常workspaceでnetwork/PDF/実画像を使わず、renderer/filesystem/clock adapterを注入する。
+test codeは通常workspaceでreal network/PDF/実画像を使わず、renderer/filesystem/clock/network adapterを注入する。
+network正例もsynthetic response bytesだけを使い、DNS、socket、HTTP clientを起動しない。
 
 1. synthetic viewport transformで4 corner、floor/ceil、half-open cropを独立計算する。
 2. synthetic RGBAでmask内gray、mask外bit一致、file/RGBA hash、canonical PNGを独立oracleと比較する。
@@ -547,8 +1099,22 @@ test codeは通常workspaceでnetwork/PDF/実画像を使わず、renderer/files
 4. 24 entry、匿名ID、batch 12+12、manifest/map非漏洩、Phase A schema適用が3種類だけであることを検査する。
    §4.1のB1-only canonical JSONそれぞれについてrequired/unknown/wrong type/null、array順・件数、relative path、
    file/object hash、owned-final exact membership、inventory self exclusion、JCS+LFを独立oracleで検査する。
-5. B0だけが許可取得先へnetwork requestでき、toolchain marker/hash、同一再実行、不一致、staging crashを検査する。
-   B1a/B1bはnetwork API・socket・network可能child processの試行0件をprocess全期間で検査する。
+5. L0 authority mini-cycleでは、synthetic network/filesystemだけでrunnerのdeny-by-default adapter、全I/O hash-chain、
+   operation別target/result preimage、attempt/complete pair、requestOrdinal/URL/hash/length一対一、directory/stat oracle、
+   禁止scope集計、許可外dispatch 0件を検査する。runner review requestはrunner hash由来の一意なrequest ID、対象path/hash、
+   review typeから独立JCS oracleでobject/file hashを求める。approval bindingは標準review schemaのtype/status/reviewed files/
+   findings/conditions/rollbackだけを厳密投影し、request hashと結合して、summary、YAML表現、session、commit proposalに
+   依存しないことを確認する。
+   direct I/O/import/child process禁止、runner/authority/host hash gateも検査する。
+   そのapproved runnerで生成したL0のcuration evidence/inventory、4 host、request exact membership、禁止対象0件、
+   trust rootのimmutable nodejs/node document provenance、release-keys tip、primary/subkey mapping、署名creation/release日、
+   expiry/revocation時刻規則、Node署名検証をfrozen artifactだけの独立oracle/reviewで確認する。
+   reviewed win32-x64 lockのschema、exact target、
+   B0用2 host、redirect禁止、Node signed-manifest evidence、npm SRI＋SHA-256、
+   exact dependency closureを独立oracleで検査する。synthetic network adapterでB0だけがlock記載exact URLを取得でき、
+   host/path/query/port/redirect/digest/byte length/依存closureの差異を拒否し、toolchain marker/hash、同一再実行、
+   不一致、staging crashを検査する。B1a/B1bはnetwork API・socket・network可能child processの試行0件を
+   process全期間で検査する。通常testからreal networkへは接続しない。
 6. draft rectangle 0件、checks混在、role/time nullを受理し、confirmed rectangle 0件、check false、role/time null・wrong roleを拒否する。
    status/null不整合、fractional/non-Z/offset/leap-second/不実在`confirmedAtUtc`、unknown provenance、rectangle 0件で
    provenance非`none`、rectangleありで`none`を個別に拒否し、machine suggestionの無修正採用と人間編集を区別して受理する。
@@ -559,19 +1125,26 @@ test codeは通常workspaceでnetwork/PDF/実画像を使わず、renderer/files
    late-final race、reparse/path差替えをfault adapterで検査し、既存revision/head exact bytesが不変であることを確認する。
 9. confirmed snapshotがB1b入力revisionとexact bytes/file hash同一で、入力revisionを保存後またはvalidation中に変えたmutationを
    completion marker前に拒否することを確認する。
-10. repository read allowlistの全path/hash正例と、hash違い、追加import、directory read、allowlist外read、symlink/reparseを検査する。
+10. process load後のfilesystem spyで、B0はreview済みlock 1件だけをreadでき、B1はrepository readが0件であること、
+    hash違い、entrypoint自己再読込、追加import、directory read、allowlist外read、symlink/reparseを拒否することを検査する。
     repository内のwrite/temp/cache/lock/logをfilesystem adapterで全面拒否し、repositoryとprotected sentinelの
-    path・entry type・exact bytesが不変で、無関係な外部fileを保持することを確認する。
+    path・entry type・exact bytesが不変で、無関係な外部fileを保持することを確認する。entrypoint自身のfile hashは
+    test implementation内へ埋め込まず、approved implementation reviewのhashと現在bytesを比較するCoordinatorの
+    execution artifact gateを独立した実行前checkとして検査・記録する。
 11. 同じconfirmed revisionから同じfull-hash generation IDと同じartifactを再生成し、別revisionでは別generationとなること、
     old generation exact bytesが不変でfixed convenience pathが作られないことを確認する。
 12. 初回active head、replacement closure/head、head CAS競合、generation/closure完成後crash、inactive complete generation、
     inert closure、head fork/欠番、inventory mutationを検査する。勝者だけがactiveとなり、敗者はold activeをcloseしない。
 13. upload/materialize resolverが一意なactive head tipだけを受理し、inactive/closed/fixed path、hash不一致、upload直前head変更を拒否する。
 
-承認済みtest codeで、tool/library未存在を最初の存在assertionによる唯一のexpected Redにする。
-実PDFの実行はtest code・実装の独立レビューとGreen後だけに行い、exact runtime/package/PDF hash、生成件数、
-artifact hashをdata-preparation evidenceへ記録する。実PDF、page raster、crop、mask、restricted map、blinded PNGを
-repository fixtureへ追加しない。
+L0 authorityの独立mini-cycleをRed/Green/reviewまで完了し、そのapproved runnerによるL0と独立reviewで
+win32-x64 lockを先に固定する。その承認済みlockを使うB0/B1 test codeを固定してから、
+B0/B1 entrypoint未存在を最初の存在assertionによる唯一の
+expected Redにする。entrypoint実装後にtest literalを追加・変更しない。
+L0以外の実network/PDFの実行はtest code・実装の独立レビューとGreen後だけに行う。直前にCoordinatorがB0/B1 entrypointと
+lockのcurrent file SHA-256を各latest approved review hashへ照合し、結果を`EVIDENCE.md`へ記録する。さらに
+exact platform/runtime/package/PDF hash、network request件数・host、生成件数、artifact hashをdata-preparation evidenceへ
+記録する。実PDF、page raster、crop、mask、restricted map、blinded PNGをrepository fixtureへ追加しない。
 
 ## 9. 人間ゲートと外部送信境界
 
@@ -591,6 +1164,16 @@ Claude Code、Codex、Gemini Chatその他のproviderへ画像を送信しない
 - 採用: mask編集はimmutable revisionとappend-only generation headによるCAS保存とし、mutable fileの上書きを禁止する。
 - 採用: finalはconfirmed revision hash由来のgenerationへ凍結し、append-only head/closureだけでactiveを切り替える。old finalを保持する。
 - 採用: repositoryはwrite全面禁止、review済みpath/hash allowlist以外のreadも禁止する。
+- 採用: entrypoint hashは実装レビュー後のCoordinator execution artifact gateで照合し、runtime自己hashや
+  未実装file hashのtest literalを要求しない。runtime repository readはB0 lock 1件、B1は0件とする。
+- 採用: B0 acquisitionはtest-code工程で先に承認するwin32-x64 exact lockへ限定し、通常testはsynthetic networkだけ、
+  real networkはtest-code前の隔離L0と、Green・実装レビュー・実行前hash gate後のB0だけに使う。
+- 採用: L0は画像/PDF/Phase artifact/AI endpoint/repositoryへアクセスせず、Node/npm配布情報と
+  immutable official release keyringだけを外部rootへ取得する。Node署名はlock外のreview済みtrust rootで検証する。
+- 採用: L0はlock非依存の単一file runnerを別のtest-first mini-cycleで先に承認し、external exact copy、
+  deny-by-default adapter、全application I/O hash-chainをauthorityとする。公式verification文書はimmutable
+  `nodejs/node` commit、keyringはimmutable`nodejs/release-keys` commitへ固定し、署名・期限・失効判定は
+  frozen artifactとL0時刻だけで再現する。
 - 採用: maskのmachine suggestionは任意だが非権威。人間確認なしのfinalizeは禁止。
 - 採用: exact toolchainは`PILOT_WORK_ROOT/tooling/phase-b1/`へ隔離し、通常workspace依存を変更しない。
 - 未決定: 各画像のrectangle座標。これは設計値ではなく、B1a source cropを見て人間が確定する実行dataである。
