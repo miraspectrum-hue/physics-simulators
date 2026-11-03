@@ -141,6 +141,256 @@ child process、dynamic code generation/eval、profile、ambient proxy設定を�
 network/filesystem/audit adapter以外からapplication I/Oを行わない。したがってrunnerの作成・test・reviewは
 Node/npm acquisition lockへ依存せず、lockを作るためにlockが必要となる循環を生じない。
 
+##### 3.1.0.1 runner process、core、adapter 契約
+
+runnerの単一file内で、判断・artifact組立てを行う唯一のcoreを`Invoke-PhaseB1L0Core`、production adapter生成を
+`New-PhaseB1L0ProductionAdapters`、test transcript adapter生成を`New-PhaseB1L0TranscriptAdapters`と命名する。
+`Invoke-PhaseB1L0Core`が受け取るadapter集合は次の6操作だけを持つ。
+
+```text
+UtcNow() -> UtcSeconds
+NetworkRequest(PhaseB1L0NetworkTargetV1) -> bytes + redirectCount + tlsOutcome
+FileRead(PhaseB1L0FileTargetV1) -> bytes
+FileWrite(PhaseB1L0FileTargetV1, bytes) -> accepted written bytes
+FileList(PhaseB1L0FileTargetV1) -> PhaseB1L0DirectoryEntryV1[]
+FileStat(PhaseB1L0FileTargetV1) -> PhaseB1L0StatResultV1 without resultObjectSha256
+```
+
+`FileWrite`はrunnerが要求するcreate-new temp、flush/fsync、別read、exclusive publish、parent sync、temp unlink、
+second parent syncを含む
+単一のreview済みfilesystem adapter境界であり、成功completeはdurable publication後だけ返る。内部failure pointは
+`before-temp|after-temp-write|after-temp-sync|after-reread|before-exclusive-publish|after-exclusive-publish|after-first-parent-sync|after-temp-unlink|after-second-parent-sync`
+としてsynthetic transcriptから注入できる。coreはOS、network、clock APIを直接呼ばず、productionとtestは同じ
+`Invoke-PhaseB1L0Core`を使う。adapter自身をartifact生成、署名・hash oracle、policy判断の代替にせず、coreが
+§3.1〜§3.1.1の検証、audit entry、evidence、inventory、summary/errorを生成する。
+
+production CLIは次のexact形だけを受理する。
+
+```text
+<WINDOWS_POWERSHELL_5_1> -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+  -File <EXTERNAL_REVIEWED_RUNNER> \
+  -Operation curate \
+  -CurationRoot <absolute PILOT_LOCK_CURATION_ROOT> \
+  -AuthorityBundleFile <absolute authority bundle JSON> \
+  -ExpectedAuthorityBundleFileSha256 <64 lowercase hex>
+```
+
+`-Operation`を含むscript parameterはASCII case-sensitive、記載順、各1回だけとする。欠落、重複、未知parameter、
+positional argument、`--`、empty valueをadapter生成前に拒否する。adapter生成前に許す処理はraw CLI tokenの構文検査と、
+stdinがredirectされているかのhost property確認だけであり、path解決、stat、read、hash、identity検査を含むfilesystem/
+network/clock dispatchは0件とする。`curate`ではredirected stdinを内容・長さによらずargument-invalidとして拒否し、
+stdin bytesを読まない。console stdinも読まず空入力として扱う。environment variable、
+PowerShell profile、ambient proxy、pipeline object、test hookからargumentやadapterを
+補完しない。`New-PhaseB1L0ProductionAdapters`はI/Oを行わずdelegateだけを生成する。生成後、
+`Invoke-PhaseB1L0Core`がproduction adapterの`FileStat`/`FileRead`だけを通して`CurationRoot`と
+`AuthorityBundleFile`の§2/§3.1.0 canonical path・identity・descendant規則、regular-file bytes、expected hashを検査する。
+これらのattempt/completeはaudit chainの先頭に入り、synthetic probeでも同じstat/read stepを必須とする。
+authority検査前のdirect filesystem dispatch、pre-core bootstrap read/hash、別実装pathを禁止する。
+
+通常testはreview前のrepository runnerを次のexact形で別processとして起動する。
+
+```text
+<WINDOWS_POWERSHELL_5_1> -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+  -File <REPOSITORY_RUNNER> -Operation synthetic-probe -ProtocolVersion 1
+```
+
+`synthetic-probe`はstdinのUTF-8 BOMなしJCS+LF exact 1 objectだけを読み、stdoutへresponse 1 objectを返す。
+`-CurationRoot`、`-AuthorityBundleFile`、`-ExpectedAuthorityBundleFileSha256`、production filesystem/network/clock、
+environment由来のadapter、追加stdin bytesを使わない。反対に`curate`は`-ProtocolVersion`とsynthetic requestを受理しない。
+したがってtest adapterをproduction operationへ注入できない。synthetic request/responseはtest専用でartifact、authority、
+review evidence、L0 completionとして保存・昇格してはならない。
+
+```ts
+interface PhaseB1L0CurateArgumentsV1 {
+  readonly curationRoot: string; // absolute path。response/artifactへは出力しない
+  readonly authorityBundleFile: string; // curationRoot/authority内のabsolute regular-file path
+  readonly expectedAuthorityBundleFileSha256: Sha256Hex;
+}
+
+type PhaseB1L0SyntheticAdapterOperationV1 =
+  | 'utc-now' | 'network-request' | 'file-read' | 'file-write' | 'file-list' | 'file-stat';
+
+interface PhaseB1L0SyntheticBytesOutcomeV1 {
+  readonly kind: 'bytes';
+  readonly bytesBase64: string; // RFC 4648 canonical base64、padding必須
+  readonly redirectCount: number | null; // networkだけ0、それ以外null
+  readonly tlsOutcome: 'verified' | null; // networkだけverified、それ以外null
+}
+
+interface PhaseB1L0SyntheticClockOutcomeV1 {
+  readonly kind: 'utc';
+  readonly value: UtcSeconds;
+}
+
+interface PhaseB1L0SyntheticDirectoryOutcomeV1 {
+  readonly kind: 'directory-list';
+  readonly entries: readonly PhaseB1L0DirectoryEntryV1[];
+}
+
+interface PhaseB1L0SyntheticStatOutcomeV1 {
+  readonly kind: 'stat';
+  readonly value: Omit<PhaseB1L0StatResultV1, 'resultObjectSha256'>;
+}
+
+interface PhaseB1L0SyntheticWriteOutcomeV1 {
+  readonly kind: 'write';
+  readonly disposition: 'accepted' | 'error';
+  readonly failurePoint:
+    | 'none' | 'before-temp' | 'after-temp-write' | 'after-temp-sync'
+    | 'after-reread' | 'before-exclusive-publish' | 'after-exclusive-publish'
+    | 'after-first-parent-sync' | 'after-temp-unlink' | 'after-second-parent-sync';
+  readonly errorCode:
+    | 'access-denied' | 'identity-changed' | 'reparse-found' | 'already-exists'
+    | 'hardlink-unsupported' | 'directory-sync-failed' | null;
+}
+
+interface PhaseB1L0SyntheticErrorOutcomeV1 {
+  readonly kind: 'error';
+  readonly code:
+    | 'clock-failed' | 'not-found' | 'access-denied'
+    | 'identity-changed' | 'reparse-found' | 'network-failed' | 'tls-failed';
+}
+
+interface PhaseB1L0SyntheticAdapterStepV1 {
+  readonly ordinal: number; // 0始まり、欠番なし
+  readonly adapter: 'clock' | 'network' | 'filesystem';
+  readonly operation: PhaseB1L0SyntheticAdapterOperationV1;
+  readonly expectedTarget: PhaseB1L0NetworkTargetV1 | PhaseB1L0FileTargetV1 | null;
+  readonly expectedInputFileSha256: Sha256Hex | null; // file-writeだけnon-null
+  readonly expectedInputByteLength: number | null; // file-writeだけnon-null
+  readonly outcome:
+    | PhaseB1L0SyntheticBytesOutcomeV1
+    | PhaseB1L0SyntheticClockOutcomeV1
+    | PhaseB1L0SyntheticDirectoryOutcomeV1
+    | PhaseB1L0SyntheticStatOutcomeV1
+    | PhaseB1L0SyntheticWriteOutcomeV1
+    | PhaseB1L0SyntheticErrorOutcomeV1;
+}
+
+interface PhaseB1L0SyntheticProbeRequestV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-synthetic-request/1';
+  readonly protocolVersion: '1';
+  readonly arguments: PhaseB1L0CurateArgumentsV1;
+  readonly steps: readonly PhaseB1L0SyntheticAdapterStepV1[];
+}
+
+interface PhaseB1L0SyntheticPublishedFileV1 {
+  readonly logicalPath: string;
+  readonly bytesBase64: string;
+  readonly fileSha256: Sha256Hex;
+  readonly byteLength: number;
+}
+
+interface PhaseB1L0SyntheticFileStateV1 {
+  readonly logicalPath: string;
+  readonly state: 'temp' | 'final';
+  readonly bytesBase64: string;
+  readonly fileSha256: Sha256Hex;
+  readonly byteLength: number;
+}
+
+interface PhaseB1L0SyntheticProbeResponseV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-synthetic-response/1';
+  readonly protocolStatus: 'completed';
+  readonly simulatedExitCode: number;
+  readonly simulatedStdoutLine: string | null;
+  readonly simulatedStderrLine: string | null;
+  readonly consumedStepCount: number;
+  readonly remainingStepCount: 0;
+  readonly networkDispatchCount: number;
+  readonly filesystemDispatchCount: number;
+  readonly filesystemFiles: readonly PhaseB1L0SyntheticFileStateV1[];
+  readonly publishedFiles: readonly PhaseB1L0SyntheticPublishedFileV1[];
+  readonly auditLog: PhaseB1L0AuditLogV1 | null;
+}
+```
+
+stepのadapter/operation/target/outcome branchはexact対応させる。`utc-now`はclock/null target/utc、networkは
+network/network target/bytes、file-readはfilesystem/file target/bytes、file-writeはfilesystem/file target/write、
+file-listはfilesystem/file target/directory-list、file-statはfilesystem/file target/statだけを許す。
+network bytesだけが`redirectCount=0,tlsOutcome='verified'`、file-read bytesは両field nullである。
+generic errorはutc-now=`clock-failed`、network=`network-failed|tls-failed`、file-read/list/stat=
+`not-found|access-denied|identity-changed|reparse-found`だけを許し、file-writeでは禁止する。したがってutc outcomeへTLS、
+file outcomeへnetwork errorなど、operationに意味のない組合せをstrict schemaで拒否する。
+write outcomeは次表の組だけを許す。`accepted`は`none/null`、`error`は表のnon-none/non-null pairである。
+
+| failurePoint | 許可errorCode | failure後のfilesystemFiles | publishedFiles |
+|---|---|---|---|
+| `before-temp` | `access-denied|identity-changed|reparse-found|already-exists` | 新規0件 | 新規0件 |
+| `after-temp-write` | `access-denied|identity-changed` | tempのみ | 新規0件 |
+| `after-temp-sync` | `access-denied|identity-changed` | tempのみ | 新規0件 |
+| `after-reread` | `identity-changed` | tempのみ | 新規0件 |
+| `before-exclusive-publish` | `already-exists|identity-changed|reparse-found|hardlink-unsupported` | tempのみ | 新規0件 |
+| `after-exclusive-publish` | `identity-changed|directory-sync-failed` | temp＋final | finalのみ |
+| `after-first-parent-sync` | `access-denied|identity-changed` | temp＋final | finalのみ |
+| `after-temp-unlink` | `identity-changed|directory-sync-failed` | finalのみ | finalのみ |
+| `after-second-parent-sync` | `identity-changed` | finalのみ | finalのみ |
+
+file-write以外のexpected input 2 fieldはnull、file-writeではcoreが渡したbytesの
+hash/lengthとexact一致させる。adapterは次のstepとoperation/target/inputが一致した場合だけconsumeし、不一致、step枯渇、
+未消費stepはprobe protocol errorとする。test responseのfilesystem filesはfailure後を含むin-memory stateを
+`logicalPath,state` ASCII tuple順でexact列挙し、published filesはそのうちfinalだけをlogical path ASCII順で列挙する。
+両配列のbytes/hash/lengthを一致させ、absolute path、credential、usernameを含めない。
+
+network/filesystem adapterがdispatchされたoperationはallow attemptに続いてcompleteを必ず1件持つ。success resultだけでなくadapter errorも
+下記`PhaseB1L0AdapterErrorResultV1`をcomplete resultとするため、失敗runにもunpaired attemptを残さない。error completeを
+1件でも含むrunはsuccess summary/evidence/inventoryを公開しない。denyは従来どおりdispatch 0件、complete 0件である。
+`UtcNow`はaudit I/O unionの対象外であり、`clock-failed`では新しいaudit entryを作らず、既存chainがあればその末尾までを保持する。
+file-write error後のstdoutは0 byte、stderrはerror 1行で、completion inventoryは常に未公開とする。late failureで
+finalが存在してもそれは未完成generationのimmutable predecessorであり、次回はexact bytesを再検証してresumeするか
+conflictで停止し、自動削除・上書きしない。
+
+| adapter error | stable reason / exit |
+|---|---|
+| `clock-failed` | `phase-b1-lock-curation-internal-error` / `70` |
+| `network-failed|tls-failed` | `phase-b1-lock-curation-input-invalid` / `11` |
+| authority/curation-rootの`not-found|access-denied|identity-changed|reparse-found` | `phase-b1-lock-curation-authority-invalid` / `11` |
+| file-write `already-exists` | `phase-b1-lock-curation-final-conflict` / `12` |
+| file-write `hardlink-unsupported` | `phase-b1-lock-curation-hardlink-unsupported` / `13` |
+| file-write `directory-sync-failed` | `phase-b1-lock-curation-directory-sync-failed` / `13` |
+
+valid synthetic requestでは、simulated curateが成功・契約エラーのどちらでもhost process自体はexit 0、stderr 0 byte、
+stdoutは`PhaseB1L0SyntheticProbeResponseV1`のJCS+LF 1行だけとする。`simulatedStdoutLine`/
+`simulatedStderrLine`にproduction CLIと同じ結果を格納する。request parse/schema/JCS、transcript対応、response構築に失敗した
+probe自体はhost exit 2、stdout 0 byte、stderrへ下記error 1行だけを出し、real network/filesystem dispatchを0件とする。
+
+```ts
+interface PhaseB1L0CommandSummaryV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-command-summary/1';
+  readonly operation: 'curate-toolchain-lock';
+  readonly status: 'created' | 'unchanged';
+  readonly generationId: `lock-${Sha256Hex}`;
+  readonly candidateLockFileSha256: Sha256Hex;
+  readonly curationInventoryFileSha256: Sha256Hex;
+  readonly auditLogFileSha256: Sha256Hex;
+  readonly auditFinalEntrySha256: Sha256Hex;
+}
+
+interface PhaseB1L0CommandErrorV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-command-error/1';
+  readonly status: 'error';
+  readonly operation: 'curate-toolchain-lock' | 'synthetic-probe';
+  readonly reason:
+    | 'phase-b1-lock-curation-argument-invalid'
+    | 'phase-b1-lock-curation-probe-invalid'
+    | 'phase-b1-lock-curation-network-forbidden'
+    | 'phase-b1-lock-curation-authority-invalid'
+    | 'phase-b1-lock-curation-input-invalid'
+    | 'phase-b1-lock-curation-final-conflict'
+    | 'phase-b1-lock-curation-temp-present'
+    | 'phase-b1-lock-curation-hardlink-unsupported'
+    | 'phase-b1-lock-curation-directory-sync-failed'
+    | 'phase-b1-lock-curation-internal-error';
+  readonly field: string | null; // logical fieldだけ。path、URL、errno、stackは禁止
+}
+```
+
+production successはexit 0、stdoutにsummary JCS+LF 1行、stderr 0 byteとする。failureはstdout 0 byte、stderrにerror
+JCS+LF 1行だけとし、exit codeはargument/probe=`2`、network forbidden=`10`、authority/input=`11`、
+final conflict/temp=`12`、hardlink/directory sync=`13`、unexpected internal=`70`へ固定する。internal errorは
+`field=null`とし、例外message、path、URL、errno、stackを出さない。productionとsynthetic simulated resultの
+summary/error bytesおよびexit codeは同一core inputに対してexact一致しなければならない。
+
 implementation reviewが`approved`としたrunnerのrepository-relative path、file SHA-256、canonical approval binding、
 host Windows PowerShellの`powershell.exe` file SHA-256と`5.1` full version、runner contract versionを
 Coordinatorが`PhaseB1L0AuthorityBundleV1`へ固定する。Coordinatorはreviewed runner bytesを
@@ -406,6 +656,19 @@ interface PhaseB1L0StatResultV1 {
   readonly resultObjectSha256: Sha256Hex;
 }
 
+interface PhaseB1L0AdapterErrorResultV1 {
+  readonly kind: 'error';
+  readonly code:
+    | 'not-found' | 'access-denied' | 'identity-changed' | 'reparse-found'
+    | 'network-failed' | 'tls-failed' | 'already-exists'
+    | 'hardlink-unsupported' | 'directory-sync-failed';
+  readonly failurePoint:
+    | 'before-temp' | 'after-temp-write' | 'after-temp-sync' | 'after-reread'
+    | 'before-exclusive-publish' | 'after-exclusive-publish'
+    | 'after-first-parent-sync' | 'after-temp-unlink' | 'after-second-parent-sync'
+    | null;
+}
+
 interface PhaseB1L0AuditEntryBaseV1 {
   readonly ordinal: number; // 0始まり、欠番なし
   readonly operationId: string; // `io-` + attempt/deny ordinalの8桁0埋め10進数
@@ -433,7 +696,8 @@ type PhaseB1L0CompletedOperationV1 = PhaseB1L0AuditEntryBaseV1 & {
   readonly result:
     | PhaseB1L0BytesResultV1
     | PhaseB1L0DirectoryListResultV1
-    | PhaseB1L0StatResultV1;
+    | PhaseB1L0StatResultV1
+    | PhaseB1L0AdapterErrorResultV1;
   readonly denialReason: null;
 };
 
@@ -525,13 +789,15 @@ interface PhaseB1LockCurationInventoryV1 {
 同じ値を持つ。許可attemptの直後entryはexact 1件のcompleteで、completeの`pairedAttemptOrdinal`、operation、target、
 requestOrdinalはattemptとexact一致する。denyはdispatchせずcompleteを持たず、denyが1件でもあるrunは成功inventoryを
 公開できない。`network-request`はnetwork targetだけ、4つのfile operationはfile targetだけを持つ。
-complete resultはnetwork-request/file-read/file-writeでbytes、file-listでdirectory-list、file-statでstatだけを許す。
+success complete resultはnetwork-request/file-read/file-writeでbytes、file-listでdirectory-list、file-statでstatだけを許す。
+adapter error completeはoperation別codeとfile-write failurePointの表へexact一致しなければならず、error resultがあるrunは
+completion inventoryを公開できない。
 
 network targetの`exactUrl`はuserinfo/query/fragmentなしのcanonical HTTPS URL、`host`はURL parserが返す
 lowercase ASCII hostnameとexact一致する。許可network attempt/completeだけが0始まり欠番なしの非null
 `requestOrdinal`を持ち、file operationとdenyではnullである。`requests`の各recordは、同じrequest ordinalを持つ
-network completeとexact 1対1で、`exactUrl`、host、response hash、response byte lengthが一致する。
-反対方向にも各network completeにexact 1 recordを要求するため、auditにないrequestまたはrequestのないaudit pairを
+bytes resultのnetwork completeとexact 1対1で、`exactUrl`、host、response hash、response byte lengthが一致する。
+反対方向にも各bytes resultのnetwork completeにexact 1 recordを要求するため、auditにないrequestまたはrequestのないsuccessful audit pairを
 受理しない。2 repository tip、Node verification document、keyring、release index、manifest、signature、runtimeは各1件、
 npm metadata/tarballはcandidate lockのdependency closureと一対一に対応する。
 
