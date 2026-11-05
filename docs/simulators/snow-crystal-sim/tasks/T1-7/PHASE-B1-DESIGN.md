@@ -270,6 +270,7 @@ interface PhaseB1L0SyntheticAdapterStepV1 {
 interface PhaseB1L0SyntheticProbeRequestV1 {
   readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-synthetic-request/1';
   readonly protocolVersion: '1';
+  readonly fixtureId: 'phase-b1-l0-canonical-synthetic-v1';
   readonly arguments: PhaseB1L0CurateArgumentsV1;
   readonly steps: readonly PhaseB1L0SyntheticAdapterStepV1[];
 }
@@ -291,12 +292,13 @@ interface PhaseB1L0SyntheticFileStateV1 {
 
 interface PhaseB1L0SyntheticProbeResponseV1 {
   readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-synthetic-response/1';
+  readonly fixtureId: 'phase-b1-l0-canonical-synthetic-v1';
   readonly protocolStatus: 'completed';
   readonly simulatedExitCode: number;
   readonly simulatedStdoutLine: string | null;
   readonly simulatedStderrLine: string | null;
   readonly consumedStepCount: number;
-  readonly remainingStepCount: 0;
+  readonly remainingStepCount: number; // 0以上のsafe integer
   readonly networkDispatchCount: number;
   readonly filesystemDispatchCount: number;
   readonly filesystemFiles: readonly PhaseB1L0SyntheticFileStateV1[];
@@ -327,17 +329,57 @@ write outcomeは次表の組だけを許す。`accepted`は`none/null`、`error`
 | `after-second-parent-sync` | `identity-changed` | finalのみ | finalのみ |
 
 file-write以外のexpected input 2 fieldはnull、file-writeではcoreが渡したbytesの
-hash/lengthとexact一致させる。adapterは次のstepとoperation/target/inputが一致した場合だけconsumeし、不一致、step枯渇、
-未消費stepはprobe protocol errorとする。test responseのfilesystem filesはfailure後を含むin-memory stateを
+hash/lengthとexact一致させる。request受理時に全stepのordinal、operation/target/input/outcome branch、canonicalな
+成功または単一失敗mutationとしての順序・件数を先に検査する。このstatic検査での不一致、step不足、余剰stepは
+`phase-b1-lock-curation-probe-invalid`であり、coreを起動せずdispatch/consumeは0件とする。static検査済みrequestでcoreが
+契約errorで停止した後の未消費suffixはprobe errorではなく、`remainingStepCount`で報告する。adapterは次のstepと
+operation/target/inputがexact一致した時だけそのstepをdispatch境界でconsumeする。test responseのfilesystem filesは
+failure後を含むin-memory stateを
 `logicalPath,state` ASCII tuple順でexact列挙し、published filesはそのうちfinalだけをlogical path ASCII順で列挙する。
 両配列のbytes/hash/lengthを一致させ、absolute path、credential、usernameを含めない。
 
-network/filesystem adapterがdispatchされたoperationはallow attemptに続いてcompleteを必ず1件持つ。success resultだけでなくadapter errorも
+canonical transcript長を`L=41`、network step集合を`N={11..22}`、filesystem step集合を
+`F={0..9,23..36,38..40}`、clock step集合を`C={10,37}`とする。成功は
+`consumedStepCount=L`、`remainingStepCount=0`である。adapter error outcomeを返すstep `i`はoperation種別に
+かかわらずdispatch済み・consume済みとし、以降のsuffixを一度もdispatchせず、次の式へ固定する。
+
+```text
+consumedStepCount     = i + 1
+remainingStepCount    = L - consumedStepCount = 40 - i
+networkDispatchCount  = |{ j in N | j <= i }|
+filesystemDispatchCount = |{ j in F | j <= i }|
+suffix dispatch count = 0
+```
+
+したがってnetwork failure step 11..22は`networkDispatchCount=i-10`、`filesystemDispatchCount=10`、
+file-write failure step 23..36はそれぞれ`12`、`i-12`、clock failure step 37は`12`、`24`、
+sealed file-write failure step 38..40は`12`、`i-13`である。step 0..9のfilesystem failureは`0`、`i+1`、
+step 10のclock failureは`0`、`10`である。どのfailureでもcountは0以上のsafe integerで、「失敗step後の
+未dispatch suffix数」以外の値を`remainingStepCount`に使わない。
+成功adapter step `i` のcomplete後から次step dispatch前にresponse意味検査、署名、hash/closure、policyの
+core contract errorで停止する場合も、`k=i+1`をそれまでのconsume数として
+`consumedStepCount=k`、`remainingStepCount=L-k`、各dispatch countはstep index `<k`に対する上記集合との積、
+suffix dispatch 0とする。このcaseは直前adapterのsuccess completeまでをauditに残し、存在しない失敗adapter
+operationを擬似的にconsumeしたりerror completeを追加したりしない。
+
+network/filesystemのadapter error stepはそのallow attemptとerror completeを両方auditへ追加する。ただし
+sealed publication planeのstep 38..40は自己参照防止のためaudit対象外であり、これらのerrorは既に
+sealしたstep 0..36の72 entryを不変とする。clock errorもaudit entryを追加しない。このためdata-plane
+filesystem failure step `i in 0..9`のauditは`2*(i+1)` entry、clock failure step 10は20 entry、network failure
+step `i in 11..22`とfile-write failure step `i in 23..36`はerror completeを含む`2*i` entry、step 37..40 failureは
+72 entryである。filesystem stateは「`i`より前のaccepted writeが作ったfinal exact集合」と「失敗step `i`の
+failure-point表が規定するtemp/final」の和集合で、後続stepのfileは0件とする。late failureでaudit、evidence、
+inventoryのfinalが残る場合も実stateとして報告し、successとして承認せず、次回起動時にexact bytesと
+closureを再検査する。
+
+network/filesystem adapterがdispatchされたdata-plane operationはallow attemptに続いてcompleteを必ず1件持つ。success resultだけでなくadapter errorも
 下記`PhaseB1L0AdapterErrorResultV1`をcomplete resultとするため、失敗runにもunpaired attemptを残さない。error completeを
-1件でも含むrunはsuccess summary/evidence/inventoryを公開しない。denyは従来どおりdispatch 0件、complete 0件である。
+1件でも含むrunはsuccess summaryを出力せず、そのfailureより後のevidence/inventory writeをdispatchしない。denyは従来どおり
+dispatch 0件、complete 0件である。
 `UtcNow`はaudit I/O unionの対象外であり、`clock-failed`では新しいaudit entryを作らず、既存chainがあればその末尾までを保持する。
-file-write error後のstdoutは0 byte、stderrはerror 1行で、completion inventoryは常に未公開とする。late failureで
-finalが存在してもそれは未完成generationのimmutable predecessorであり、次回はexact bytesを再検証してresumeするか
+file-write error後のsimulated stdoutは0 byte、simulated stderrはerror 1行である。late failureで
+finalが存在してもそれは未承認generationのimmutable predecessorであり、次回はexact bytesとclosureを再検証してresume/
+unchangedとするか
 conflictで停止し、自動削除・上書きしない。
 
 | adapter error | stable reason / exit |
@@ -349,10 +391,17 @@ conflictで停止し、自動削除・上書きしない。
 | file-write `hardlink-unsupported` | `phase-b1-lock-curation-hardlink-unsupported` / `13` |
 | file-write `directory-sync-failed` | `phase-b1-lock-curation-directory-sync-failed` / `13` |
 
-valid synthetic requestでは、simulated curateが成功・契約エラーのどちらでもhost process自体はexit 0、stderr 0 byte、
+valid synthetic requestでは、simulated curateが成功・core契約errorのどちらでもhost process自体はexit 0、stderr 0 byte、
 stdoutは`PhaseB1L0SyntheticProbeResponseV1`のJCS+LF 1行だけとする。`simulatedStdoutLine`/
-`simulatedStderrLine`にproduction CLIと同じ結果を格納する。request parse/schema/JCS、transcript対応、response構築に失敗した
-probe自体はhost exit 2、stdout 0 byte、stderrへ下記error 1行だけを出し、real network/filesystem dispatchを0件とする。
+`simulatedStderrLine`にproduction CLIと同じ結果を格納する。契約errorは上記のcount/state/audit式を持つresponseで、
+`simulatedExitCode`/stderr reasonをproduction mappingの`10/11/12/13/70`へ固定し、host exitと混同しない。request
+parse/schema/JCS、static transcriptの順序・余剰・不足といったpre-coreのprobe自体の不正はhost exit 2、
+stdout 0 byte、stderrへ`operation='synthetic-probe',reason='phase-b1-lock-curation-probe-invalid'`のerror 1行だけを出し、
+core、real/synthetic network/filesystem/clock dispatch、step consumeをすべて0件とする。static検査済みtranscriptとcore callが
+runtimeで不一致になった場合はprobe-invalidに格下げせずcore internal errorとし、不一致stepはconsume/dispatchせず、
+それまでのcount/state/auditと未dispatch suffix数、`simulatedExitCode=70`をhost exit 0のresponseで返す。
+valid requestのresponse構築/JCS化はこれらの全core outcomeに対してtotalでなければならず、それ自体の失敗を
+probe-invalidとして後付けで表現することを禁止する。
 
 ```ts
 interface PhaseB1L0CommandSummaryV1 {
@@ -390,6 +439,170 @@ JCS+LF 1行だけとし、exit codeはargument/probe=`2`、network forbidden=`10
 final conflict/temp=`12`、hardlink/directory sync=`13`、unexpected internal=`70`へ固定する。internal errorは
 `field=null`とし、例外message、path、URL、errno、stackを出さない。productionとsynthetic simulated resultの
 summary/error bytesおよびexit codeは同一core inputに対してexact一致しなければならない。
+
+##### 3.1.0.2 canonical synthetic success fixture
+
+`synthetic-probe`の唯一の正常系基準を **L0-CANONICAL-SYNTHETIC-V1** とする。これは実供給元の写しではなく、
+domain separation tag `snow-crystal-morphology-pilot/l0/canonical-synthetic/v1` を持つtest専用authorityである。
+fixtureから生成したcandidate lock、trust root、evidence、audit、inventory、responseをrepository外へ保存したり、
+real L0 review、B0、画像準備、外部送信へ昇格してはならない。implementationはfixture fileやmanifestを読まず、
+stdin transcriptだけを通常coreへ渡す。test側はfixture raw bytesを読むloaderと、artifactを再導出する独立oracleを分離し、
+runnerとoracleでparser、JCS、hash、OpenPGP verification、dependency traversalのcodeを共有しない。
+
+test-code工程で次のdirectoryを追加し、全regular fileをbinary exact bytesとしてreviewする。
+
+```text
+apps/snow-crystal-sim/tests/calibration/fixtures/phase-b1-l0-canonical-v1/
+  fixture-manifest.json
+  authority/synthetic-runner.bin
+  authority/synthetic-host-runtime.bin
+  responses/node-tip.json
+  responses/release-keys-tip.json
+  responses/node-readme.md
+  responses/node-release-keyring.pgp
+  responses/node-release-index.json
+  responses/SHASUMS256.txt
+  responses/SHASUMS256.txt.sig
+  responses/node-v24.14.1-win-x64.zip
+  responses/canvas-metadata.json
+  responses/canvas-1.0.6.tgz
+  responses/pdfjs-metadata.json
+  responses/pdfjs-6.3.289.tgz
+```
+
+`fixture-manifest.json`はUTF-8 BOMなし、NFC、LFなしJCS object＋final LF 1つで、次のstrict schemaを持つ。
+manifest自身はasset membershipとhash preimageから除外し、runnerへ渡さない。
+
+```ts
+interface PhaseB1L0CanonicalFixtureAssetV1 {
+  readonly relativePath: string;
+  readonly role:
+    | 'synthetic-runner' | 'synthetic-host-runtime'
+    | 'node-tip' | 'release-keys-tip' | 'node-readme' | 'node-release-keyring'
+    | 'node-release-index' | 'node-release-manifest' | 'node-release-signature'
+    | 'node-runtime' | 'npm-metadata' | 'npm-tarball';
+  readonly fileSha256: Sha256Hex;
+  readonly byteLength: number;
+}
+
+interface PhaseB1L0CanonicalFixtureExpectedV1 {
+  readonly reviewRequestFileSha256: Sha256Hex;
+  readonly approvalBindingFileSha256: Sha256Hex;
+  readonly authorityBundleFileSha256: Sha256Hex;
+  readonly nodeReleaseTrustRootFileSha256: Sha256Hex;
+  readonly candidateLockFileSha256: Sha256Hex;
+  readonly auditLogFileSha256: Sha256Hex;
+  readonly auditFinalEntrySha256: Sha256Hex;
+  readonly curationEvidenceFileSha256: Sha256Hex;
+  readonly curationInventoryFileSha256: Sha256Hex;
+  readonly commandSummaryLineSha256: Sha256Hex;
+  readonly consumedStepCount: 41;
+  readonly networkDispatchCount: 12;
+  readonly filesystemDispatchCount: 27;
+}
+
+interface PhaseB1L0CanonicalFixtureManifestV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-l0-canonical-fixture/1';
+  readonly fixtureId: 'phase-b1-l0-canonical-synthetic-v1';
+  readonly domainSeparationTag: 'snow-crystal-morphology-pilot/l0/canonical-synthetic/v1';
+  readonly assets: readonly PhaseB1L0CanonicalFixtureAssetV1[];
+  readonly expected: PhaseB1L0CanonicalFixtureExpectedV1;
+}
+```
+
+assetsは`relativePath` ASCII順で上記14 fileをexact被覆し、重複、extra、missingを許さない。manifestに記録するhash/lengthは
+raw bytesから独立計算する。`synthetic-runner.bin`と`synthetic-host-runtime.bin`は実行せず、authority hash binding用の
+opaque bytesである。keyring/signatureはtest専用primary/subkeyによる実OpenPGP detached signatureで、private keyを
+repositoryへ含めない。keyring、manifest、signature、runtime、metadata、tarballは互いのhash、SRI、version、URL、
+dependency closureが成立する固定bytesとする。test-code reviewは独立OpenPGP libraryまたはCLIで署名、fingerprint、
+creation/expiry/revocationを検査し、runner実装はそのreview結果やmanifest expected値を入力として使わない。
+
+fixtureの値は次へ固定する。
+
+- synthetic absolute arguments: `C:\\phase-b1-l0-canonical-synthetic-v1` と
+  `C:\\phase-b1-l0-canonical-synthetic-v1\\authority\\<runnerSha256>\\l0-authority.json`。
+- synthetic time: key primary `2000-01-01T00:00:00Z`、subkey `2000-01-02T00:00:00Z`、
+  release/signature `2001-01-01T00:00:00Z`、started `2001-01-01T00:00:01Z`、finished `2001-01-01T00:00:02Z`。
+  expiry/revocationはnullとする。
+- immutable commit: nodeは40桁`1`、release-keysは40桁`2`。tip responseはその`sha`だけをauthorityとし、
+  repository/ownerはrequestのexact GitHub endpointから決定する。responseに存在しないrepository fieldを要求せず、
+  productionと同じstrict provenance projectionにendpoint、owner/repository、`sha`、response hash/lengthを結合する。
+- READMEは`Release keys`節とliteral `https://github.com/nodejs/release-keys`を含む。
+- npm metadataは`@napi-rs/canvas@1.0.6`と`pdfjs-dist@6.3.289`を各1件持ち、`dependencies={}`、
+  `optionalDependencies={}`、exact `dist.tarball`、raw tarball SHA-512 SRIを持つ。synthetic closureはこの2 tarballだけである。
+- tarball/runtime bytesはfixture assetそのものであり、展開・実行しない。Node manifestはruntime asset SHA-256と
+  `node-v24.14.1-win-x64.zip`をLF行で結び、test keyのdetached signatureだけで検証する。
+
+review request、approval projection/binding、authority bundleは§3.1.0.1の式からfixture runner/host bytesを用いて独立導出する。
+authority bundle内のhost full versionは`5.1.19041.1-synthetic`とする。request/binding/bundle exact bytesはassetではなく、
+oracleがraw fixture assetから毎回導出し、manifestのexpected hashへ照合する。trust root、candidate lock、evidence、audit、
+inventory、summaryも同様に導出する。`commandSummaryLineSha256`のpreimageはstdoutへ出す
+`PhaseB1L0CommandSummaryV1`のJCS+LF exact 1行であり、summaryをfile finalとして保存したりowned-final集合へ加えたりしない。
+この二重化により、manifestのexpected値だけを正解oracleとして使用しない。
+
+canonical success transcriptは次の41 stepで、表の順序以外を許さない。`N0..N11`は下表network request、`W(x)`は
+指定bytesを`FileWrite`する1 stepである。全file targetはstrict logical pathを使い、全write outcomeは
+`accepted/none/null`である。
+
+| step | operation |
+|---|---|
+| 0 | `FileStat(curation/.)` = empty-root directory stat |
+| 1 | `FileStat(authority/<runnerSha256>/l0-authority.json)` = regular file stat |
+| 2 | `FileRead(authority/<runnerSha256>/l0-authority.json)` = derived authority bundle bytes |
+| 3 | `FileStat(authority/<runnerSha256>/curate-morphology-pilot-toolchain-lock.ps1)` |
+| 4 | `FileRead(...)` = `synthetic-runner.bin` bytes |
+| 5 | `FileStat(authority/<runnerSha256>/runner-review-request.json)` |
+| 6 | `FileRead(...)` = derived review request bytes |
+| 7 | `FileStat(authority/<runnerSha256>/runner-approval-binding.json)` |
+| 8 | `FileRead(...)` = derived approval binding bytes |
+| 9 | `FileList(curation/.)` = `authority,authority-requests`の2 directory exact順 |
+| 10 | `UtcNow()` = started |
+| 11..22 | `NetworkRequest(N0)..NetworkRequest(N11)` |
+| 23..34 | `W(responses/<responseFileSha256>)` をN0..N11順 |
+| 35 | `W(node-release-trust-root.json)` |
+| 36 | `W(phase-b1-toolchain-lock.json)` |
+| 37 | `UtcNow()` = finished |
+| 38 | `W(lock-curation-audit.json)` |
+| 39 | `W(lock-curation-evidence.json)` |
+| 40 | `W(curation-inventory.json)` completion marker |
+
+N0..N11は次のexact順とし、URLは§3.1のruleへ一致する。metadataが示すtarball URLをmetadata直後に置く。
+
+```text
+N0  node-verification-repository-tip
+N1  node-release-keyring-repository-tip
+N2  node-verification-document
+N3  node-release-keyring
+N4  node-release-index
+N5  node-release-manifest
+N6  node-release-signature
+N7  node-runtime
+N8  npm-version-metadata (@napi-rs/canvas)
+N9  npm-tarball (@napi-rs/canvas)
+N10 npm-version-metadata (pdfjs-dist)
+N11 npm-tarball (pdfjs-dist)
+```
+
+audit chainはstep 0..9、11..36のnetwork/filesystem operationだけを記録し、各operationをallow attempt＋直後completeの
+2 entryとする。したがってcanonical auditは36 operation、72 entryである。`UtcNow`は従来どおりaudit外である。
+自己参照を避けるため、step 38..40を **sealed publication plane** と定義し、既にsealしたaudit chainへ追加しない。
+これは監査の抜け道ではなく、step 38のaudit exact bytes、step 39のaudit hashを参照するevidence、step 40のaudit/evidence/
+全owned final hashを参照するcompletion inventoryという一方向closureで検証する。production adapterはstep 38..40も
+filesystem dispatch countへ含め、synthetic responseのfilesystem stateへ含める。sealed planeではnetwork/read/list/statを
+禁止し、3 writeの順序、bytes、hash、length、failure stateをtranscriptで検証する。§3.1の「全application I/Oをauditへ記録」は
+「data planeの全I/Oをaudit chainへ記録し、sealed publication planeの3 writeをclosureとdispatch transcriptへ記録する」へ
+読み替え、それ以外のaudit除外を認めない。
+
+canonical outputでは41 stepを全消費し、network dispatch 12、filesystem dispatch 27、remaining 0、host exit 0、stderr 0 byte、
+simulated exit 0とする。filesystem state/published filesは12 response、trust root、candidate lock、audit、evidence、inventoryの
+17 finalだけをlogical path ASCII順でexact列挙し、tempは0件である。owned finalsはinventoryを除く16 final、inventory markerは
+最後に別照合する。summaryは`created`でcandidate lock、inventory、audit file/final entry hashへ結合する。
+
+全negative fixtureはこのsuccess requestをdeep cloneして1契約だけを壊す。raw byte/JCS negative以外は、直接・上位hashを
+独立oracleで再計算して対象意味違反を隔離する。file-write failure matrixはstep 23..40の各writeへ1件ずつ適用し、data plane
+failureではaudit error completeをsealしてsuccess evidence/inventoryを公開せず、sealed plane failureでは既にsealしたauditを
+変更せず、表どおりのtemp/finalだけを残す。実装後のTC-B1-L0R-000..005はpositiveと全negative raw requestをrunner processへ
+実際に渡し、host exit、stdout/stderr exact bytes、response、audit、filesystem stateをoracle導出値へ比較する。
 
 implementation reviewが`approved`としたrunnerのrepository-relative path、file SHA-256、canonical approval binding、
 host Windows PowerShellの`powershell.exe` file SHA-256と`5.1` full version、runner contract versionを
@@ -509,6 +722,38 @@ product/runtime実装でもない。L0が取得できるのは次だけである
    `https://api.github.com/repos/nodejs/release-keys/commits/main`と
    `https://api.github.com/repos/nodejs/node/commits/main`から得る、両immutable commitのtip/provenance response。
 
+両tip responseのprovenance導出はproduction、synthetic fixture、test oracleのすべてで次の同一規則とする。
+
+```ts
+interface PhaseB1GithubCommitTipProvenanceProjectionV1 {
+  readonly schemaVersion: 'snow-crystal-morphology-pilot-github-commit-tip-provenance/1';
+  readonly requestedEndpoint:
+    | 'https://api.github.com/repos/nodejs/node/commits/main'
+    | 'https://api.github.com/repos/nodejs/release-keys/commits/main';
+  readonly owner: 'nodejs';
+  readonly repository: 'node' | 'release-keys';
+  readonly commitSha: string; // response top-level shaから取得する40 lowercase hex
+  readonly responseFileSha256: Sha256Hex;
+  readonly responseByteLength: number;
+}
+```
+
+owner/repositoryはresponse payloadから推測せず、requestした上記exact endpoint literalのpathを固定tableで
+`nodejs/node`または`nodejs/release-keys`へ写す。response raw bytesはUTF-8 JSONのtop-level objectで、
+duplicate-aware parserがown property `sha`をexact 1個要求し、その値を40 lowercase hex stringとして取得する。
+GitHubの実`Get a commit` responseは`sha`以外に`commit`,`url`,`html_url`,`parents`等の標準fieldを含むため、
+これら追加fieldはtransport metadataとしてraw bytesへ保存してよいが、authorityには使わない。すなわち外部
+response全体のproperty集合を将来のGitHub schemaへ対して独自に狭めず、上記projectionだけをunknown/
+missing property禁止のstrict objectとする。raw bytes自体はhash/lengthで凍結するため、authorityに使わない
+fieldの変更もresponse hashの変更として検出できる。projectionのJCS object+final LFのSHA-256を
+`commitProvenanceSha256`とし、endpoint、owner/repository、response `sha`、raw response hash/lengthを1つに結合する。
+
+endpointのowner/repository/pathを1 byteでも変えたrequestはallowlist不一致としてdispatch前に拒否する。
+response `sha`の単独変更、raw response hash/lengthの単独変更、projectionのendpoint/owner/repository/commitSha変更は
+projection hash、trust root、immutable raw URL commit segmentの少なくと1つと不一致になるため拒否する。正式な
+tip更新を取り込む場合は単独mutationではなく、新しいraw response、projection、immutable artifact、trust root、
+candidate lockを別generationとして全て再導出し再reviewする。
+
 許可hostはASCII順のexact集合
 `['api.github.com','nodejs.org','raw.githubusercontent.com','registry.npmjs.org']`、schemeは`https`だけ、redirectは0回とする。
 userinfo、query、fragment、IP literal、非default port、短縮URL、mutable branch/tag URLを禁止する。
@@ -518,7 +763,9 @@ artifact本体をそのcommitを含むexact raw URLで取得するためだけ�
 Node/npmについては上記exact versionのrelease path、exact package-version metadata path、そのmetadataが示す
 exact tarball pathだけを許し、別versionや汎用registry queryを許さない。
 
-L0のnetwork計測範囲は最初のDNS/socket試行直前からcompletion inventoryの排他的公開後までである。
+L0のnetwork計測範囲は最初のDNS/socket試行直前から最後の許可responseを受領してnetwork adapterを不可逆にsealするまでである。
+`finishedAtUtc`はこのseal直後かつsealed publication開始前の時刻である。seal後からcompletion inventoryの排他的公開後に
+processが終了するまで、adapterは全network attemptを拒否し、attemptがあればsuccess audit/evidence/inventoryを公開しない。
 request ordinal、logical purpose、exact URL、host、response byte length、response file SHA-256、redirect count、
 TLS検証結果を外部rootの`lock-curation-evidence.json`へ記録し、全application I/Oを§3.1.0のauditへ記録する。
 credential/header値、絶対local path、usernameは記録しない。
@@ -564,12 +811,16 @@ interface PhaseB1NodeReleaseTrustRootV1 {
   readonly officialVerificationRepository: 'https://github.com/nodejs/node';
   readonly officialVerificationCommitSha: string; // 40 lowercase hex
   readonly officialVerificationCommitEvidenceFileSha256: Sha256Hex;
+  readonly officialVerificationCommitEvidenceByteLength: number;
+  readonly officialVerificationCommitProvenanceSha256: Sha256Hex;
   readonly officialVerificationDocumentUrl: `https://raw.githubusercontent.com/nodejs/node/${string}/README.md`;
   readonly officialVerificationDocumentFileSha256: Sha256Hex;
   readonly officialVerificationDocumentByteLength: number;
   readonly releaseKeysRepository: 'https://github.com/nodejs/release-keys';
   readonly releaseKeysCommitSha: string; // 40 lowercase hex
   readonly releaseKeysCommitEvidenceFileSha256: Sha256Hex;
+  readonly releaseKeysCommitEvidenceByteLength: number;
+  readonly releaseKeysCommitProvenanceSha256: Sha256Hex;
   readonly keyringSourceUrl: `https://raw.githubusercontent.com/nodejs/release-keys/${string}/${string}`;
   readonly keyringFileSha256: Sha256Hex;
   readonly keyringByteLength: number;
@@ -584,8 +835,11 @@ interface PhaseB1NodeReleaseTrustRootV1 {
 trust rootはUTF-8 BOMなし・NFC・LFなしJCS object＋final LF 1つとする。
 `officialVerificationDocumentUrl`と`keyringSourceUrl`のcommit segmentはそれぞれ
 `officialVerificationCommitSha`と`releaseKeysCommitSha`にexact一致し、relative pathは非空segment、`..`なしでなければならない。
-両commit evidenceは§3.1で許可したGitHub API response exact bytesであり、repository full name、owner、commit SHAを
-独立parserで検査する。verification documentのfrozen bytesは`Release keys`節で
+両commit evidenceは§3.1で許可したGitHub API response exact bytesであり、owner/repositoryはexact endpoint literalから導出し、
+commit SHAはresponse top-level `sha`から導出する。独立parserはraw response hash/length、strict provenance projection hash、
+trust rootのrepository/commit/evidence/provenance field、immutable raw URL commit segmentを全て双方向に照合する。response内の
+repository/owner類似fieldはauthorityに用いず、GitHub実APIの他fieldはraw evidence hashにだけ結合する。
+verification documentのfrozen bytesは`Release keys`節で
 `https://github.com/nodejs/release-keys`を公式verification sourceとして参照しなければならない。
 `authorizedSigners`は`primaryFingerprint,signingSubkeyFingerprint`のASCII tuple順、重複なし、1件以上とする。
 独立reviewは、Node.js公式release verification文書が`nodejs/release-keys`を信頼元として示すこと、両immutable commitが
@@ -609,8 +863,10 @@ frozen keyringに存在しない場合だけである。`manifestSignatureCreate
 各key packetから独立導出した時刻とtrust root値の一致を要求する。将来のambient keyring、current clock、
 keyserver状態を再判定に使わず、後日新しいrevocationを反映する場合は新L0 generationと再reviewを必要とする。
 
-L0 artifactも§4.1と同じUTF-8/JCS+LF、strict property、duplicate/unknown/non-JSON拒否を適用し、
-次の契約を使う。
+L0が生成するartifactも§4.1と同じUTF-8/JCS+LF、strict property、duplicate/unknown/non-JSON拒否を適用し、
+次の契約を使う。外部供給元のraw responseは生成artifactではないためJCSへ書き換えずexact bytesで保存し、
+GitHub tip responseだけは§3.1の実API整合parserとstrict provenance projectionを適用する。この例外は他の生成
+artifactのunknown propertyを許可する根拠にはならない。
 
 ```ts
 interface PhaseB1L0NetworkTargetV1 {
@@ -791,7 +1047,9 @@ requestOrdinalはattemptとexact一致する。denyはdispatchせずcompleteを�
 公開できない。`network-request`はnetwork targetだけ、4つのfile operationはfile targetだけを持つ。
 success complete resultはnetwork-request/file-read/file-writeでbytes、file-listでdirectory-list、file-statでstatだけを許す。
 adapter error completeはoperation別codeとfile-write failurePointの表へexact一致しなければならず、error resultがあるrunは
-completion inventoryを公開できない。
+success summaryを出力できず、そのerrorより後のcompletion inventory writeをdispatchできない。ただし
+completion inventory write自体のlate errorでfinalが残った場合はactual stateとして報告し、そのrun内でsuccessとして
+承認せず、次回にexact closureを再検査する。
 
 network targetの`exactUrl`はuserinfo/query/fragmentなしのcanonical HTTPS URL、`host`はURL parserが返す
 lowercase ASCII hostnameとexact一致する。許可network attempt/completeだけが0始まり欠番なしの非null

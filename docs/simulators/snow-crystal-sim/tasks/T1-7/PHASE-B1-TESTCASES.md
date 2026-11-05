@@ -109,10 +109,22 @@ runner未存在assertionの後、PowerShell 5.1を別processで次の2形だけ�
 - production: `-Operation curate -CurationRoot ... -AuthorityBundleFile ... -ExpectedAuthorityBundleFileSha256 ...`
 - test: `-Operation synthetic-probe -ProtocolVersion 1`とstdin JCS+LF request 1 object
 
+正常系は設計§3.1.0.2の`phase-b1-l0-canonical-synthetic-v1` fixture bundleだけを使う。test-code reviewは
+fixture manifestの14 asset hash/length、test OpenPGP signature、npm SRI、response間参照をrunnerと別経路で先に検証する。
+runner、test oracle、fixture manifest expected値の三者が同じhashを返すことを要求し、manifest expected値を計算oracleとして
+読み戻さない。fixtureはtest専用で、real L0/B0 artifactへ昇格できない。
+
 synthetic transcriptはclock/network/filesystemのoperation、target、file-write input hash/length、outcomeを0始まりの
 stepで与える。positiveでは全stepをexact 1回consumeし、real DNS/socket/filesystem dispatch 0件、host exit 0、stderr 0 byte、
 stdout JCS+LF response 1行を要求する。responseのsimulated stdout/stderr/exit code、published file bytes/hash/length、
 auditは、同じfixtureを独立oracleで実行したproduction contractと一致する。
+
+positive transcriptは設計表の41 step exact順、network 12、filesystem 27、clock 2とする。authority stat/read/list、
+全network、12 response write、trust root/lock write、sealed audit/evidence/inventory writeのどれも省略・追加・交換しない。
+data-plane auditは36 operation/72 entry、sealed publicationはauditへ自己記録せず、audit→evidence→inventoryの一方向hash closureと
+dispatch transcriptで検証する。step 37でnetwork adapterが不可逆にsealされ、step 38..40とprocess終了までの追加network
+attemptは0件であることを確認する。responseの17 final、inventoryの16 owned final、temp 0、stdout summary JCS+LF 1行のhashを
+全てexact比較し、summary fileやowned-final entryが作られないことも確認する。
 
 CLI token構文検査後、production adapter生成までのfilesystem/network/clock dispatchは0件とする。authority bundleの
 path identity/stat/read/hashは同一coreがproduction adapterで実行し、synthetic positiveでは先頭のfile-stat/file-read stepと
@@ -121,6 +133,10 @@ dispatch counterで拒否する。
 
 operation/target/outcome branch違い、write input hash/length違い、step欠落・余剰・順序違い、duplicate/unknown field、
 BOM/CRLF/余分LF、非canonical base64ではprobe自体がexit 2、stdout 0 byte、probe-invalid error 1行となり、real dispatch 0件とする。
+これらはrequest全体のstatic検査でcore起動前に検出し、step consume、synthetic network/filesystem/clock dispatchも0件とする。
+static検査済みrequestでのcore契約errorはprobe-invalidとして隠さず、host exit 0、stdout response 1行、
+`simulatedExitCode=10|11|12|13|70`、productionとexact同じsimulated stderr 1行で返す。runtimeのcore/transcript
+不一致もhost exit 0のinternal error `70`で、不一致stepをconsume/dispatchしないことを検査する。
 productionへstdin、`-ProtocolVersion`、synthetic parameterを渡すcaseと、testへproduction parameterを渡すcaseを拒否し、
 production operationへtest adapterを注入できないことを確認する。missing/duplicate/unknown/順序違い/positional CLI parameterも
 adapter生成前にargument-invalidとする。
@@ -132,9 +148,37 @@ username、credential、errno、stackがないことを確認する。PowerShell
 
 operation別に許可したoutcome/error code以外（utc＋TLS、network＋directory、file-read＋clock、file-write＋generic error等）を
 probe-invalidで拒否する。file-write failure tableの全row・全許可error codeを独立fixtureにし、filesystemFilesのtemp/final、
-publishedFiles、audit attempt/error complete、completion inventory未公開、stdout 0、stderr reason/exitをliteral比較する。
+publishedFiles、audit attempt/error complete、success summaryの非承認、stdout 0、stderr reason/exitをliteral比較する。
 `accepted/none/null`だけがsuccess completeとなり、late failureのfinalも自動削除・上書きされない。
 `clock-failed`はexit 70で新しいaudit I/O entryを作らず、直前までのchainだけを保持する。
+
+全adapter-error fixtureは成功の41 step requestから1 stepのoutcomeだけを変え、失敗step `i`自体を
+dispatch/consume済みとする。各caseで`consumedStepCount=i+1`、`remainingStepCount=40-i`、suffix dispatch 0を
+exact比較する。network/filesystem countは設計の集合式から独立に数え、特に次をliteral比較する。
+
+| failure step | consumed | remaining | network | filesystem | audit |
+|---|---:|---:|---:|---:|---|
+| 10 clock | 11 | 30 | 0 | 10 | step 0..9までの20 entry |
+| 11..22 network `i` | `i+1` | `40-i` | `i-10` | 10 | `2*i` entry、最後はerror complete |
+| 23..36 file-write `i` | `i+1` | `40-i` | 12 | `i-12` | `2*i` entry、最後はerror complete |
+| 37 clock | 38 | 3 | 12 | 24 | sealed済み72 entry、追加0 |
+| 38 sealed audit write | 39 | 2 | 12 | 25 | 72 entry不変 |
+| 39 sealed evidence write | 40 | 1 | 12 | 26 | 72 entry不変 |
+| 40 sealed inventory write | 41 | 0 | 12 | 27 | 72 entry不変 |
+
+step 0..9のfilesystem errorも各々network 0/filesystem `i+1`、remaining `40-i`、audit `2*(i+1)` entryで確認する。step 23..36は
+audit allow attempt/error completeを必須とし、step 38..40はauditを変更せずfilesystem transcriptとstateで失敗を証明する。
+filesystemFiles/publishedFilesは、先行accepted final、failure-point表の当該temp/final、後続file 0件から
+独立oracleが作ったexact集合と比較する。step 38..40のlate failureでaudit/evidence/inventory finalが残るcaseは
+そのstateを隠さず報告し、simulated success summaryなし、次回のclosure再検査が必要であることを確認する。
+成功adapter complete後のresponse schema/hash/signature/closure検査でcoreが停止するfixtureは、最後に成功した
+step `i`の直後を停止点とし、`consumed=i+1`、`remaining=40-i`、step `<=i`だけから数えたdispatch数、
+suffix dispatch 0、直前のsuccess completeまでのauditをexact比較する。存在しないadapter failureをconsumeしたり
+error completeを追加したりしない。
+
+runner存在後はpositive 1件だけでなく、raw byte negative、全strict field/branch mutation、authority/review hash mutation、
+audit/result mutation、deny scope、file-write failure tableの全許可・禁止pairをraw stdinで同じprocess harnessへ渡す。
+nonzero host exitもstdout/stderrを失わず捕捉し、test-local parserだけを検査してrunner実行を省略してはならない。
 
 ### TC-B1-L0R-001: review request、標準review投影、approval binding
 
@@ -156,6 +200,11 @@ publishedFiles、audit attempt/error complete、completion inventory未公開、
 
 **独立oracle**: strict objectを直接構築するtest-local JCS/SHA。REVIEW.md parserを使わない。
 
+canonical fixtureのrunner/host raw assetからrequest、projection、binding、authority exact bytesを導出し、request/bindingの
+object/file hash、request ID、reviewed path/hash、external path hash segment、authority参照を全て照合する。各field、status、path、
+hash、raw BOM/CRLF/duplicate/unknown mutationをsuccess transcriptへ差し替えて実runnerへ渡し、authority-invalidまたは
+probe-invalidとstate不変を確認する。
+
 ### TC-B1-L0R-002: operation別auditとhash chain
 
 **前提**: synthetic adapterで、authority read、curation-root stat/list/write/read、許可network responseを順に行う。
@@ -176,6 +225,10 @@ publishedFiles、audit attempt/error complete、completion inventory未公開、
   success evidence requestへ数えず、success inventoryを公開しない。
 
 **独立oracle**: audit entryのstrict unionをtest側でparseし、全preimageとchainを再計算する。
+
+canonical auditは独立fixture bytesから36 operation/72 entryを再構築する。bytes/list/stat/adapter-error resultの全required field、
+result hash preimage、attempt直後complete、deny、network evidence双方向対応、禁止scope countを検査する。`{arbitrary:...}`等の
+縮退result、unpaired/遅延complete、requestのみ/evidenceのみをrunnerへ渡して必ず拒否させる。
 
 ### TC-B1-L0R-003: deny-by-default I/Oと禁止scope集計
 
@@ -200,6 +253,9 @@ PowerShell sourceをtoken/ASTとimplementation reviewで確認する。
 - synthetic test中のDNS/socket/real network invocation countは0。
 
 source検査だけで安全性を断定せず、TC-B1-L0R-002..003のadapter probeも必須Greenとする。
+
+runner存在後はAST/token検査に加えてcanonical positive/deny/failure transcriptを全てprocess実行し、direct I/O、import、
+child process、credential/path漏洩をdispatch countとraw stdout/stderr/artifact bytesから検出する。
 
 ### TC-B1-L0R-005: authority bundle、external exact copy、root/host gate
 
@@ -238,7 +294,14 @@ approved runnerを使うreal L0のfrozen artifactを、runnerと別のreader/JCS
 
 frozen GitHub response、README、keyring、release index、manifest、signatureだけを使う。
 
-- commit evidenceのrepository full name/owner/SHAとraw URL commit segmentが一致する。
+- requestしたGitHub endpointは
+  `https://api.github.com/repos/nodejs/node/commits/main`と
+  `https://api.github.com/repos/nodejs/release-keys/commits/main`のexact literalだけで、owner/repositoryはendpointの固定tableから導出する。
+- 実GitHub commit responseをduplicate-aware JSON parserで読み、top-level `sha` exact 1個が40 lowercase hexである。
+  `commit`,`url`,`html_url`,`parents`等の追加fieldはtransport metadataとして許容するがauthorityに使わず、raw bytesの
+  hash/lengthによって凍結する。
+- strict provenance projectionのendpoint、owner/repository、response `sha`、raw response hash/lengthからprojection
+  JCS+LF SHA-256を独立導出し、trust rootのcommit/evidence/provenance fieldとraw URL commit segmentが双方向に一致する。
 - READMEのRelease keys節が`nodejs/release-keys`を参照する。
 - keyring hash/length、primary↔signing subkey binding、署名者tupleがtrust rootと一致する。
 - detached signatureはそのkeyringだけでmanifestへ成功する。ambient keyring/keyserverは0回。
@@ -247,9 +310,16 @@ frozen GitHub response、README、keyring、release index、manifest、signature
 - signature UTC dateはrelease dateと一致し、signature時点でprimary/subkeyが期限内。
 - finished以前のrevocationは署名前後を問わず拒否。署名後の単なるexpiryだけでは拒否しない。
 
-mutationはunknown signer、self-generated key、commit/hash違い、README参照欠落、invalid signature、
+mutationはendpoint owner/repository/path違い、response `sha`欠落/重複/型違い/非40 lowercase hex/単独変更、
+raw response hash/length単独変更、projection endpoint/owner/repository/commitSha単独変更、unknown signer、
+self-generated key、commit/hash違い、README参照欠落、invalid signature、
 future signature、release date違い、creation順違反、signature時点expiry、finished以前revocation、
 revokedAt null偽装を1件ずつ拒否する。
+
+canonical synthetic responseが`sha`だけを持つcaseと、frozen real GitHub responseが標準追加fieldを持つcaseの両方に
+同じprojection oracleを適用する。endpoint変更はnetwork dispatch前、response/projection/trust-root不一致はauthority
+validationで拒否し、単独mutationでdownstream hashを都合よく再計算しない。正式なtip更新は別generationの
+全provenance/artifact再導出と再reviewだけで受理する。
 
 ### TC-B1-L0-CURATION-003: evidence/audit/inventory closure
 
